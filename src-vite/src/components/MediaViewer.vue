@@ -90,6 +90,13 @@
           :shortcut="shortcut('view.zoomFit')"
           @click="$emit('update:isZoomFit', !isZoomFit)"
         />
+        <TButton
+          :icon="IconFocus"
+          :disabled="fileIndex < 0 || isSlideShow || !canInteract || file?.file_type === 2"
+          :selected="focusLoupeEnabled && file?.file_type !== 2 && !isSlideShow"
+          :tooltip="focusLoupeEnabled ? $t('image_viewer.toolbar.focus_loupe_off') : $t('image_viewer.toolbar.focus_loupe_on')"
+          @click="toggleFocusLoupe"
+        />
         <template v-if="showExtraIcons">
           <IconSeparator class="t-icon-size-sm text-base-content/30" />
           <TButton
@@ -439,6 +446,7 @@ import { useToast } from '@/common/toast';
 import { isWin, isMac, isLinux, getSlideShowInterval } from '@/common/utils';
 import { getShortcutLabel, ShortcutActionId, ShortcutPlatform, VIEW_BACKGROUND_SHORTCUTS } from '@/common/shortcuts';
 import { getMotionPhotoVideoPath } from '@/common/api';
+import { focusLoupeEnabled, toggleFocusLoupe } from '@/common/focusLoupe';
 
 import Image from '@/components/Image.vue';
 import TButton from '@/components/TButton.vue';
@@ -454,6 +462,7 @@ import {
   IconZoomOut,
   IconZoomFit,
   IconZoomActual,
+  IconFocus,
   IconFullScreen,
   IconRestoreScreen,
   IconPin,

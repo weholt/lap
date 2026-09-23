@@ -1130,6 +1130,8 @@
       "zoom_out": "缩小",
       "zoom_fit": "适应窗口",
       "zoom_actual": "实际大小",
+      "focus_loupe_on": "检查对焦",
+      "focus_loupe_off": "关闭对焦检查",
       "fullscreen": "全屏",
       "exit_fullscreen": "退出全屏",
       "pin": "固定工具栏",
@@ -1351,6 +1353,8 @@
         "特大 (400 px)"
       ],
       "section_view": "查看",
+      "focus_loupe_zoom": "对焦放大",
+      "focus_loupe_zoom_hint": "对焦检查圆内的放大倍数。100% 为实际像素。",
       "view_background": "背景",
       "view_background_hint": "选择查看器背景颜色",
       "view_background_options": [

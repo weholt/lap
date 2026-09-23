@@ -145,6 +145,7 @@ export const useConfigStore = defineStore('configStore', {
       slideShowTransition: 0,    // 0: Slide, 1: Fade, 2: None
       navigatorViewMode: 0,      // 0: Auto, 1: Always show, 2: Always hide
       navigatorViewSize: 240,    // navigator view size (160, 240, 320, 400)
+      focusLoupeZoom: 100,       // focus checker magnification, percent of actual pixels
       dblClickAction: 'quickPreview', // quickPreview | newWindow
       viewBackground: 0,         // 0: default, 1: black, 2: dark gray, 3: medium gray, 4: light gray, 5: white
       autoPlayVideo: true,       // auto play video
@@ -341,6 +342,10 @@ export const useConfigStore = defineStore('configStore', {
     },
     setNavigatorViewSize(navigatorViewSize) {
       this.settings.navigatorViewSize = navigatorViewSize;
+    },
+    setFocusLoupeZoom(focusLoupeZoom) {
+      const value = Number(focusLoupeZoom);
+      this.settings.focusLoupeZoom = [100, 150, 200, 400, 800].includes(value) ? value : 100;
     },
     setViewBackground(viewBackground) {
       this.settings.viewBackground = viewBackground;

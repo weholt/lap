@@ -250,6 +250,17 @@
             </div>
             <div class="flex items-center justify-between px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
               <div class="flex flex-col gap-0.5 text-sm leading-5">
+                <div>{{ $t('settings.image_view.focus_loupe_zoom') }}</div>
+                <div class="text-xs text-base-content/30">
+                  {{ $t('settings.image_view.focus_loupe_zoom_hint') }}
+                </div>
+              </div>
+              <select class="select select-bordered select-sm min-w-32" v-model="focusLoupeZoomModel">
+                <option v-for="option in focusLoupeZoomOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+              </select>
+            </div>
+            <div class="flex items-center justify-between px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+              <div class="flex flex-col gap-0.5 text-sm leading-5">
                 <div>{{ $t('settings.image_view.view_background') }}</div>
                 <div class="text-xs text-base-content/30">
                   {{ $t('settings.image_view.view_background_hint') }}
@@ -1039,6 +1050,23 @@ const navigatorViewSizeOptions = computed(() => {
   return result;
 });
 
+const focusLoupeZoomOptions = [
+  { label: '100%', value: 100 },
+  { label: '150%', value: 150 },
+  { label: '200%', value: 200 },
+  { label: '400%', value: 400 },
+  { label: '800%', value: 800 },
+];
+const focusLoupeZoomModel = computed({
+  get() {
+    const value = Number(config.settings.focusLoupeZoom);
+    return focusLoupeZoomOptions.some((option) => option.value === value) ? value : 100;
+  },
+  set(value: number) {
+    config.setFocusLoupeZoom(value);
+  },
+});
+
 const viewBackgroundOptions = computed(() => {
   const options = localeMsg.value.settings.image_view.view_background_options;
   return options.map((label: string, value: number) => ({ label, value }));
@@ -1555,6 +1583,9 @@ watch(() => config.settings.navigatorViewMode, (newValue) => {
 });
 watch(() => config.settings.navigatorViewSize, (newValue) => {
   emit('settings-navigatorViewSize-changed', newValue);
+});
+watch(() => config.settings.focusLoupeZoom, (newValue) => {
+  emit('settings-focusLoupeZoom-changed', newValue);
 });
 watch(() => config.settings.dblClickAction, (newValue) => {
   emit('settings-dblClickAction-changed', newValue);

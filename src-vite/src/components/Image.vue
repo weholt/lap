@@ -46,7 +46,7 @@
         <img
           ref="activeImageEl"
           :src="src"
-          :class="isGrabbing ? (isDraggingImage ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-pointer'"
+          :class="showFocusLoupe ? 'cursor-none' : (isGrabbing ? (isDraggingImage ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-pointer')"
           :style="getImageStyle(index)"
           draggable="false"
           @mousedown="handleImageMouseDown"
@@ -58,6 +58,15 @@
         />
       </div>
     </TransitionGroup>
+
+    <Teleport to="body">
+      <canvas
+        v-show="showFocusLoupe"
+        ref="focusLoupeCanvas"
+        class="pointer-events-none fixed z-[200] rounded-full shadow-xl ring-2 ring-white/90"
+        :style="focusLoupeStyle"
+      ></canvas>
+    </Teleport>
 
     <!-- Faces Overlay -->
     <div 
@@ -193,6 +202,7 @@ import { getFacesForFile, getFileThumbById, getFfmpegBackedImageExtensions } fro
 import { RawFace, Face } from '@/common/types';
 
 import { IconError } from '@/common/icons';
+import { focusLoupeEnabled, focusLoupeZoomPercent } from '@/common/focusLoupe';
 
 // Props
 const props = defineProps({
@@ -496,6 +506,11 @@ const adjustmentStyle = computed(() => (src: string) => {
   return '';
 });
 
+function rawPreviewSource() {
+  if (focusLoupeEnabled.value) return 'processed';
+  return config.settings.rawThumbnailSource === 'embedded' ? 'embedded' : 'processed';
+}
+
 function loadImageResource(filePath?: string) {
   if (!filePath) {
     return Promise.reject(new Error('Missing file path'));
@@ -541,7 +556,7 @@ function loadImageResource(filePath?: string) {
         filePath,
         false,
         props.fileVersion,
-        config.settings.rawThumbnailSource,
+        rawPreviewSource(),
       );
       if (!src) {
         preloadCache.delete(filePath);
@@ -1057,6 +1072,10 @@ onBeforeUnmount(() => {
     clearTimeout(navigatorAutoHideTimer);
   }
   cancelWarmImageScheduling();
+  if (focusLoupeFrame) {
+    cancelAnimationFrame(focusLoupeFrame);
+    focusLoupeFrame = 0;
+  }
 });
 
 function handleGlobalPinchWheel(event: WheelEvent) {
@@ -1221,18 +1240,25 @@ watch([
   () => props.filePath,
   () => props.fileVersion,
   () => Number(props.fileType || 0) === 3 ? config.settings.rawThumbnailSource : '',
-], async ([newFilePath, newFileVersion, newRawThumbnailSource], [oldFilePath, oldFileVersion, oldRawThumbnailSource]) => {
+  () => focusLoupeEnabled.value,
+], async ([newFilePath, newFileVersion, newRawThumbnailSource, focusOn], [oldFilePath, oldFileVersion, oldRawThumbnailSource, oldFocusOn]) => {
+  const sameFile = !!newFilePath && newFilePath === oldFilePath && newFileVersion === oldFileVersion;
+  const previewSourceChanged = newRawThumbnailSource !== oldRawThumbnailSource || focusOn !== oldFocusOn;
+  if (sameFile && previewSourceChanged) {
+    const usesBackendPreview = shouldUseBackendPreview(newFilePath, Number(props.fileType || 0));
+    const desiredPreview = usesBackendPreview
+      ? getPreviewUrl(props.fileId, newFilePath, false, props.fileVersion, rawPreviewSource())
+      : '';
+    if (!usesBackendPreview || imageSrc.value[activeImage.value] === desiredPreview) {
+      return;
+    }
+    preloadCache.delete(newFilePath);
+  }
+
   // Cancel previous loading
   currentLoadingId.value++;
   const loadingId = currentLoadingId.value;
   cancelWarmImageScheduling();
-  if (
-    newFilePath
-    && newFilePath === oldFilePath
-    && (newFileVersion !== oldFileVersion || newRawThumbnailSource !== oldRawThumbnailSource)
-  ) {
-    preloadCache.delete(newFilePath);
-  }
   clearStalePreloadEntries(newFilePath || '', props.nextFilePath || '');
 
   if (loadingTimeout) {
@@ -1260,7 +1286,7 @@ watch([
     const imageResultPromise = loadImageResource(newFilePath)
       .then((loaded) => ({ kind: 'image' as const, loaded }));
     const usesRealtimePreview = (await ffmpegExtensionsPromise).has(getFileExtension(newFilePath).toLowerCase());
-    const thumbnailResultPromise = !usesRealtimePreview && (usesBackendPreview || props.showThumbnailPlaceholder)
+    const thumbnailResultPromise = !focusLoupeEnabled.value && !usesRealtimePreview && (usesBackendPreview || props.showThumbnailPlaceholder)
       ? getEffectiveThumbnailSrc()
         .then(async (src) => {
           if (!src) return { kind: 'thumbnail' as const, placeholder: null };
@@ -1382,7 +1408,7 @@ watch(() => props.fileId, () => {
 
 // watch thumbnail source changes to update placeholder if original is still loading
 watch(displayThumbnailSrc, async (newThumbSrc) => {
-  if (!newThumbSrc) return;
+  if (!newThumbSrc || focusLoupeEnabled.value) return;
   const currentFilePath = props.filePath;
   if (!currentFilePath) return;
 
@@ -1400,7 +1426,7 @@ watch(displayThumbnailSrc, async (newThumbSrc) => {
     currentFilePath,
     false,
     props.fileVersion,
-    config.settings.rawThumbnailSource,
+    rawPreviewSource(),
   );
   
   if (isCurrentlyShowingFullImage) return;
@@ -1712,6 +1738,204 @@ const zoomReset = (force: boolean = false) => {
   zoomImage(mousePos.x - containerPosVal.x, mousePos.y - containerPosVal.y, getActualSizeScale(), force);
 };
 
+const FOCUS_LOUPE_CSS = 240;
+const focusLoupeCanvas = ref<HTMLCanvasElement | null>(null);
+const focusLoupePoint = ref<{ x: number; y: number } | null>(null);
+const focusLoupeImage = ref<HTMLImageElement | null>(null);
+let focusLoupeFrame = 0;
+
+const showFocusLoupe = computed(() =>
+  focusLoupeEnabled.value
+  && !props.isSlideShow
+  && !loadError.value
+  && focusLoupePoint.value !== null
+);
+
+const focusLoupeStyle = computed(() => {
+  const point = focusLoupePoint.value;
+  if (!point) return undefined;
+  return {
+    width: `${FOCUS_LOUPE_CSS}px`,
+    height: `${FOCUS_LOUPE_CSS}px`,
+    left: `${point.x - FOCUS_LOUPE_CSS / 2}px`,
+    top: `${point.y - FOCUS_LOUPE_CSS / 2}px`,
+  };
+});
+
+function contentPointAt(clientX: number, clientY: number) {
+  const root = container.value as HTMLElement | null;
+  if (!root) return null;
+  const rect = root.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  const layout = containerSize.value;
+  const cursorX = ((clientX - rect.left) * layout.width) / rect.width;
+  const cursorY = ((clientY - rect.top) * layout.height) / rect.height;
+  const imgIndex = activeImage.value;
+  const imgSize = imageSize.value[imgIndex];
+  const scaleVal = scale.value[imgIndex];
+  if (!imgSize.width || !imgSize.height || !scaleVal) return null;
+  const pos = position.value[imgIndex];
+  const ox = cursorX - (pos.x + imgSize.width / 2);
+  const oy = cursorY - (pos.y + imgSize.height / 2);
+  const angle = imageRotate.value[imgIndex] * Math.PI / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return {
+    x: imgSize.width / 2 + (ox * cos + oy * sin) / scaleVal,
+    y: imgSize.height / 2 + (-ox * sin + oy * cos) / scaleVal,
+    angle,
+    imgIndex,
+  };
+}
+
+function paintFocusLoupe() {
+  const canvas = focusLoupeCanvas.value;
+  const point = focusLoupePoint.value;
+  const img = focusLoupeImage.value;
+  if (!canvas || !point || !img || !img.naturalWidth || !img.naturalHeight) return;
+  const mapped = contentPointAt(point.x, point.y);
+  if (!mapped) return;
+  const imgSize = imageSize.value[mapped.imgIndex];
+  if (
+    mapped.x < 0 || mapped.y < 0
+    || mapped.x > imgSize.width || mapped.y > imgSize.height
+  ) {
+    focusLoupePoint.value = null;
+    return;
+  }
+
+  const dpr = window.devicePixelRatio || 1;
+  const pixelSize = Math.round(FOCUS_LOUPE_CSS * dpr);
+  if (canvas.width !== pixelSize || canvas.height !== pixelSize) {
+    canvas.width = pixelSize;
+    canvas.height = pixelSize;
+  }
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const zoom = focusLoupeZoomPercent() / 100;
+  const fullWidth = props.imageWidth > 0 ? props.imageWidth : img.naturalWidth;
+  const fullHeight = props.imageHeight > 0 ? props.imageHeight : img.naturalHeight;
+  const bitmapX = mapped.x / imgSize.width * img.naturalWidth;
+  const bitmapY = mapped.y / imgSize.height * img.naturalHeight;
+  // Sample the same portion of the full photo at every preview size, so a
+  // thumbnail and the original stay at the configured magnification.
+  const sampleFull = (FOCUS_LOUPE_CSS * dpr * Math.SQRT2) / zoom;
+  const sampleW = sampleFull * img.naturalWidth / fullWidth;
+  const sampleH = sampleFull * img.naturalHeight / fullHeight;
+  const dest = FOCUS_LOUPE_CSS * Math.SQRT2;
+  const center = FOCUS_LOUPE_CSS / 2;
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, FOCUS_LOUPE_CSS, FOCUS_LOUPE_CSS);
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, FOCUS_LOUPE_CSS, FOCUS_LOUPE_CSS);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(center, center, center - 1, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.translate(center, center);
+  ctx.rotate(mapped.angle);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(
+    img,
+    bitmapX - sampleW / 2,
+    bitmapY - sampleH / 2,
+    sampleW,
+    sampleH,
+    -dest / 2,
+    -dest / 2,
+    dest,
+    dest,
+  );
+  ctx.restore();
+
+  ctx.save();
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  const zoomLabel = `${focusLoupeZoomPercent()}%`;
+  ctx.strokeText(zoomLabel, center, FOCUS_LOUPE_CSS - 16);
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.fillText(zoomLabel, center, FOCUS_LOUPE_CSS - 16);
+  const drawCrosshair = (color: string, width: number) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(center - 10, center);
+    ctx.lineTo(center - 3, center);
+    ctx.moveTo(center + 3, center);
+    ctx.lineTo(center + 10, center);
+    ctx.moveTo(center, center - 10);
+    ctx.lineTo(center, center - 3);
+    ctx.moveTo(center, center + 3);
+    ctx.lineTo(center, center + 10);
+    ctx.stroke();
+  };
+  drawCrosshair('rgba(0,0,0,0.55)', 3);
+  drawCrosshair('rgba(255,255,255,0.92)', 1.25);
+  ctx.restore();
+}
+
+function scheduleFocusLoupeDraw() {
+  if (!showFocusLoupe.value) return;
+  if (focusLoupeFrame) return;
+  focusLoupeFrame = requestAnimationFrame(() => {
+    focusLoupeFrame = 0;
+    paintFocusLoupe();
+  });
+}
+
+function updateFocusLoupe(event: MouseEvent) {
+  if (!focusLoupeEnabled.value || props.isSlideShow || loadError.value) {
+    focusLoupePoint.value = null;
+    return;
+  }
+  const mapped = contentPointAt(event.clientX, event.clientY);
+  const imgSize = mapped ? imageSize.value[mapped.imgIndex] : null;
+  if (
+    !mapped || !imgSize
+    || mapped.x < 0 || mapped.y < 0
+    || mapped.x > imgSize.width || mapped.y > imgSize.height
+  ) {
+    focusLoupePoint.value = null;
+    return;
+  }
+  const image = event.currentTarget as HTMLImageElement;
+  if (!image.naturalWidth || !image.naturalHeight) {
+    focusLoupePoint.value = null;
+    return;
+  }
+  focusLoupeImage.value = image;
+  focusLoupePoint.value = { x: event.clientX, y: event.clientY };
+  scheduleFocusLoupeDraw();
+}
+
+watch(focusLoupeEnabled, (enabled) => {
+  if (!enabled) focusLoupePoint.value = null;
+});
+
+watch(() => props.isSlideShow, (playing) => {
+  if (playing) focusLoupePoint.value = null;
+});
+
+watch(() => props.filePath, () => {
+  focusLoupePoint.value = null;
+});
+
+watch(() => imageSrc.value[activeImage.value], () => {
+  scheduleFocusLoupeDraw();
+});
+
+watch(() => config.settings.focusLoupeZoom, () => {
+  scheduleFocusLoupeDraw();
+});
+
+watch([scale, position, imageRotate], () => {
+  scheduleFocusLoupeDraw();
+});
+
 // start dragging
 const handleImageMouseDown = (event: MouseEvent) => {
   if (isTouchActive.value) return; // touch path owns this gesture
@@ -1742,6 +1966,7 @@ const handleImageMouseMove = (event: MouseEvent) => {
   // update mouse position
   mousePosition.value = { x: event.clientX, y: event.clientY };
   updatePosition();
+  updateFocusLoupe(event);
 
   if (!isDraggingImage.value) return;
 
@@ -1765,6 +1990,7 @@ const handleImageMouseUp = () => {
 // mouse leave
 // reset mouse position to the center when leaving the container
 const handleImageMouseLeave = () => {
+  focusLoupePoint.value = null;
   // purpose: when clicking zoom fit/reset, the image will be centered
   // and the mouse position will be set to the center of the container
   const container = containerSize.value;

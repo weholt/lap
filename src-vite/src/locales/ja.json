@@ -1130,6 +1130,8 @@
       "zoom_out": "縮小",
       "zoom_fit": "ウィンドウに合わせる",
       "zoom_actual": "実際のサイズ",
+      "focus_loupe_on": "ピントを確認",
+      "focus_loupe_off": "ピント確認を終了",
       "fullscreen": "全画面",
       "exit_fullscreen": "全画面終了",
       "pin": "バーを固定",
@@ -1351,6 +1353,8 @@
         "特大 (400 px)"
       ],
       "section_view": "表示",
+      "focus_loupe_zoom": "ピント拡大率",
+      "focus_loupe_zoom_hint": "ピント確認の拡大率です。100%は等倍です。",
       "view_background": "背景",
       "view_background_hint": "ビューアの背景色を選択します",
       "view_background_options": [

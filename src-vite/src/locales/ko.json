@@ -1130,6 +1130,8 @@
       "zoom_out": "축소",
       "zoom_fit": "창 맞춤",
       "zoom_actual": "실제 크기",
+      "focus_loupe_on": "초점 확인",
+      "focus_loupe_off": "초점 확인 끄기",
       "fullscreen": "전체 화면",
       "exit_fullscreen": "전체 화면 종료",
       "pin": "도구 모음 고정",
@@ -1351,6 +1353,8 @@
         "아주 크게 (400 px)"
       ],
       "section_view": "보기",
+      "focus_loupe_zoom": "초점 확대",
+      "focus_loupe_zoom_hint": "초점 확인 안의 확대 배율입니다. 100%는 실제 픽셀입니다.",
       "view_background": "배경",
       "view_background_hint": "뷰어 배경색을 선택하세요",
       "view_background_options": [

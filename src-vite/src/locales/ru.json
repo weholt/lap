@@ -1130,6 +1130,8 @@
       "zoom_out": "Уменьшить",
       "zoom_fit": "По размеру окна",
       "zoom_actual": "1:1",
+      "focus_loupe_on": "Проверить резкость",
+      "focus_loupe_off": "Скрыть лупу",
       "fullscreen": "Полный экран",
       "exit_fullscreen": "Обычный режим",
       "pin": "Закрепить",
@@ -1351,6 +1353,8 @@
         "Большой (400 пкс)"
       ],
       "section_view": "Просмотр",
+      "focus_loupe_zoom": "Масштаб резкости",
+      "focus_loupe_zoom_hint": "Увеличение внутри проверки резкости. 100% — реальные пиксели.",
       "view_background": "Фон",
       "view_background_hint": "Выберите цвет фона при просмотре",
       "view_background_options": [

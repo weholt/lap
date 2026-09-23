@@ -1130,6 +1130,8 @@
       "zoom_out": "Zoom -",
       "zoom_fit": "An Fenster anpassen",
       "zoom_actual": "Tatsächliche Größe",
+      "focus_loupe_on": "Schärfe prüfen",
+      "focus_loupe_off": "Schärfeprüfung ausblenden",
       "fullscreen": "Vollbild",
       "exit_fullscreen": "Vollbild beenden",
       "pin": "Leiste anheften",
@@ -1351,6 +1353,8 @@
         "Extra groß (400 px)"
       ],
       "section_view": "Ansicht",
+      "focus_loupe_zoom": "Fokus-Zoom",
+      "focus_loupe_zoom_hint": "Vergrößerung in der Schärfeprüfung. 100 % sind die tatsächlichen Pixel.",
       "view_background": "Hintergrund",
       "view_background_hint": "Hintergrundfarbe für die Ansicht wählen",
       "view_background_options": [

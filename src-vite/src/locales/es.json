@@ -1130,6 +1130,8 @@
       "zoom_out": "Alejar",
       "zoom_fit": "Ajustar a la ventana",
       "zoom_actual": "Tamaño real",
+      "focus_loupe_on": "Comprobar el enfoque",
+      "focus_loupe_off": "Ocultar la lupa de enfoque",
       "fullscreen": "Pantalla comp.",
       "exit_fullscreen": "Salir pantalla comp.",
       "pin": "Fijar barra",
@@ -1351,6 +1353,8 @@
         "Extra grande (400 px)"
       ],
       "section_view": "Vista",
+      "focus_loupe_zoom": "Zoom de enfoque",
+      "focus_loupe_zoom_hint": "Aumento dentro del comprobador de enfoque. 100 % son los píxeles reales.",
       "view_background": "Fondo",
       "view_background_hint": "Elige el color de fondo del visor",
       "view_background_options": [

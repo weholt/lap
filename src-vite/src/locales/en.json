@@ -1130,6 +1130,8 @@
       "zoom_out": "Zoom out",
       "zoom_fit": "Fit to window",
       "zoom_actual": "Actual size",
+      "focus_loupe_on": "Check focus",
+      "focus_loupe_off": "Hide focus check",
       "fullscreen": "Fullscreen",
       "exit_fullscreen": "Exit fullscreen",
       "pin": "Pin toolbar",
@@ -1351,6 +1353,8 @@
         "Extra Large (400 px)"
       ],
       "section_view": "View",
+      "focus_loupe_zoom": "Focus zoom",
+      "focus_loupe_zoom_hint": "Magnification inside the focus checker. 100% shows actual pixels.",
       "view_background": "Background",
       "view_background_hint": "Choose the viewer background color",
       "view_background_options": [

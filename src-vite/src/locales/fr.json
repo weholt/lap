@@ -1130,6 +1130,8 @@
       "zoom_out": "Zoom arr.",
       "zoom_fit": "Ajuster à la fenêtre",
       "zoom_actual": "Taille réelle",
+      "focus_loupe_on": "Vérifier la netteté",
+      "focus_loupe_off": "Masquer la loupe",
       "fullscreen": "Plein écran",
       "exit_fullscreen": "Quitter plein écran",
       "pin": "Épingler barre",
@@ -1351,6 +1353,8 @@
         "Très grand (400 px)"
       ],
       "section_view": "Affichage",
+      "focus_loupe_zoom": "Zoom de netteté",
+      "focus_loupe_zoom_hint": "Grossissement dans la loupe. 100 % correspond aux pixels réels.",
       "view_background": "Arrière-plan",
       "view_background_hint": "Choisissez la couleur d’arrière-plan de la visionneuse",
       "view_background_options": [

@@ -188,6 +188,9 @@ if (isMainWindow) {
   listen('settings-navigatorViewSize-changed', (event) => {
     config.setNavigatorViewSize(event.payload)
   })
+  listen('settings-focusLoupeZoom-changed', (event) => {
+    config.setFocusLoupeZoom(event.payload)
+  })
   listen('settings-viewBackground-changed', (event) => {
     config.setViewBackground(event.payload)
   })

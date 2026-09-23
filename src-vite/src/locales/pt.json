@@ -1130,6 +1130,8 @@
       "zoom_out": "Reduzir",
       "zoom_fit": "Ajustar à janela",
       "zoom_actual": "Tamanho real",
+      "focus_loupe_on": "Verificar o foco",
+      "focus_loupe_off": "Ocultar a lupa de foco",
       "fullscreen": "Tela cheia",
       "exit_fullscreen": "Sair tela cheia",
       "pin": "Fixar barra",
@@ -1351,6 +1353,8 @@
         "Extra grande (400 px)"
       ],
       "section_view": "Visualização",
+      "focus_loupe_zoom": "Zoom do foco",
+      "focus_loupe_zoom_hint": "Ampliação dentro do verificador de foco. 100% mostra os pixels reais.",
       "view_background": "Fundo",
       "view_background_hint": "Escolha a cor de fundo do visualizador",
       "view_background_options": [
