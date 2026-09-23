@@ -73,14 +73,14 @@ Lap is folder-first, but not every piece of information shown in Lap is embedded
 ### What stays with the file
 
 - Your original photos and videos always remain ordinary files in their existing folders.
-- When Lap indexes a photo, it reads metadata already stored with that file: embedded EXIF, IPTC, and XMP, plus a sibling XMP sidecar (`photo.xmp` or `photo.jpg.xmp`). Title, headline, description, keywords, creator, copyright, credit, label, file rating, and recorded place are shown in the file info panel and included in text search. Sidecar descriptive values are used ahead of embedded XMP, then IPTC. Capture details and GPS that EXIF already contains are kept; IPTC and XMP fill those fields only when they are empty. Orientation still comes from EXIF.
+- When Lap indexes a photo, it reads metadata already stored with that file: embedded EXIF, IPTC, and XMP, plus a sibling XMP sidecar (`photo.xmp` or `photo.jpg.xmp`). Title, headline, description, keywords, creator, copyright, credit, label, file rating, and recorded place are shown in the file info panel and included in text search. Keywords from that metadata are also added as Lap tags, reusing a tag that already has the same name. Sidecar descriptive values are used ahead of embedded XMP, then IPTC. Capture details and GPS that EXIF already contains are kept; IPTC and XMP fill those fields only when they are empty. Orientation still comes from EXIF.
 - A bound `.xmp` sidecar stays with the photo when you rename, move, copy, or delete it in Lap. `.xmp` files are not shown as photos. Apple AAE files remain edit sidecars and are not read as IPTC or XMP. An external sidecar edit is picked up on the next folder scan, even when the image file itself did not change.
 - Saving a built-in image edit writes the resulting image to the selected destination.
 - When you rename, move, copy, or delete files **in Lap**, Lap updates its local catalog at the same time. It also keeps supported grouped assets, such as Apple Live Photo components, AAE sidecars, bound XMP sidecars, and enabled RAW + JPEG/HEIC pairs, together.
 
 ### What is stored locally by Lap
 
-The following are Lap library data. They are stored in Lap's local database or library configuration, not written into EXIF, IPTC, or XMP sidecars, and they are not replaced by keywords, labels, or ratings found in the file. The file rating shown from XMP is separate from the Lap rating you set in the app:
+The following are Lap library data. They are stored in Lap's local database or library configuration and are not written into EXIF, IPTC, or XMP sidecars. Keywords found in the file are copied into Lap tags, and a file rating is copied into the Lap rating only when that rating is still unset. Labels and other file metadata do not replace comments, favorites, or culling. The file rating shown from XMP is still listed separately from the Lap rating:
 
 - Collections, Tags, Comments, Favorites, Ratings, and Culling states (including Picks and Rejects)
 - Smart Albums and their rules, grouping, sorting, and ordering

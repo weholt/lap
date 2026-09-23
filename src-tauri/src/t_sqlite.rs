@@ -1498,7 +1498,7 @@ pub struct AFile {
     pub live_photo_video_path: Option<String>, // paired Live Photo MOV path
     pub motion_photo_offset: Option<i64>,   // byte offset of embedded MP4 (Android Motion Photo)
 
-    // File-owned descriptive metadata. These are not Lap ratings, tags, or comments.
+    // File-owned descriptive metadata from the image or sidecar. Keywords are also applied as Lap tags.
     #[serde(default)]
     pub e_title: Option<String>,
     #[serde(default)]
@@ -3820,10 +3820,23 @@ impl AFile {
             return Self::add_to_db(folder_id, file_path, file_type, last_scan_time);
         }
 
-        let new_file = Self::fetch(folder_id, file_path)?;
-        new_file
-            .map(|f| (f, 1))
-            .ok_or_else(|| format!("Inserted file missing from DB: {}", file_path))
+        let mut new_file = Self::fetch(folder_id, file_path)?
+            .ok_or_else(|| format!("Inserted file missing from DB: {}", file_path))?;
+        Self::apply_metadata_keyword_tags(&mut new_file);
+        Ok((new_file, 1))
+    }
+
+    fn apply_metadata_keyword_tags(file: &mut Self) {
+        let Some(file_id) = file.id else {
+            return;
+        };
+        match ATag::apply_keywords_to_file(file_id, &file.e_keywords) {
+            Ok(true) => file.has_tags = Some(true),
+            Ok(false) => {}
+            Err(error) => {
+                eprintln!("Skipped applying metadata keywords as tags: {}", error);
+            }
+        }
     }
 
     /// get a file info from db by file_id
@@ -3929,7 +3942,11 @@ impl AFile {
         // update the file info
         Self::update(file_id, &new_file_info)?;
 
-        Self::get_file_info(file_id)
+        let mut updated = Self::get_file_info(file_id)?;
+        if let Some(file) = updated.as_mut() {
+            Self::apply_metadata_keyword_tags(file);
+        }
+        Ok(updated)
     }
 
     /// Backfill Motion Photo metadata without re-extracting all file metadata.
@@ -3981,7 +3998,7 @@ impl AFile {
     ) -> Result<(), String> {
         let file_id = file.id.ok_or_else(|| "File is missing an id".to_string())?;
         let fresh = Self::new(file.folder_id, file_path, file.file_type.unwrap_or(0))?;
-        let conn = open_conn()?;
+        let mut conn = open_conn()?;
         Self::write_refreshed_file_metadata(&conn, file_id, &fresh, last_scan_time)?;
         if file.rating.unwrap_or(0) == 0 {
             if let Some(rating) = fresh.embedded_rating.filter(|rating| *rating > 0) {
@@ -3991,6 +4008,13 @@ impl AFile {
                 )
                 .map_err(|error| error.to_string())?;
                 file.rating = Some(rating);
+            }
+        }
+        match ATag::apply_keywords_to_file_on(&mut conn, file_id, &fresh.e_keywords) {
+            Ok(true) => file.has_tags = Some(true),
+            Ok(false) => {}
+            Err(error) => {
+                eprintln!("Skipped applying metadata keywords as tags: {}", error);
             }
         }
         file.taken_date = fresh.taken_date;
@@ -8022,6 +8046,91 @@ impl ATag {
         })
     }
 
+    /// Create missing tags from file keywords and attach them to the file.
+    /// Existing tags with the same name (case-insensitive) are reused. Extra
+    /// Lap tags already on the file are left in place.
+    pub fn apply_keywords_to_file(file_id: i64, keywords: &[String]) -> Result<bool, String> {
+        let mut conn = open_conn()?;
+        Self::apply_keywords_to_file_on(&mut conn, file_id, keywords)
+    }
+
+    pub(crate) fn apply_keywords_to_file_on(
+        conn: &mut Connection,
+        file_id: i64,
+        keywords: &[String],
+    ) -> Result<bool, String> {
+        if keywords.iter().all(|keyword| keyword.trim().is_empty()) {
+            return Ok(false);
+        }
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let group_id: i64 = tx
+            .query_row(
+                "SELECT id FROM atag_groups WHERE is_default = 1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let mut applied = false;
+        for keyword in keywords {
+            let name = keyword.trim();
+            if name.is_empty() || name.chars().count() > 255 {
+                continue;
+            }
+            let tag_id: i64 = match tx
+                .query_row(
+                    "SELECT id FROM atags WHERE name = ?1 COLLATE NOCASE",
+                    [name],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?
+            {
+                Some(id) => id,
+                None => match tx.execute(
+                    "INSERT INTO atags(name, group_id) VALUES (?1, ?2)",
+                    params![name, group_id],
+                ) {
+                    Ok(_) => tx.last_insert_rowid(),
+                    Err(error) => tx
+                        .query_row(
+                            "SELECT id FROM atags WHERE name = ?1 COLLATE NOCASE",
+                            [name],
+                            |row| row.get(0),
+                        )
+                        .map_err(|_| error.to_string())?,
+                },
+            };
+            tx.execute(
+                "INSERT OR IGNORE INTO afile_tags (file_id, tag_id) VALUES (?1, ?2)",
+                params![file_id, tag_id],
+            )
+            .map_err(|e| e.to_string())?;
+            applied = true;
+        }
+        if !applied {
+            tx.commit().map_err(|e| e.to_string())?;
+            return Ok(false);
+        }
+        tx.execute(
+            "UPDATE afiles
+             SET has_tags = EXISTS (
+                 SELECT 1 FROM afile_tags WHERE afile_tags.file_id = afiles.id
+             )
+             WHERE id = ?1",
+            params![file_id],
+        )
+        .map_err(|e| e.to_string())?;
+        let has_tags: bool = tx
+            .query_row(
+                "SELECT COALESCE(has_tags, 0) FROM afiles WHERE id = ?1",
+                params![file_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(has_tags)
+    }
+
     pub fn add(name: &str, group_id: Option<i64>) -> Result<Self, String> {
         let trimmed = name.trim();
         if trimmed.is_empty() || trimmed.chars().count() > 255 {
@@ -10356,5 +10465,130 @@ mod tag_group_query_tests {
         assert_eq!(title, "From sidecar");
         assert_eq!(artist, "Ada");
         assert_eq!(keywords, "[\"Oslo\"]");
+    }
+
+    fn keyword_tag_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "PRAGMA foreign_keys = ON;
+             CREATE TABLE atag_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                is_default INTEGER NOT NULL DEFAULT 0
+             );
+             INSERT INTO atag_groups(name, is_default) VALUES ('Default', 1);
+             CREATE TABLE atags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                group_id INTEGER REFERENCES atag_groups(id)
+             );
+             CREATE TABLE afiles (id INTEGER PRIMARY KEY, has_tags INTEGER);
+             INSERT INTO afiles(id, has_tags) VALUES (1, 0), (2, 0);
+             CREATE TABLE afile_tags (
+                file_id INTEGER NOT NULL,
+                tag_id INTEGER NOT NULL,
+                PRIMARY KEY (file_id, tag_id),
+                FOREIGN KEY (file_id) REFERENCES afiles(id) ON DELETE CASCADE,
+                FOREIGN KEY (tag_id) REFERENCES atags(id) ON DELETE CASCADE
+             );",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn file_metadata_keywords_become_tags_reuse_and_stay_additive() {
+        let mut conn = keyword_tag_db();
+        conn.execute("INSERT INTO atags(name, group_id) VALUES ('Oslo', 1)", [])
+            .unwrap();
+        assert!(
+            ATag::apply_keywords_to_file_on(
+                &mut conn,
+                1,
+                &["Oslo".to_string(), "Night".to_string()],
+            )
+            .unwrap()
+        );
+        assert!(
+            ATag::apply_keywords_to_file_on(&mut conn, 2, &["oslo".to_string()]).unwrap()
+        );
+        assert!(
+            !ATag::apply_keywords_to_file_on(&mut conn, 1, &[]).unwrap()
+        );
+
+        let names: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT name FROM atags ORDER BY name COLLATE NOCASE")
+                .unwrap();
+            stmt.query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        assert_eq!(names, vec!["Night".to_string(), "Oslo".to_string()]);
+
+        let file_one: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT t.name FROM afile_tags ft JOIN atags t ON t.id = ft.tag_id
+                     WHERE ft.file_id = 1 ORDER BY t.name COLLATE NOCASE",
+                )
+                .unwrap();
+            stmt.query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        assert_eq!(file_one, vec!["Night".to_string(), "Oslo".to_string()]);
+
+        conn.execute(
+            "INSERT INTO atags(name, group_id) VALUES ('Harbor', 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO afile_tags VALUES (1, last_insert_rowid())", [])
+            .unwrap();
+        assert!(
+            ATag::apply_keywords_to_file_on(&mut conn, 1, &["Night".to_string()]).unwrap()
+        );
+        let file_one_after: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT t.name FROM afile_tags ft JOIN atags t ON t.id = ft.tag_id
+                     WHERE ft.file_id = 1 ORDER BY t.name COLLATE NOCASE",
+                )
+                .unwrap();
+            stmt.query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        assert_eq!(
+            file_one_after,
+            vec![
+                "Harbor".to_string(),
+                "Night".to_string(),
+                "Oslo".to_string()
+            ]
+        );
+
+        let has_tags: i64 = conn
+            .query_row("SELECT has_tags FROM afiles WHERE id = 1", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(has_tags, 1);
+        let shared: i64 = conn
+            .query_row("SELECT COUNT(*) FROM atags WHERE name = 'Oslo'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(shared, 1);
+        let file_two_tag: String = conn
+            .query_row(
+                "SELECT t.name FROM afile_tags ft JOIN atags t ON t.id = ft.tag_id WHERE ft.file_id = 2",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(file_two_tag, "Oslo");
     }
 }

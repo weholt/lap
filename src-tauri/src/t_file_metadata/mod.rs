@@ -19,7 +19,7 @@ pub use sidecar::{
 };
 pub use xmp::parse_xmp;
 
-pub const EMBEDDED_METADATA_VERSION: i64 = 2;
+pub const EMBEDDED_METADATA_VERSION: i64 = 3;
 const MAX_KEYWORDS: usize = 64;
 const MAX_KEYWORD_CHARS: usize = 128;
 
