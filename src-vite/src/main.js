@@ -128,6 +128,9 @@ if (isMainWindow) {
   listen('settings-thumbnailSize-changed', (event) => {
     config.setThumbnailSize(event.payload)
   })
+  listen('settings-previewLongSide-changed', (event) => {
+    config.setPreviewLongSide(event.payload)
+  })
   listen('settings-rawThumbnailSource-changed', (event) => {
     config.setRawThumbnailSource(event.payload)
   })

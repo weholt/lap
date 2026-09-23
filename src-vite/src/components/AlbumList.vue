@@ -243,6 +243,33 @@
     />
 
     <!-- Remove album dialog -->
+    <ModalDialog
+      v-if="prerenderDialog"
+      :title="$t('import_organize.prerender_previews')"
+      :width="440"
+      @cancel="closePrerenderDialog"
+    >
+      <div class="space-y-2 text-xs">
+        <div class="flex items-center justify-between gap-3 text-base-content/75">
+          <span class="min-w-0 truncate">{{ prerenderDialog.name }}</span>
+          <span class="shrink-0 tabular-nums">{{ prerenderDialog.current.toLocaleString() }} / {{ prerenderDialog.total.toLocaleString() }}</span>
+        </div>
+        <progress
+          class="progress progress-primary w-full"
+          :value="prerenderDialog.total > 0 ? prerenderDialog.current : undefined"
+          :max="Math.max(prerenderDialog.total, 1)"
+        />
+        <div v-if="prerenderDialog.failed" class="text-error/70">{{ $t('import_organize.failed', { count: prerenderDialog.failed.toLocaleString() }) }}</div>
+        <div v-if="prerenderDialog.done" class="text-base-content/60">
+          {{ $t(prerenderDialog.cancelled ? 'import_organize.cancelled' : 'import_organize.complete') }}
+        </div>
+      </div>
+      <div class="mt-4 flex justify-end">
+        <button class="t-button-default" @click="closePrerenderDialog">
+          {{ prerenderDialog.done ? $t('msgbox.close') : $t('msgbox.cancel') }}
+        </button>
+      </div>
+    </ModalDialog>
     <MessageBox
       v-if="showRemoveAlbumMsgbox"
       :title="$t('msgbox.remove_album.title')"
@@ -276,7 +303,7 @@ import {
 import { getAlbumQueueIndex, getAlbumScanState, getAlbumScanIcon, shouldAnimateAlbumScanIcon } from '@/common/scanStatus';
 import { getAllAlbums, getAlbumVisibleCounts, getAllAlbumFolders, reorderAlbums, addAlbum, editAlbum, removeAlbum, 
          fetchFolder, expandFinalFolder, getFileThumbById,
-         getAlbum, checkAlbumAccessibility, cancelIndexing as cancelIndexingApi, listenIndexProgress, listenIndexFinished, recountAlbum } from '@/common/api';
+         getAlbum, checkAlbumAccessibility, cancelIndexing as cancelIndexingApi, listenIndexProgress, listenIndexFinished, recountAlbum, prerenderAlbumPreviews, cancelPrerenderAlbumPreviews } from '@/common/api';
 import { Album, Folder } from '@/common/types';
 import { useAlbumSelectionProvider, SelectionSource } from '@/composables/useAlbumSelection';
 
@@ -285,6 +312,7 @@ import AlbumEdit from '@/components/AlbumEdit.vue';
 import ImportOrganizeDialog from '@/components/ImportOrganizeDialog.vue';
 import ContextMenu from '@/components/ContextMenu.vue';
 import MessageBox from '@/components/MessageBox.vue';
+import ModalDialog from '@/components/ModalDialog.vue';
 import TButton from '@/components/TButton.vue';
 
 import {
@@ -299,6 +327,7 @@ import {
   IconRight,
   IconDragHandle,
   IconOrder,
+  IconPhoto,
   IconFolders,
   IconSearch,
   IconClose,
@@ -339,7 +368,44 @@ let unlistenIndexProgress: (() => void) | undefined;
 let unlistenIndexFinished: (() => void) | undefined;
 let unlistenAlbumsRefreshed: (() => void) | undefined;
 let unlistenAlbumFolderPathsMigrated: (() => void) | undefined;
+let unlistenHiPreviewProgress: (() => void) | undefined;
+let unlistenHiPreviewFinished: (() => void) | undefined;
 let albumCountRequest = 0;
+const prerenderDialog = ref<{
+  albumId: number;
+  name: string;
+  current: number;
+  total: number;
+  failed: number;
+  done: boolean;
+  cancelled: boolean;
+} | null>(null);
+
+async function startAlbumPrerender(album: Album) {
+  if (prerenderDialog.value && !prerenderDialog.value.done) return;
+  prerenderDialog.value = {
+    albumId: album.id,
+    name: album.name,
+    current: 0,
+    total: 0,
+    failed: 0,
+    done: false,
+    cancelled: false,
+  };
+  try {
+    await prerenderAlbumPreviews(album.id, Number(config.settings.previewLongSide || 1080));
+  } catch {
+    prerenderDialog.value = null;
+  }
+}
+
+async function closePrerenderDialog() {
+  if (prerenderDialog.value && !prerenderDialog.value.done) {
+    try { await cancelPrerenderAlbumPreviews(); } catch { /* the finished event closes the work */ }
+    return;
+  }
+  prerenderDialog.value = null;
+}
 
 async function refreshAlbumVisibleCounts() {
   const request = ++albumCountRequest;
@@ -688,6 +754,12 @@ const getMoreMenuItems = async (album: any) => {
       action: () => { importAlbum.value = album; }
     },
     {
+      label: localeMsg.value.import_organize.prerender_previews,
+      icon: IconPhoto,
+      disabled: !isAccessible || (!!prerenderDialog.value && !prerenderDialog.value.done),
+      action: () => { void startAlbumPrerender(album); }
+    },
+    {
       label: isAlbumQueued(album.id)
         ? localeMsg.value.menu.album.pause_scan
         : localeMsg.value.menu.album.scan,
@@ -814,6 +886,30 @@ onMounted( async () => {
       }
     }
     refreshFolderSearchFolders();
+  });
+
+  unlistenHiPreviewProgress = await listen('hi-preview-progress', (event: any) => {
+    const albumId = Number(event.payload?.albumId || 0);
+    if (!prerenderDialog.value || prerenderDialog.value.albumId !== albumId) return;
+    prerenderDialog.value = {
+      ...prerenderDialog.value,
+      current: Number(event.payload?.current || 0),
+      total: Number(event.payload?.total || 0),
+      failed: Number(event.payload?.failed || 0),
+    };
+  });
+  unlistenHiPreviewFinished = await listen('hi-preview-finished', (event: any) => {
+    const albumId = Number(event.payload?.albumId || 0);
+    if (!prerenderDialog.value || prerenderDialog.value.albumId !== albumId) return;
+    prerenderDialog.value = {
+      ...prerenderDialog.value,
+      current: Number(event.payload?.current || 0),
+      total: Number(event.payload?.total || 0),
+      failed: Number(event.payload?.failed || 0),
+      cancelled: Boolean(event.payload?.cancelled),
+      done: true,
+    };
+    void tauriEmit('import-files-added', { albumId });
   });
 
   // listen for index progress
@@ -945,6 +1041,8 @@ onBeforeUnmount(() => {
   if (unlistenIndexFinished) unlistenIndexFinished();
   if (unlistenAlbumsRefreshed) unlistenAlbumsRefreshed();
   if (unlistenAlbumFolderPathsMigrated) unlistenAlbumFolderPathsMigrated();
+  if (unlistenHiPreviewProgress) unlistenHiPreviewProgress();
+  if (unlistenHiPreviewFinished) unlistenHiPreviewFinished();
   uiStore.removeInputHandler('AlbumListDrag');
 });
 

@@ -1288,8 +1288,20 @@ export async function importFile(filePath, folderId, folderPath) {
   }
 }
 
-export async function importAndOrganize(albumId, sourcePath, destinationPath, layout, completedPaths = []) {
-  return await invoke('import_and_organize', { albumId, sourcePath, destinationPath, layout, completedPaths });
+export async function importAndOrganize(albumId, sourcePath, destinationPath, layout, completedPaths = [], prerenderPreviews = false, previewLongSide = 1080) {
+  return await invoke('import_and_organize', { albumId, sourcePath, destinationPath, layout, completedPaths, prerenderPreviews, previewLongSide });
+}
+
+export async function prerenderAlbumPreviews(albumId, previewLongSide = 1080) {
+  return await invoke('prerender_album_previews', { albumId, previewLongSide });
+}
+
+export async function cancelPrerenderAlbumPreviews() {
+  return await invoke('cancel_prerender_album_previews');
+}
+
+export async function cleanupRemovedAlbumPreviews() {
+  return await invoke('cleanup_removed_album_previews');
 }
 
 export async function cancelImportAndOrganize() {

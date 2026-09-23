@@ -142,17 +142,10 @@ int lap_jpeg_decode_rgb8(const char *file_path, unsigned int target_width,
   // Initialize early to prevent leak in setjmp handler
   *out_data = nullptr;
 
-  std::vector<unsigned char> file_data;
-  if (!lap_read_file(file_path, file_data)) {
+  FILE *file = lap_fopen_utf8(file_path, "rb");
+  if (!file) {
     if (err_buf && err_buf_len > 0) {
       std::snprintf(err_buf, err_buf_len, "Could not open file: %s", file_path);
-    }
-    return 0;
-  }
-
-  if (file_data.empty()) {
-    if (err_buf && err_buf_len > 0) {
-      std::snprintf(err_buf, err_buf_len, "File is empty: %s", file_path);
     }
     return 0;
   }
@@ -166,6 +159,7 @@ int lap_jpeg_decode_rgb8(const char *file_path, unsigned int target_width,
 
   if (setjmp(jerr.setjmp_buffer)) {
     jpeg_destroy_decompress(&cinfo);
+    std::fclose(file);
     if (*out_data) {
       std::free(*out_data);
       *out_data = nullptr;
@@ -177,16 +171,19 @@ int lap_jpeg_decode_rgb8(const char *file_path, unsigned int target_width,
   }
 
   jpeg_create_decompress(&cinfo);
-  jpeg_mem_src(&cinfo, file_data.data(),
-               static_cast<unsigned long>(file_data.size()));
+  jpeg_stdio_src(&cinfo, file);
   jpeg_read_header(&cinfo, TRUE);
 
-  // Calculate scaling factor (libjpeg supports 1/1, 1/2, 1/4, 1/8)
+  // libjpeg scales by 1, 1/2, 1/4, or 1/8. Pick the smallest decode whose
+  // long side is still at least the requested long side, so a 1080 px preview
+  // never materializes a multi-megapixel bitmap.
   unsigned int scale_denom = 1;
-  if (target_width > 0 && target_height > 0) {
-    while (scale_denom < 8 &&
-           cinfo.image_width >= target_width * scale_denom * 2 &&
-           cinfo.image_height >= target_height * scale_denom * 2) {
+  unsigned int long_edge = cinfo.image_width > cinfo.image_height
+                               ? cinfo.image_width
+                               : cinfo.image_height;
+  unsigned int target_long = target_width > target_height ? target_width : target_height;
+  if (target_long > 0 && long_edge > 0) {
+    while (scale_denom < 8 && long_edge / (scale_denom * 2) >= target_long) {
       scale_denom *= 2;
     }
   }
@@ -204,6 +201,7 @@ int lap_jpeg_decode_rgb8(const char *file_path, unsigned int target_width,
   *out_data = static_cast<unsigned char *>(std::malloc(total_size));
   if (!(*out_data)) {
     jpeg_destroy_decompress(&cinfo);
+    std::fclose(file);
     if (err_buf && err_buf_len > 0) {
       std::snprintf(err_buf, err_buf_len, "Memory allocation failed for JPEG decode");
     }
@@ -218,6 +216,7 @@ int lap_jpeg_decode_rgb8(const char *file_path, unsigned int target_width,
 
   jpeg_finish_decompress(&cinfo);
   jpeg_destroy_decompress(&cinfo);
+  std::fclose(file);
   return 1;
 }
 

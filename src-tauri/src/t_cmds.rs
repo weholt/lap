@@ -29,6 +29,7 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
@@ -566,12 +567,13 @@ pub async fn remove_album(state: State<'_, IndexCancellation>, id: i64) -> Resul
         .map(|c| c.current_library_id)
         .unwrap_or_else(|_| "default".to_string());
     let album_cache_dir = crate::t_config::get_app_cache_dir()
-        .map(|dir| dir.join(library_id).join(id.to_string()))
+        .map(|dir| dir.join(&library_id).join(id.to_string()))
         .map_err(|e| format!("Error while resolving album thumbnail cache path: {}", e))?;
     if album_cache_dir.exists() {
         std::fs::remove_dir_all(&album_cache_dir)
             .map_err(|e| format!("Error while removing album thumbnail cache: {}", e))?;
     }
+    crate::t_image::delete_hi_previews_for_album(&library_id, id);
 
     Ok(result)
 }
@@ -1764,6 +1766,8 @@ pub fn import_and_organize(
     destination_path: String,
     layout: String,
     completed_paths: Vec<String>,
+    prerender_previews: bool,
+    preview_long_side: u32,
 ) -> Result<(), String> {
     {
         let mut import = state.0.lock().map_err(|_| "Import cancellation state is unavailable")?;
@@ -1781,6 +1785,8 @@ pub fn import_and_organize(
             &destination_path,
             &layout,
             completed_paths.into_iter().collect(),
+            prerender_previews,
+            preview_long_side,
             |progress| { let _ = app_handle.emit("import-organize-progress", progress); },
             || cancellation.lock().map(|import| import.cancelled).unwrap_or(true),
         );
@@ -1792,6 +1798,115 @@ pub fn import_and_organize(
             Err(error) => ImportOrganizeFinished { result: None, error: Some(error) },
         };
         let _ = app_handle.emit("import-organize-finished", payload);
+    });
+    Ok(())
+}
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct HiPreviewProgress {
+    album_id: i64,
+    current: usize,
+    total: usize,
+    failed: usize,
+    cancelled: bool,
+}
+
+static HI_PREVIEW_CANCEL: AtomicBool = AtomicBool::new(false);
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HiPreviewCleanupResult {
+    albums_removed: u64,
+    bytes_freed: u64,
+}
+
+#[tauri::command]
+pub fn cleanup_removed_album_previews() -> Result<HiPreviewCleanupResult, String> {
+    let library_id = crate::t_config::load_app_config()
+        .map(|config| config.current_library_id)
+        .unwrap_or_else(|_| "default".to_string());
+    let conn = crate::t_sqlite::open_conn()?;
+    let mut stmt = conn
+        .prepare("SELECT id FROM albums")
+        .map_err(|error| error.to_string())?;
+    let live_album_ids = stmt
+        .query_map([], |row| row.get::<_, i64>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<std::collections::HashSet<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    let (albums_removed, bytes_freed) = crate::t_image::cleanup_orphan_hi_previews(&library_id, &live_album_ids)?;
+    Ok(HiPreviewCleanupResult { albums_removed, bytes_freed })
+}
+
+#[tauri::command]
+pub fn cancel_prerender_album_previews() {
+    HI_PREVIEW_CANCEL.store(true, Ordering::Relaxed);
+}
+
+#[tauri::command]
+pub fn prerender_album_previews(
+    app_handle: AppHandle,
+    album_id: i64,
+    preview_long_side: u32,
+) -> Result<(), String> {
+    let conn = crate::t_sqlite::open_conn()?;
+    crate::t_migration::ensure_hi_preview_column(&conn)?;
+    let targets = AFile::list_preview_targets(album_id)?;
+    let long_side = crate::t_image::normalize_preview_long_side(preview_long_side);
+    let library_id = crate::t_config::load_app_config()
+        .map(|config| config.current_library_id)
+        .unwrap_or_else(|_| "default".to_string());
+    HI_PREVIEW_CANCEL.store(false, Ordering::Relaxed);
+    tauri::async_runtime::spawn_blocking(move || {
+        let total = targets.len();
+        let mut failed = 0usize;
+        let mut processed = 0usize;
+        let mut cancelled = false;
+        let mut saved_ids = Vec::new();
+        let mut last_progress = std::time::Instant::now();
+        let report = |current, failed, cancelled| {
+            let _ = app_handle.emit("hi-preview-progress", HiPreviewProgress {
+                album_id, current, total, failed, cancelled,
+            });
+        };
+        report(0, 0, false);
+        for (file_id, path, file_type, orientation) in &targets {
+            if HI_PREVIEW_CANCEL.load(Ordering::Relaxed) {
+                cancelled = true;
+                break;
+            }
+            match crate::t_image::render_hi_preview(path, *file_type, *orientation, long_side)
+                .and_then(|data| crate::t_image::store_hi_preview(&library_id, album_id, *file_id, &data))
+            {
+                Ok(()) => saved_ids.push(*file_id),
+                Err(error) => {
+                    failed += 1;
+                    eprintln!("Skipped high resolution preview: {}", error);
+                }
+            }
+            processed += 1;
+            if saved_ids.len() >= 40 {
+                if let Err(error) = AFile::set_hi_preview_sizes(&saved_ids, Some(long_side as i64)) {
+                    failed += saved_ids.len();
+                    eprintln!("Skipped high resolution preview: {}", error);
+                }
+                saved_ids.clear();
+            }
+            if last_progress.elapsed() >= std::time::Duration::from_millis(200) {
+                report(processed, failed, false);
+                last_progress = std::time::Instant::now();
+            }
+        }
+        if !saved_ids.is_empty() {
+            if let Err(error) = AFile::set_hi_preview_sizes(&saved_ids, Some(long_side as i64)) {
+                failed += saved_ids.len();
+                eprintln!("Skipped high resolution preview: {}", error);
+            }
+        }
+        let _ = app_handle.emit("hi-preview-finished", HiPreviewProgress {
+            album_id, current: processed, total, failed, cancelled,
+        });
     });
     Ok(())
 }

@@ -123,6 +123,7 @@ export const useConfigStore = defineStore('configStore', {
       
       // grid view settings
       thumbnailSize: 512,         // gallery thumbnail quality: 256, 512, or 1024
+      previewLongSide: 1080,      // long side of pre-rendered high resolution previews
       rawThumbnailSource: 'processed', // processed | embedded
       mapProvider: 'global',      // global | tianditu
       tiandituToken: '',
@@ -285,6 +286,10 @@ export const useConfigStore = defineStore('configStore', {
     },
 
     // grid view settings
+    setPreviewLongSide(previewLongSide) {
+      const value = Number(previewLongSide);
+      this.settings.previewLongSide = [720, 1080, 1440, 2160].includes(value) ? value : 1080;
+    },
     setThumbnailSize(thumbnailSize) {
       this.settings.thumbnailSize = thumbnailSize;
     },

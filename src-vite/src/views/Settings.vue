@@ -488,6 +488,24 @@
             </div>
             <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
               <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                <div>{{ $t('settings.advanced.preview_long_side') }}</div>
+                <div class="text-xs text-base-content/30">{{ $t('settings.advanced.preview_long_side_hint') }}</div>
+              </div>
+              <select class="select select-bordered select-sm min-w-40 shrink-0" v-model="previewLongSideModel">
+                <option v-for="option in previewLongSideOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+              </select>
+            </div>
+            <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+              <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
+                <div>{{ $t('settings.advanced.preview_cleanup') }}</div>
+                <div class="text-xs text-base-content/30">{{ $t('settings.advanced.preview_cleanup_hint') }}</div>
+              </div>
+              <button class="btn btn-sm rounded-box shrink-0" :disabled="cleaningPreviews" @click="cleanRemovedAlbumPreviews">
+                {{ cleaningPreviews ? $t('settings.advanced.preview_cleanup_running') : $t('settings.advanced.preview_cleanup_action') }}
+              </button>
+            </div>
+            <div class="flex items-center justify-between gap-4 px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+              <div class="min-w-0 flex flex-col gap-0.5 text-sm leading-5">
                 <div>{{ $t('settings.advanced.thumbnail_quality') }}</div>
                 <div class="text-xs text-base-content/30">{{ $t('settings.advanced.thumbnail_quality_hint') }}</div>
               </div>
@@ -717,6 +735,7 @@ import {
   downloadMultilingualImageSearchModel,
   cancelMultilingualImageSearchModelDownload,
   listenImageSearchModelDownloadProgress,
+  cleanupRemovedAlbumPreviews as cleanupRemovedAlbumPreviewsApi,
 } from '@/common/api';
 import { formatFileSize, isLinux, isMac, setTheme, SCALE_VALUES } from '@/common/utils';
 import { getShortcutLabels, ShortcutActionId, ShortcutPlatform } from '@/common/shortcuts';
@@ -939,6 +958,39 @@ function commitTiandituToken() {
   config.settings.tiandituToken = token;
   tiandituTokenStatus.value = token ? 'saved' : 'empty';
 }
+
+const previewLongSideOptions = [
+  { label: '720 px', value: 720 },
+  { label: '1080 px', value: 1080 },
+  { label: '1440 px', value: 1440 },
+  { label: '2160 px', value: 2160 },
+];
+const cleaningPreviews = ref(false);
+async function cleanRemovedAlbumPreviews() {
+  if (cleaningPreviews.value) return;
+  cleaningPreviews.value = true;
+  try {
+    const result = await cleanupRemovedAlbumPreviewsApi();
+    toast.success(t('settings.advanced.preview_cleanup_done', {
+      count: result?.albumsRemoved ?? 0,
+      size: formatFileSize(result?.bytesFreed ?? 0),
+    }));
+  } catch (error: any) {
+    toast.error(error?.message || String(error));
+  } finally {
+    cleaningPreviews.value = false;
+  }
+}
+
+const previewLongSideModel = computed({
+  get() {
+    const value = Number(config.settings.previewLongSide);
+    return previewLongSideOptions.some((option) => option.value === value) ? value : 1080;
+  },
+  set(value: number) {
+    config.setPreviewLongSide(value);
+  },
+});
 
 function onThumbnailSizeChange(event: Event) {
   const next = normalizeThumbnailSize((event.target as HTMLSelectElement).value);
@@ -1512,6 +1564,9 @@ watch(() => config.settings.smallFileFilter, (newValue) => {
 // grid view settings
 watch(() => config.settings.thumbnailSize, (newValue) => {
   emit('settings-thumbnailSize-changed', newValue);
+});
+watch(() => config.settings.previewLongSide, (newValue) => {
+  emit('settings-previewLongSide-changed', newValue);
 });
 watch(() => config.settings.rawThumbnailSource, (newValue) => {
   emit('settings-rawThumbnailSource-changed', newValue);

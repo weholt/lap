@@ -1321,12 +1321,38 @@ pub struct ImportOrganizeResult {
 /// Copy supported media from a source folder into a folder in an album and
 /// create the corresponding folder/file records. `layout` is day, month, year,
 /// or none.
+pub fn prerender_imported_preview(
+    album_id: i64,
+    folder_id: i64,
+    destination: &str,
+    long_side: u32,
+) -> Result<(), String> {
+    let Some(file) = AFile::fetch(folder_id, destination)? else {
+        return Ok(());
+    };
+    let file_type = file.file_type.unwrap_or(0);
+    if file_type != 1 && file_type != 3 {
+        return Ok(());
+    }
+    let file_id = file.id.ok_or_else(|| "Imported file is missing an id".to_string())?;
+    let orientation = file.e_orientation.unwrap_or(1) as i32;
+    let long_side = crate::t_image::normalize_preview_long_side(long_side);
+    let bytes = crate::t_image::render_hi_preview(destination, file_type, orientation, long_side)?;
+    let library_id = crate::t_config::load_app_config()
+        .map(|config| config.current_library_id)
+        .unwrap_or_else(|_| "default".to_string());
+    crate::t_image::store_hi_preview(&library_id, album_id, file_id, &bytes)?;
+    AFile::set_hi_preview_size(file_id, Some(long_side as i64))
+}
+
 pub fn import_and_organize<F, C>(
     album_id: i64,
     source_path: &str,
     destination_path: &str,
     layout: &str,
     completed_paths: HashSet<String>,
+    prerender_previews: bool,
+    preview_long_side: u32,
     mut report_progress: F,
     is_cancelled: C,
 ) -> Result<ImportOrganizeResult, String>
@@ -1432,6 +1458,7 @@ where
     let mut processed = failed;
     let mut imported = 0;
     let mut skipped = 0;
+    let mut preview_files: Vec<(i64, String)> = Vec::new();
     let mut folder_ids: HashMap<PathBuf, i64> = HashMap::new();
     let mut candidates: HashMap<PathBuf, HashMap<u64, Vec<PathBuf>>> = HashMap::new();
     report_progress(ImportOrganizeProgress {
@@ -1502,6 +1529,7 @@ where
                             AFile::add_to_db(folder_id, &destination, candidate_type, chrono::Utc::now().timestamp_millis())?;
                         }
                         database_time += database_started.elapsed();
+                        preview_files.push((folder_id, destination));
                         return Ok(true);
                     }
                 }
@@ -1534,6 +1562,7 @@ where
             aae_cache.record(&copied_sidecars);
             candidates.get_mut(&target_folder).unwrap().entry(size).or_default()
                 .push(PathBuf::from(&destination));
+            preview_files.push((folder_id, destination));
             Ok(false)
         })();
         if result.is_err() && is_cancelled() {
@@ -1560,6 +1589,29 @@ where
 
     eprintln!("Import successful steps: comparison {:?}, copy/sidecars {:?}, file database {:?}", compare_time, copy_time, database_time);
     eprintln!("Import processing: {:?}, imported: {}, skipped: {}, failed: {}", import_started.elapsed(), imported, skipped, failed);
+    if prerender_previews {
+        let preview_total = preview_files.len();
+        for (index, (folder_id, destination)) in preview_files.iter().enumerate() {
+            if is_cancelled() {
+                report_progress(ImportOrganizeProgress {
+                    phase: "prerendering".to_string(), processed: index, total: preview_total, total_size,
+                    imported, skipped, failed, cancelled: true,
+                });
+                return Ok(ImportOrganizeResult { completed_paths: completed_paths.into_iter().collect(), total, imported, skipped, failed, cancelled: true });
+            }
+            report_progress(ImportOrganizeProgress {
+                phase: "prerendering".to_string(), processed: index, total: preview_total, total_size,
+                imported, skipped, failed, cancelled: false,
+            });
+            if let Err(error) = prerender_imported_preview(album_id, *folder_id, destination, preview_long_side) {
+                eprintln!("Skipped high resolution preview: {}", error);
+            }
+        }
+        report_progress(ImportOrganizeProgress {
+            phase: "prerendering".to_string(), processed: preview_total, total: preview_total, total_size,
+            imported, skipped, failed, cancelled: false,
+        });
+    }
     Ok(ImportOrganizeResult { completed_paths: completed_paths.into_iter().collect(), total, imported, skipped, failed, cancelled: false })
 }
 

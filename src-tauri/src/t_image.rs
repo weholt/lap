@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::process::Command;
 use std::sync::Mutex;
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
@@ -379,6 +379,29 @@ const MIN_SHORT_EDGE_DIVISOR: u32 = 4;
 
 /// Computes thumbnail dimensions, keeping the short edge >= `thumbnail_size / 4`
 /// (never upscaling); the long edge may exceed `thumbnail_size`.
+pub fn normalize_preview_long_side(long_side: u32) -> u32 {
+    if long_side == 0 {
+        1080
+    } else {
+        long_side.clamp(256, 8192)
+    }
+}
+
+pub fn fit_long_side(width: u32, height: u32, long_side: u32) -> (u32, u32) {
+    let long_side = normalize_preview_long_side(long_side);
+    if width == 0 || height == 0 {
+        return (1, 1);
+    }
+    let long = width.max(height);
+    if long <= long_side {
+        return (width, height);
+    }
+    let scale = long_side as f32 / long as f32;
+    let dst_w = ((width as f32) * scale).round().max(1.0) as u32;
+    let dst_h = ((height as f32) * scale).round().max(1.0) as u32;
+    (dst_w, dst_h)
+}
+
 fn compute_thumbnail_dimensions(width: u32, height: u32, thumbnail_size: u32) -> (u32, u32) {
     if width == 0 || height == 0 || thumbnail_size == 0 {
         return (1, 1);
@@ -1902,4 +1925,206 @@ pub async fn get_file_image_bytes_cached(
     }
 
     Ok(image_data)
+}
+
+pub fn user_lap_dir() -> Result<PathBuf, String> {
+    dirs::home_dir()
+        .ok_or_else(|| "Failed to get the user home directory".to_string())
+        .map(|home| home.join(".lap"))
+}
+
+fn hi_preview_library_root(library_id: &str) -> Result<PathBuf, String> {
+    Ok(user_lap_dir()?.join("previews").join(library_id))
+}
+
+fn legacy_hi_preview_library_root(library_id: &str) -> Result<PathBuf, String> {
+    Ok(crate::t_config::get_app_cache_dir()?
+        .join(library_id)
+        .join("hi-previews"))
+}
+
+fn hi_preview_directory(library_id: &str, album_id: i64, file_id: i64) -> Result<PathBuf, String> {
+    Ok(hi_preview_library_root(library_id)?
+        .join(album_id.to_string())
+        .join(format!("{:02}", file_id.unsigned_abs() % 64)))
+}
+
+pub fn hi_preview_path(library_id: &str, album_id: i64, file_id: i64) -> Result<PathBuf, String> {
+    Ok(hi_preview_directory(library_id, album_id, file_id)?.join(format!("{file_id}.jpg")))
+}
+
+pub fn read_hi_preview(library_id: &str, album_id: i64, file_id: i64) -> Option<Vec<u8>> {
+    let path = hi_preview_path(library_id, album_id, file_id).ok()?;
+    let data = fs::read(path).ok()?;
+    (data.len() >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF).then_some(data)
+}
+
+pub fn delete_hi_previews_for_file(library_id: &str, album_id: i64, file_id: i64) {
+    if let Ok(path) = hi_preview_path(library_id, album_id, file_id) {
+        let _ = fs::remove_file(path);
+    }
+}
+
+fn directory_size(path: &Path) -> u64 {
+    WalkDir::new(path)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_file())
+        .filter_map(|entry| entry.metadata().ok())
+        .map(|metadata| metadata.len())
+        .sum()
+}
+
+fn remove_tree(path: &Path) -> u64 {
+    if !path.exists() {
+        return 0;
+    }
+    let bytes = directory_size(path);
+    let _ = fs::remove_dir_all(path);
+    bytes
+}
+
+pub fn delete_hi_previews_for_album(library_id: &str, album_id: i64) -> u64 {
+    let mut bytes = 0u64;
+    if let Ok(path) = hi_preview_library_root(library_id) {
+        bytes += remove_tree(&path.join(album_id.to_string()));
+    }
+    if let Ok(path) = legacy_hi_preview_library_root(library_id) {
+        bytes += remove_tree(&path.join(album_id.to_string()));
+    }
+    bytes
+}
+
+pub fn cleanup_orphan_hi_previews(library_id: &str, live_album_ids: &std::collections::HashSet<i64>) -> Result<(u64, u64), String> {
+    let mut albums_removed = 0u64;
+    let mut bytes_freed = 0u64;
+    for root in [hi_preview_library_root(library_id)?, legacy_hi_preview_library_root(library_id)?] {
+        if !root.is_dir() {
+            continue;
+        }
+        let entries = fs::read_dir(&root).map_err(|error| error.to_string())?;
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else { continue };
+            if !file_type.is_dir() {
+                continue;
+            }
+            let Some(name) = entry.file_name().to_str().and_then(|name| name.parse::<i64>().ok()) else {
+                continue;
+            };
+            if live_album_ids.contains(&name) {
+                continue;
+            }
+            bytes_freed += remove_tree(&entry.path());
+            albums_removed += 1;
+        }
+    }
+    Ok((albums_removed, bytes_freed))
+}
+
+fn jpeg_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() < 4 || bytes[0] != 0xFF || bytes[1] != 0xD8 {
+        return None;
+    }
+    let mut index = 2usize;
+    while index + 8 < bytes.len() {
+        if bytes[index] != 0xFF {
+            index += 1;
+            continue;
+        }
+        let marker = bytes[index + 1];
+        if marker == 0xD8 || marker == 0xD9 || marker == 0x01 || (0xD0..=0xD7).contains(&marker) {
+            index += 2;
+            continue;
+        }
+        let length = u16::from_be_bytes([bytes[index + 2], bytes[index + 3]]) as usize;
+        if length < 2 || index + 2 + length > bytes.len() {
+            return None;
+        }
+        if (0xC0..=0xCF).contains(&marker) && marker != 0xC4 && marker != 0xC8 && marker != 0xCC {
+            let height = u16::from_be_bytes([bytes[index + 5], bytes[index + 6]]) as u32;
+            let width = u16::from_be_bytes([bytes[index + 7], bytes[index + 8]]) as u32;
+            return Some((width, height));
+        }
+        index += 2 + length;
+    }
+    None
+}
+
+fn jpeg_long_side(bytes: &[u8], long_side: u32) -> Result<Vec<u8>, String> {
+    let long_side = normalize_preview_long_side(long_side);
+    if let Some((width, height)) = jpeg_dimensions(bytes) {
+        if width.max(height) <= long_side {
+            return Ok(bytes.to_vec());
+        }
+    }
+    let image = image::load_from_memory(bytes)
+        .map_err(|error| format!("Failed to decode preview image: {error}"))?;
+    let (width, height) = image.dimensions();
+    let (dst_w, dst_h) = fit_long_side(width, height, long_side);
+    if width == dst_w && height == dst_h {
+        return encode_jpeg_rgb8(&image.to_rgb8());
+    }
+    let resized = image.resize_exact(dst_w, dst_h, image::imageops::FilterType::Triangle);
+    encode_jpeg_rgb8(&resized.to_rgb8())
+}
+
+pub fn render_hi_preview(
+    file_path: &str,
+    file_type: i64,
+    orientation: i32,
+    long_side: u32,
+) -> Result<Vec<u8>, String> {
+    let long_side = normalize_preview_long_side(long_side);
+    if file_type == 3 {
+        if let Ok(Some(embedded)) = crate::t_libraw::embedded_jpeg_covering(file_path, long_side) {
+            return jpeg_long_side(&embedded, long_side);
+        }
+    }
+    let rendered = if file_type == 3 {
+        get_raw_thumbnail(file_path, orientation, long_side, false)?
+    } else {
+        get_image_thumbnail(file_path, orientation, long_side)?
+    }
+    .ok_or_else(|| format!("Failed to render preview: {file_path}"))?;
+    jpeg_long_side(&rendered, long_side)
+}
+
+pub fn store_hi_preview(
+    library_id: &str,
+    album_id: i64,
+    file_id: i64,
+    data: &[u8],
+) -> Result<(), String> {
+    let path = hi_preview_path(library_id, album_id, file_id)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let temp_path = path.with_extension(format!(
+        "tmp-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    fs::write(&temp_path, data).map_err(|error| error.to_string())?;
+    if fs::rename(&temp_path, &path).is_err() {
+        let _ = fs::remove_file(&path);
+        if fs::rename(&temp_path, &path).is_err() {
+            let _ = fs::remove_file(&temp_path);
+            return Err(format!("Failed to store preview for file {file_id}"));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod hi_preview_tests {
+    use super::fit_long_side;
+
+    #[test]
+    fn hi_preview_long_side_scales_the_longer_edge_and_does_not_upscale() {
+        assert_eq!(fit_long_side(4000, 3000, 1080), (1080, 810));
+        assert_eq!(fit_long_side(3000, 4000, 1080), (810, 1080));
+        assert_eq!(fit_long_side(800, 600, 1080), (800, 600));
+    }
 }

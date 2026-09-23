@@ -134,10 +134,14 @@ pub fn register_protocols(builder: Builder<Wry>) -> Builder<Wry> {
             let path = request.uri().path();
             let file_id_str = path.rsplit('/').next().unwrap_or("");
             let file_id: i64 = file_id_str.parse().unwrap_or(0);
-            let prefer_embedded_raw_preview = request
-                .uri()
-                .query()
-                .is_some_and(|query| query.split('&').any(|item| item == "rawThumbnailSource=embedded"));
+            let query = request.uri().query().unwrap_or("");
+            let prefer_embedded_raw_preview = query
+                .split('&')
+                .any(|item| item == "rawThumbnailSource=embedded");
+            let hi_preview_size = query.split('&').find_map(|item| {
+                let (key, value) = item.split_once('=')?;
+                (key == "hiPreview").then(|| value.parse::<u32>().ok()).flatten()
+            });
 
             if file_id <= 0 {
                 responder.respond(text_response(
@@ -166,7 +170,23 @@ pub fn register_protocols(builder: Builder<Wry>) -> Builder<Wry> {
                 }
             };
 
+            let album_id = file.album_id.unwrap_or(0);
             tauri::async_runtime::spawn(async move {
+                if hi_preview_size.is_some() {
+                    let library_id = crate::t_config::load_app_config()
+                        .map(|config| config.current_library_id)
+                        .unwrap_or_else(|_| "default".to_string());
+                    if let Some(data) = t_image::read_hi_preview(&library_id, album_id, file_id) {
+                        responder.respond(image_response(data));
+                        return;
+                    }
+                    let _ = t_sqlite::AFile::set_hi_preview_size(file_id, None);
+                    responder.respond(text_response(
+                        http::StatusCode::NOT_FOUND,
+                        "preview not found",
+                    ));
+                    return;
+                }
                 let response = match t_image::get_file_image_bytes_cached(
                     &file_path,
                     prefer_embedded_raw_preview,

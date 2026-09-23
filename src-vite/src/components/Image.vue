@@ -244,6 +244,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  hiPreviewSize: {
+    type: Number,
+    default: 0,
+  },
   showThumbnailPlaceholder: {
     type: Boolean,
     default: false,
@@ -530,10 +534,56 @@ function loadImageResource(filePath?: string) {
         });
     };
 
+    let usingHiPreview = Number(props.hiPreviewSize || 0) > 0;
+    const assignFallbackSource = () => {
+      if (shouldUseBackendPreview(filePath, Number(props.fileType || 0))) {
+        src = getPreviewUrl(
+          props.fileId,
+          filePath,
+          false,
+          props.fileVersion,
+          config.settings.rawThumbnailSource,
+        );
+        return src;
+      }
+      try {
+        src = getAssetSrc(filePath, props.fileVersion);
+      } catch (error) {
+        preloadCache.delete(filePath);
+        reject(error);
+        return '';
+      }
+      return src;
+    };
     img.onerror = () => {
+      if (usingHiPreview) {
+        usingHiPreview = false;
+        const fallback = assignFallbackSource();
+        if (fallback) {
+          img.src = fallback;
+          return;
+        }
+      }
       preloadCache.delete(filePath);
       reject(new Error(`Error loading image: ${filePath}`));
     };
+
+    if (usingHiPreview) {
+      src = getPreviewUrl(
+        props.fileId,
+        filePath,
+        false,
+        props.fileVersion,
+        'processed',
+        Number(props.hiPreviewSize),
+      );
+      if (!src) {
+        usingHiPreview = false;
+      } else {
+        img.src = src;
+        return;
+      }
+    }
 
     if (shouldUseBackendPreview(filePath, Number(props.fileType || 0))) {
       src = getPreviewUrl(
@@ -1221,7 +1271,8 @@ watch([
   () => props.filePath,
   () => props.fileVersion,
   () => Number(props.fileType || 0) === 3 ? config.settings.rawThumbnailSource : '',
-], async ([newFilePath, newFileVersion, newRawThumbnailSource], [oldFilePath, oldFileVersion, oldRawThumbnailSource]) => {
+  () => Number(props.hiPreviewSize || 0),
+], async ([newFilePath, newFileVersion, newRawThumbnailSource, hiPreviewSize], [oldFilePath, oldFileVersion, oldRawThumbnailSource, oldHiPreviewSize]) => {
   // Cancel previous loading
   currentLoadingId.value++;
   const loadingId = currentLoadingId.value;
@@ -1229,7 +1280,7 @@ watch([
   if (
     newFilePath
     && newFilePath === oldFilePath
-    && (newFileVersion !== oldFileVersion || newRawThumbnailSource !== oldRawThumbnailSource)
+    && (newFileVersion !== oldFileVersion || newRawThumbnailSource !== oldRawThumbnailSource || hiPreviewSize !== oldHiPreviewSize)
   ) {
     preloadCache.delete(newFilePath);
   }

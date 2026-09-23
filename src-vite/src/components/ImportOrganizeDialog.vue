@@ -30,6 +30,11 @@
             <option value="year">{{ $t('import_organize.layout_year') }}</option>
             <option value="none">{{ $t('import_organize.layout_none') }}</option>
           </select>
+
+          <label class="col-span-2 min-h-6 flex items-center gap-2 px-1 text-[12px] text-base-content/75" for="import-prerender">
+            <input id="import-prerender" v-model="prerenderPreviews" :disabled="locked" type="checkbox" class="checkbox checkbox-xs checkbox-primary" />
+            <span>{{ $t('import_organize.prerender_previews') }}</span>
+          </label>
         </div>
       </section>
 
@@ -46,7 +51,7 @@
         </div>
         <div v-if="running || completed" class="space-y-2 px-1 text-xs">
           <div class="flex items-center justify-between gap-2 text-base-content/75">
-            <span>{{ completed ? $t(cancelled ? 'import_organize.cancelled' : 'import_organize.complete') : progress.phase === 'preparing' ? $t('import_organize.preparing') : $t('import_organize.importing') }}</span>
+            <span>{{ completed ? $t(cancelled ? 'import_organize.cancelled' : 'import_organize.complete') : progress.phase === 'preparing' ? $t('import_organize.preparing') : progress.phase === 'prerendering' ? $t('import_organize.prerendering') : $t('import_organize.importing') }}</span>
             <span>{{ $t('import_organize.files_progress', { processed: progress.processed.toLocaleString(), total: progress.total.toLocaleString(), size: formatFileSize(progress.totalSize) }) }}</span>
           </div>
           <progress class="progress progress-primary w-full" :value="running && progress.phase === 'preparing' ? undefined : progress.processed" :max="Math.max(progress.total, 1)"></progress>
@@ -95,6 +100,7 @@ let completedPaths: string[] = [];
 let disposed = false;
 const destinationTree = ref<any>(null);
 const layout = ref('day');
+const prerenderPreviews = ref(false);
 const running = ref(false);
 const completed = ref(false);
 const cancelled = ref(false);
@@ -153,7 +159,15 @@ async function startImport() {
         const payload = event.payload || {};
         payload.error ? rejectFinished(new Error(payload.error)) : resolveFinished(payload.result);
     });
-    await importAndOrganize(props.album.id, sourcePath.value, destinationPath.value, layout.value, completedPaths);
+    await importAndOrganize(
+      props.album.id,
+      sourcePath.value,
+      destinationPath.value,
+      layout.value,
+      completedPaths,
+      prerenderPreviews.value,
+      Number(config.settings.previewLongSide || 1080),
+    );
     const result = await finished;
     completedPaths = result.completedPaths;
     progress.value = { ...progress.value, ...result };

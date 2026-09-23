@@ -1497,6 +1497,8 @@ pub struct AFile {
     pub live_photo_video_id: Option<i64>,   // paired Live Photo MOV file id
     pub live_photo_video_path: Option<String>, // paired Live Photo MOV path
     pub motion_photo_offset: Option<i64>,   // byte offset of embedded MP4 (Android Motion Photo)
+    #[serde(default)]
+    pub hi_preview_size: Option<i64>,       // long side of a pre-rendered viewing preview
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2608,6 +2610,7 @@ impl AFile {
             live_photo_video_id: None,
             live_photo_video_path: None,
             motion_photo_offset,
+            hi_preview_size: None,
         };
 
         Ok(file)
@@ -2865,9 +2868,9 @@ impl AFile {
                 is_favorite, rating, rotate, comments, has_tags,
                 e_make, e_model, e_date_time, e_software, e_artist, e_copyright, e_description, e_lens_make, e_lens_model, e_exposure_bias, e_exposure_time, e_f_number, e_focal_length, e_iso_speed, e_flash, e_orientation,
                 gps_latitude, gps_longitude, gps_altitude, geo_name, geo_admin1, geo_admin2, geo_cc,
-                last_scan_time, content_identifier, media_subtype, motion_photo_offset
+                last_scan_time, content_identifier, media_subtype, motion_photo_offset, hi_preview_size
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46)
             ON CONFLICT(folder_id, name) DO NOTHING",
             params![
                 self.folder_id,
@@ -2921,6 +2924,7 @@ impl AFile {
                 self.content_identifier,
                 self.media_subtype,
                 self.motion_photo_offset,
+                self.hi_preview_size,
             ]
         ).map_err(|e| e.to_string())?;
         Ok(result)
@@ -2937,8 +2941,8 @@ impl AFile {
                 rating = ?13,
                 e_make = ?14, e_model = ?15, e_date_time = ?16, e_software = ?17, e_artist = ?18, e_copyright = ?19, e_description = ?20, e_lens_make = ?21, e_lens_model = ?22, e_exposure_bias = ?23, e_exposure_time = ?24, e_f_number = ?25, e_focal_length = ?26, e_iso_speed = ?27, e_flash = ?28, e_orientation = ?29,
                 gps_latitude = ?30, gps_longitude = ?31, gps_altitude = ?32, geo_name = ?33, geo_admin1 = ?34, geo_admin2 = ?35, geo_cc = ?36,
-                last_scan_time = ?37, content_identifier = ?38, media_subtype = ?39, motion_photo_offset = ?40
-            WHERE id = ?41",
+                last_scan_time = ?37, content_identifier = ?38, media_subtype = ?39, motion_photo_offset = ?40, hi_preview_size = ?41
+            WHERE id = ?42",
             params![
                 file.name,
                 file.name_pinyin,
@@ -2984,10 +2988,61 @@ impl AFile {
                 file.content_identifier,
                 file.media_subtype,
                 file.motion_photo_offset,
+                file.hi_preview_size,
                 file_id,
             ]
         ).map_err(|e| e.to_string())?;
         Ok(result)
+    }
+
+    pub fn set_hi_preview_size(file_id: i64, size: Option<i64>) -> Result<(), String> {
+        Self::set_hi_preview_sizes(&[file_id], size)
+    }
+
+    pub fn set_hi_preview_sizes(file_ids: &[i64], size: Option<i64>) -> Result<(), String> {
+        if file_ids.is_empty() {
+            return Ok(());
+        }
+        let mut conn = open_conn()?;
+        crate::t_migration::ensure_hi_preview_column(&conn)?;
+        let tx = conn.transaction().map_err(|error| error.to_string())?;
+        {
+            let mut stmt = tx
+                .prepare("UPDATE afiles SET hi_preview_size = ?1 WHERE id = ?2")
+                .map_err(|error| error.to_string())?;
+            for file_id in file_ids {
+                stmt.execute(params![size, file_id])
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        tx.commit().map_err(|error| error.to_string())
+    }
+
+    pub fn list_preview_targets(album_id: i64) -> Result<Vec<(i64, String, i64, i32)>, String> {
+        let conn = open_conn()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT a.id, b.path, a.name, a.file_type, COALESCE(a.e_orientation, 1)
+                 FROM afiles a
+                 JOIN afolders b ON a.folder_id = b.id
+                 WHERE b.album_id = ?1 AND a.file_type IN (1, 3)",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = stmt
+            .query_map(params![album_id], |row| {
+                let id: i64 = row.get(0)?;
+                let folder: String = row.get(1)?;
+                let name: String = row.get(2)?;
+                Ok((
+                    id,
+                    t_utils::get_file_path(&folder, &name),
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })
+            .map_err(|error| error.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())
     }
 
     // delete a file from db
@@ -3144,7 +3199,8 @@ impl AFile {
                     THEN lpf.path || '/' || lpv.name
                     ELSE NULL
                 END AS live_photo_video_path,
-                a.motion_photo_offset
+                a.motion_photo_offset,
+                a.hi_preview_size
             FROM afiles a
             LEFT JOIN afolders b ON a.folder_id = b.id
             LEFT JOIN albums c ON b.album_id = c.id
@@ -3222,6 +3278,7 @@ impl AFile {
             live_photo_video_id: row.get(53)?,
             live_photo_video_path: row.get(54)?,
             motion_photo_offset: row.get(55)?,
+            hi_preview_size: row.get(56)?,
         })
     }
 
@@ -3781,6 +3838,14 @@ impl AFile {
             new_file_info.live_photo_video_id = old_file_info.live_photo_video_id;
         }
         new_file_info.last_scan_time = Some(last_scan_time);
+        if old_file_info.hi_preview_size.is_some() {
+            if let Some(album_id) = old_file_info.album_id {
+                let library_id = crate::t_config::load_app_config()
+                    .map(|config| config.current_library_id)
+                    .unwrap_or_else(|_| "default".to_string());
+                crate::t_image::delete_hi_previews_for_file(&library_id, album_id, file_id);
+            }
+        }
 
         // update the file info
         Self::update(file_id, &new_file_info)?;
@@ -6826,6 +6891,9 @@ impl AThumb {
             bytes_freed: 0,
         };
         for entry in WalkDir::new(cache_root).into_iter().filter_map(|entry| entry.ok()) {
+            if entry.path().components().any(|component| component.as_os_str() == "hi-previews") {
+                continue;
+            }
             if !entry.file_type().is_file()
                 || !matches!(entry.path().extension().and_then(|ext| ext.to_str()), Some("jpg" | "png"))
             {
@@ -9558,6 +9626,7 @@ fn create_db_internal() -> Result<(), String> {
             media_subtype TEXT,
             live_photo_video_id INTEGER,
             motion_photo_offset INTEGER,
+            hi_preview_size INTEGER,
             FOREIGN KEY (folder_id) REFERENCES afolders(id) ON DELETE CASCADE
         )",
         [],

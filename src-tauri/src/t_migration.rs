@@ -153,6 +153,16 @@ fn get_migrations() -> Vec<Migration> {
             description: "Add tag groups and persistent ordering",
             sql: "",
         },
+        Migration {
+            version: 18,
+            description: "Remember pre-rendered high resolution previews",
+            sql: "",
+        },
+        Migration {
+            version: 19,
+            description: "Add hi_preview_size when an earlier version number was already used",
+            sql: "",
+        },
     ]
 }
 
@@ -212,6 +222,14 @@ fn migrate_unique_album_files(conn: &Connection) -> Result<(), String> {
 
     tx.commit()
         .map_err(|e| format!("Migration 9 (deduplicate album files) failed committing transaction: {}", e))
+}
+
+pub(crate) fn ensure_hi_preview_column(conn: &Connection) -> Result<(), String> {
+    if !table_has_column(conn, "afiles", "hi_preview_size")? {
+        conn.execute("ALTER TABLE afiles ADD COLUMN hi_preview_size INTEGER", [])
+            .map_err(|e| format!("Failed to add hi_preview_size: {}", e))?;
+    }
+    Ok(())
 }
 
 fn table_has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, String> {
@@ -470,6 +488,8 @@ pub fn check_and_migrate(conn: &Connection) -> Result<(), String> {
                 }
             } else if migration.version == 17 {
                 migrate_tag_groups(conn)?;
+            } else if migration.version == 18 || migration.version == 19 {
+                ensure_hi_preview_column(conn)?;
             } else if !migration.sql.trim().is_empty() {
                 conn.execute_batch(migration.sql)
                     .map_err(|e| format!("Migration {} failed: {}", migration.version, e))?;
@@ -489,6 +509,7 @@ pub fn check_and_migrate(conn: &Connection) -> Result<(), String> {
         println!("Database is up to date.");
     }
 
+    ensure_hi_preview_column(conn)?;
     Ok(())
 }
 

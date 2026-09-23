@@ -626,6 +626,47 @@ fn get_embedded_jpeg_thumbnail(file_path: &str, thumbnail_size: u32) -> Result<O
     Ok(None)
 }
 
+/// Embedded camera JPEG when it already covers `min_long_side`. Avoids a full demosaic for previews.
+pub fn embedded_jpeg_covering(file_path: &str, min_long_side: u32) -> Result<Option<Vec<u8>>, String> {
+    let mut raw = RawHandle::open(file_path)?;
+    let raw_orientation = raw
+        .dimensions_with_flip()
+        .ok()
+        .and_then(|(_, _, flip)| raw_flip_to_exif_orientation(flip));
+    let thumbs = raw.extract_thumbnails();
+    let best = thumbs
+        .iter()
+        .filter(|thumb| thumb.format == LIBRAW_THUMBNAIL_JPEG && !thumb.data.is_empty())
+        .max_by_key(|thumb| thumb.width.max(thumb.height));
+    let Some(thumb) = best else {
+        return Ok(None);
+    };
+    if thumb.width.max(thumb.height) < min_long_side {
+        return Ok(None);
+    }
+    let orient = jpeg_exif_orientation(&thumb.data)
+        .or(raw_orientation)
+        .unwrap_or(1);
+    let Ok(image) = image::load_from_memory(&thumb.data) else {
+        return Ok(None);
+    };
+    let image = orient_image(image, orient);
+    let width = image.width();
+    let height = image.height();
+    let long_side = width.max(height).max(1);
+    let fitted = if long_side <= min_long_side {
+        image
+    } else {
+        let scale = min_long_side as f32 / long_side as f32;
+        image.resize_exact(
+            ((width as f32) * scale).round().max(1.0) as u32,
+            ((height as f32) * scale).round().max(1.0) as u32,
+            image::imageops::FilterType::Triangle,
+        )
+    };
+    encode_as_jpeg(&fitted).map(Some)
+}
+
 pub fn get_raw_thumbnail(
     file_path: &str,
     thumbnail_size: u32,

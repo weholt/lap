@@ -363,6 +363,7 @@
           :imageWidth="file?.width"
           :imageHeight="file?.height"
           :thumbnailSrc="file?.thumbnail || ''"
+          :hiPreviewSize="Number(file?.hi_preview_size || 0)"
           :showThumbnailPlaceholder="showThumbnailPlaceholder"
           :showInlineLoading="mode === 2"
           :nextFilePath="nextFilePath"

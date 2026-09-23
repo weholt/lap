@@ -512,6 +512,7 @@ export function getPreviewUrl(
   bustCache = false,
   fileVersion = 0,
   rawThumbnailSource = 'processed',
+  hiPreviewSize = 0,
 ): string {
   if (!fileId || fileId <= 0) return '';
   const scheme = isWin ? 'http://preview.localhost' : 'preview://localhost';
@@ -519,7 +520,8 @@ export function getPreviewUrl(
 
   const params = new URLSearchParams();
   if (fileVersion > 0) params.set('v', String(fileVersion));
-  if (rawThumbnailSource === 'embedded') params.set('rawThumbnailSource', 'embedded');
+  if (hiPreviewSize > 0) params.set('hiPreview', String(hiPreviewSize));
+  else if (rawThumbnailSource === 'embedded') params.set('rawThumbnailSource', 'embedded');
   if (filePath) {
     const uiStore = useUIStore();
     const localVersion = uiStore.getFileVersion(filePath);
