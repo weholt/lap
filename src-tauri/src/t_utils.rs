@@ -1510,7 +1510,7 @@ where
             let copy_started = Instant::now();
             let destination = import_file(&path_string, &target_folder.to_string_lossy())
                 .ok_or_else(|| format!("Failed to copy file: {}", path_string))?;
-            let copied_sidecars = match t_apple_sidecar::copy_apple_aae_paths_for_import(
+            let mut copied_sidecars = match t_apple_sidecar::copy_apple_aae_paths_for_import(
                 &path_string,
                 &destination,
                 aae_cache.paths(&path),
@@ -1518,6 +1518,16 @@ where
                 Ok(sidecars) => sidecars,
                 Err(error) => {
                     let _ = fs::remove_file(&destination);
+                    return Err(error);
+                }
+            };
+            match crate::t_file_metadata::copy_bound_xmp_for_import(&path_string, &destination) {
+                Ok(sidecars) => copied_sidecars.extend(sidecars),
+                Err(error) => {
+                    let _ = fs::remove_file(&destination);
+                    for sidecar in &copied_sidecars {
+                        let _ = fs::remove_file(sidecar);
+                    }
                     return Err(error);
                 }
             };

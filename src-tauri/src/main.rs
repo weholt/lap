@@ -22,6 +22,7 @@ mod t_common;
 mod t_config;
 mod t_dedup;
 mod t_face;
+mod t_file_metadata;
 mod t_heif;
 mod t_http;
 mod t_image;

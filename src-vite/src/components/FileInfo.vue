@@ -395,6 +395,35 @@
             <div class="flex items-start text-[11px] text-base-content/45 py-1.5">{{ $t('file_info.description') }}</div>
             <div class="flex items-center text-[12px] leading-5 text-base-content/75 wrap-break-words py-1.5">{{ fileInfo?.e_description }}</div>
 
+            <template v-if="fileInfo?.e_title">
+              <div class="flex items-start text-[11px] text-base-content/45 py-1.5">{{ $t('file_info.subject_title') }}</div>
+              <div class="flex items-center text-[12px] leading-5 text-base-content/75 wrap-break-words py-1.5">{{ fileInfo.e_title }}</div>
+            </template>
+            <template v-if="fileInfo?.e_headline">
+              <div class="flex items-start text-[11px] text-base-content/45 py-1.5">{{ $t('file_info.headline') }}</div>
+              <div class="flex items-center text-[12px] leading-5 text-base-content/75 wrap-break-words py-1.5">{{ fileInfo.e_headline }}</div>
+            </template>
+            <template v-if="keywordText">
+              <div class="flex items-start text-[11px] text-base-content/45 py-1.5">{{ $t('file_info.keywords') }}</div>
+              <div class="flex items-center text-[12px] leading-5 text-base-content/75 wrap-break-words py-1.5">{{ keywordText }}</div>
+            </template>
+            <template v-if="fileInfo?.e_credit">
+              <div class="flex items-center text-[11px] text-base-content/45 h-6">{{ $t('file_info.credit') }}</div>
+              <div class="flex items-center text-[12px] text-base-content/75">{{ fileInfo.e_credit }}</div>
+            </template>
+            <template v-if="fileInfo?.e_label">
+              <div class="flex items-center text-[11px] text-base-content/45 h-6">{{ $t('file_info.color_label') }}</div>
+              <div class="flex items-center text-[12px] text-base-content/75">{{ fileInfo.e_label }}</div>
+            </template>
+            <template v-if="embeddedRatingText">
+              <div class="flex items-center text-[11px] text-base-content/45 h-6">{{ $t('file_info.embedded_rating') }}</div>
+              <div class="flex items-center text-[12px] text-base-content/75">{{ embeddedRatingText }}</div>
+            </template>
+            <template v-if="fileInfo?.e_location">
+              <div class="flex items-center text-[11px] text-base-content/45 h-6">{{ $t('file_info.recorded_place') }}</div>
+              <div class="flex items-center text-[12px] text-base-content/75">{{ fileInfo.e_location }}</div>
+            </template>
+
             <!-- Geo Location -->
             <div class="flex items-center text-[11px] text-base-content/45 h-6">{{ $t('file_info.geo_location') }}</div>
             <div
@@ -950,6 +979,18 @@ function formatGeoLocation() {
 const hasCamera = computed(() => !!(props.fileInfo?.e_make || props.fileInfo?.e_model));
 const hasLens = computed(() => !!props.fileInfo?.e_lens_model);
 const hasLocation = computed(() => !!(props.fileInfo?.geo_cc || props.fileInfo?.geo_admin1 || props.fileInfo?.geo_name));
+const keywordText = computed(() => {
+  const keywords = props.fileInfo?.e_keywords;
+  if (!Array.isArray(keywords)) return "";
+  return keywords.map((keyword) => String(keyword).trim()).filter(Boolean).join(", ");
+});
+const embeddedRatingText = computed(() => {
+  const rating = Number(props.fileInfo?.embedded_rating);
+  if (!Number.isInteger(rating) || rating < 0 || rating > 5 || props.fileInfo?.embedded_rating === null || props.fileInfo?.embedded_rating === undefined) {
+    return "";
+  }
+  return `${rating} / 5`;
+});
 
 function navigateCamera() {
   if (!hasCamera.value) return;

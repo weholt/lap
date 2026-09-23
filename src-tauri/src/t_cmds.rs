@@ -2237,6 +2237,17 @@ fn delete_file_group(
     if let Err(error) = delete_apple_aae_sidecars(file_path, permanently) {
         delete_errors.push(format!("Failed to delete Apple sidecar: {}", error));
     }
+    if let Some(sidecar) = crate::t_file_metadata::bound_sidecar(std::path::Path::new(file_path)) {
+        let sidecar_path = sidecar.to_string_lossy();
+        let result = if permanently {
+            t_utils::delete_file_permanently(&sidecar_path)
+        } else {
+            t_utils::trash_path(&sidecar_path)
+        };
+        if let Err(error) = result {
+            delete_errors.push(format!("Failed to delete XMP sidecar: {}", error));
+        }
+    }
 
     AFile::batch_delete(&deleted_file_ids)
         .map_err(|e| format!("Error while deleting removed files from DB: {}", e))?;
@@ -2316,6 +2327,12 @@ pub(crate) fn delete_files_grouped(
         }
         let mut aae_sidecars = Vec::new();
         for sidecar in apple_aae_sidecar_paths(&file.file_path) {
+            let sidecar_path = sidecar.to_string_lossy().into_owned();
+            if seen_aae_paths.insert(sidecar_path.to_ascii_lowercase()) {
+                aae_sidecars.push(sidecar_path);
+            }
+        }
+        if let Some(sidecar) = crate::t_file_metadata::bound_sidecar(std::path::Path::new(&file.file_path)) {
             let sidecar_path = sidecar.to_string_lossy().into_owned();
             if seen_aae_paths.insert(sidecar_path.to_ascii_lowercase()) {
                 aae_sidecars.push(sidecar_path);

@@ -73,13 +73,13 @@ Lap está centrado en las carpetas, pero no toda la información que muestra se 
 ### Lo que permanece con el archivo
 
 - Sus fotos y vídeos originales siempre siguen siendo archivos normales en sus carpetas existentes.
-- Los metadatos ya integrados en un archivo, como la fecha EXIF, la cámara, el objetivo, el GPS y la orientación, se leen de ese archivo cuando Lap lo indexa.
+- Al indexar, Lap lee los metadatos que ya acompañan al archivo: EXIF, IPTC y XMP incrustados, y un archivo XMP hermano (`foto.xmp` o `foto.jpg.xmp`). El título, el titular, la descripción, las palabras clave, el autor, los derechos, el crédito, la etiqueta, la valoración del archivo y el lugar registrado aparecen en la información del archivo y en la búsqueda de texto. Los valores descriptivos del sidecar prevalecen sobre el XMP incrustado y después sobre IPTC. Los datos de captura y el GPS que ya trae EXIF se conservan; IPTC y XMP solo rellenan esos campos si están vacíos. La orientación sigue saliendo de EXIF. El `.xmp` vinculado acompaña a la foto al renombrar, mover, copiar o eliminar en Lap, y no se muestra como foto. Los archivos AAE siguen siendo sidecars de edición. Un cambio externo del sidecar se recoge en el siguiente escaneo aunque la imagen no haya cambiado.
 - Al guardar una edición de imagen integrada se escribe la imagen resultante en el destino elegido.
 - Cuando renombra, mueve, copia o elimina archivos **en Lap**, Lap actualiza al mismo tiempo su catálogo local. También mantiene juntos los recursos agrupados compatibles, como los componentes de Apple Live Photo, los archivos auxiliares AAE y los pares RAW + JPEG/HEIC activados.
 
 ### Lo que Lap almacena localmente
 
-La siguiente información son datos de biblioteca de Lap. Se almacenan en la base de datos local o en la configuración de biblioteca de Lap, y no se escriben en EXIF, IPTC ni en archivos auxiliares XMP:
+La siguiente información son datos de biblioteca de Lap. Se almacenan en la base de datos local o en la configuración de biblioteca de Lap, no se escriben en EXIF, IPTC ni en archivos auxiliares XMP, y no se sustituyen por palabras clave, etiquetas o valoraciones del archivo. La valoración leída del XMP es distinta de la valoración de Lap:
 
 - Colecciones, etiquetas, comentarios, favoritos, valoraciones y estados de selección (Seleccionadas y Rechazadas)
 - Los álbumes inteligentes y sus reglas, agrupación, ordenación y orden

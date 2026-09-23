@@ -1497,6 +1497,26 @@ pub struct AFile {
     pub live_photo_video_id: Option<i64>,   // paired Live Photo MOV file id
     pub live_photo_video_path: Option<String>, // paired Live Photo MOV path
     pub motion_photo_offset: Option<i64>,   // byte offset of embedded MP4 (Android Motion Photo)
+
+    // File-owned descriptive metadata. These are not Lap ratings, tags, or comments.
+    #[serde(default)]
+    pub e_title: Option<String>,
+    #[serde(default)]
+    pub e_headline: Option<String>,
+    #[serde(default)]
+    pub e_keywords: Vec<String>,
+    #[serde(default)]
+    pub e_credit: Option<String>,
+    #[serde(default)]
+    pub e_label: Option<String>,
+    #[serde(default)]
+    pub e_location: Option<String>,
+    #[serde(default)]
+    pub embedded_rating: Option<i32>,
+    #[serde(default)]
+    pub embedded_metadata_version: Option<i64>,
+    #[serde(default)]
+    pub metadata_sidecar_stamp: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2505,6 +2525,75 @@ impl AFile {
                 .or(file_info.modified);
         }
 
+        let mut e_title: Option<String> = None;
+        let mut e_headline: Option<String> = None;
+        let mut e_keywords: Vec<String> = Vec::new();
+        let mut e_credit: Option<String> = None;
+        let mut e_label: Option<String> = None;
+        let mut e_location: Option<String> = None;
+        let mut embedded_rating: Option<i32> = None;
+        let mut embedded_metadata_version: Option<i64> = None;
+        let mut metadata_sidecar_stamp: Option<String> = None;
+        if file_type == 1 || file_type == 3 {
+            let supplemental = crate::t_file_metadata::read_supplemental_metadata(Path::new(file_path));
+            let mut capture = crate::t_file_metadata::CaptureFields {
+                make: e_make,
+                model: e_model,
+                software: e_software,
+                artist: e_artist,
+                copyright: e_copyright,
+                description: e_description,
+                lens_make: e_lens_make,
+                lens_model: e_lens_model,
+                exposure_bias: e_exposure_bias,
+                exposure_time: e_exposure_time,
+                f_number: e_f_number,
+                focal_length: e_focal_length,
+                iso_speed: e_iso_speed,
+                flash: e_flash,
+                date_time: e_date_time,
+                taken_date,
+                file_modified: file_info.modified,
+                gps_latitude,
+                gps_longitude,
+                gps_altitude,
+            };
+            crate::t_file_metadata::fill_capture_gaps(&mut capture, &supplemental);
+            e_make = capture.make;
+            e_model = capture.model;
+            e_software = capture.software;
+            e_artist = capture.artist;
+            e_copyright = capture.copyright;
+            e_description = capture.description;
+            e_lens_make = capture.lens_make;
+            e_lens_model = capture.lens_model;
+            e_exposure_bias = capture.exposure_bias;
+            e_exposure_time = capture.exposure_time;
+            e_f_number = capture.f_number;
+            e_focal_length = capture.focal_length;
+            e_iso_speed = capture.iso_speed;
+            e_flash = capture.flash;
+            e_date_time = capture.date_time;
+            taken_date = capture.taken_date;
+            gps_latitude = capture.gps_latitude;
+            gps_longitude = capture.gps_longitude;
+            gps_altitude = capture.gps_altitude;
+            if e_lens_make.is_none() {
+                if let Some(model) = e_lens_model.as_deref() {
+                    e_lens_make = t_lens::infer_lens_make(model).map(|value| value.to_string());
+                }
+            }
+            e_location = crate::t_file_metadata::recorded_place(&supplemental);
+            e_title = supplemental.title;
+            e_headline = supplemental.headline;
+            e_keywords = supplemental.keywords;
+            e_credit = supplemental.credit;
+            e_label = supplemental.label;
+            embedded_rating = supplemental.embedded_rating;
+            embedded_metadata_version = Some(crate::t_file_metadata::EMBEDDED_METADATA_VERSION);
+            metadata_sidecar_stamp = crate::t_file_metadata::sidecar_stamp(Path::new(file_path));
+        }
+
         // Geocoding based on GPS coordinates from any source
         let (geo_name, geo_admin1, geo_admin2, geo_cc) =
             if let (Some(lat), Some(lon)) = (gps_latitude, gps_longitude) {
@@ -2563,7 +2652,7 @@ impl AFile {
             duration: Some(duration as i64),
 
             is_favorite: None,
-            rating: Some(0),
+            rating: embedded_rating.filter(|rating| *rating > 0).or(Some(0)),
             culling_flag: Some(0),
             rotate: None,
             comments: t_ai_png::extract_comment(file_path),
@@ -2608,6 +2697,15 @@ impl AFile {
             live_photo_video_id: None,
             live_photo_video_path: None,
             motion_photo_offset,
+            e_title,
+            e_headline,
+            e_keywords,
+            e_credit,
+            e_label,
+            e_location,
+            embedded_rating,
+            embedded_metadata_version,
+            metadata_sidecar_stamp,
         };
 
         Ok(file)
@@ -2865,9 +2963,10 @@ impl AFile {
                 is_favorite, rating, rotate, comments, has_tags,
                 e_make, e_model, e_date_time, e_software, e_artist, e_copyright, e_description, e_lens_make, e_lens_model, e_exposure_bias, e_exposure_time, e_f_number, e_focal_length, e_iso_speed, e_flash, e_orientation,
                 gps_latitude, gps_longitude, gps_altitude, geo_name, geo_admin1, geo_admin2, geo_cc,
-                last_scan_time, content_identifier, media_subtype, motion_photo_offset
+                last_scan_time, content_identifier, media_subtype, motion_photo_offset,
+                e_title, e_headline, e_keywords, e_credit, e_label, e_location, embedded_rating, embedded_metadata_version, metadata_sidecar_stamp
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, ?52, ?53, ?54)
             ON CONFLICT(folder_id, name) DO NOTHING",
             params![
                 self.folder_id,
@@ -2921,6 +3020,15 @@ impl AFile {
                 self.content_identifier,
                 self.media_subtype,
                 self.motion_photo_offset,
+                self.e_title,
+                self.e_headline,
+                crate::t_file_metadata::keywords_to_json(&self.e_keywords),
+                self.e_credit,
+                self.e_label,
+                self.e_location,
+                self.embedded_rating,
+                self.embedded_metadata_version,
+                self.metadata_sidecar_stamp,
             ]
         ).map_err(|e| e.to_string())?;
         Ok(result)
@@ -2937,8 +3045,9 @@ impl AFile {
                 rating = ?13,
                 e_make = ?14, e_model = ?15, e_date_time = ?16, e_software = ?17, e_artist = ?18, e_copyright = ?19, e_description = ?20, e_lens_make = ?21, e_lens_model = ?22, e_exposure_bias = ?23, e_exposure_time = ?24, e_f_number = ?25, e_focal_length = ?26, e_iso_speed = ?27, e_flash = ?28, e_orientation = ?29,
                 gps_latitude = ?30, gps_longitude = ?31, gps_altitude = ?32, geo_name = ?33, geo_admin1 = ?34, geo_admin2 = ?35, geo_cc = ?36,
-                last_scan_time = ?37, content_identifier = ?38, media_subtype = ?39, motion_photo_offset = ?40
-            WHERE id = ?41",
+                last_scan_time = ?37, content_identifier = ?38, media_subtype = ?39, motion_photo_offset = ?40,
+                e_title = ?41, e_headline = ?42, e_keywords = ?43, e_credit = ?44, e_label = ?45, e_location = ?46, embedded_rating = ?47, embedded_metadata_version = ?48, metadata_sidecar_stamp = ?49
+            WHERE id = ?50",
             params![
                 file.name,
                 file.name_pinyin,
@@ -2984,6 +3093,15 @@ impl AFile {
                 file.content_identifier,
                 file.media_subtype,
                 file.motion_photo_offset,
+                file.e_title,
+                file.e_headline,
+                crate::t_file_metadata::keywords_to_json(&file.e_keywords),
+                file.e_credit,
+                file.e_label,
+                file.e_location,
+                file.embedded_rating,
+                file.embedded_metadata_version,
+                file.metadata_sidecar_stamp,
                 file_id,
             ]
         ).map_err(|e| e.to_string())?;
@@ -3144,7 +3262,9 @@ impl AFile {
                     THEN lpf.path || '/' || lpv.name
                     ELSE NULL
                 END AS live_photo_video_path,
-                a.motion_photo_offset
+                a.motion_photo_offset,
+                a.e_title, a.e_headline, a.e_keywords, a.e_credit, a.e_label, a.e_location,
+                a.embedded_rating, a.embedded_metadata_version, a.metadata_sidecar_stamp
             FROM afiles a
             LEFT JOIN afolders b ON a.folder_id = b.id
             LEFT JOIN albums c ON b.album_id = c.id
@@ -3222,6 +3342,15 @@ impl AFile {
             live_photo_video_id: row.get(53)?,
             live_photo_video_path: row.get(54)?,
             motion_photo_offset: row.get(55)?,
+            e_title: row.get(56)?,
+            e_headline: row.get(57)?,
+            e_keywords: crate::t_file_metadata::keywords_from_json(row.get(58)?),
+            e_credit: row.get(59)?,
+            e_label: row.get(60)?,
+            e_location: row.get(61)?,
+            embedded_rating: row.get(62)?,
+            embedded_metadata_version: row.get(63)?,
+            metadata_sidecar_stamp: row.get(64)?,
         })
     }
 
@@ -3610,13 +3739,25 @@ impl AFile {
             let needs_motion_photo_detection = file_type == 1
                 && t_image::is_jpeg_path(file_path)
                 && file.motion_photo_offset.is_none();
+            let metadata_due = (file_type == 1 || file_type == 3)
+                && crate::t_file_metadata::metadata_refresh_due(
+                    file.embedded_metadata_version,
+                    file.metadata_sidecar_stamp.as_deref(),
+                    crate::t_file_metadata::sidecar_stamp(Path::new(file_path)).as_deref(),
+                );
 
-            if needs_motion_photo_detection
-                && !modified
-                && !missing_thumb
-                && !needs_tiff_dimension_refresh
-            {
-                Self::refresh_motion_photo_detection(&mut file, file_path, last_scan_time)?;
+            if !modified && !missing_thumb && !needs_tiff_dimension_refresh && (metadata_due || needs_motion_photo_detection) {
+                if needs_motion_photo_detection {
+                    Self::refresh_motion_photo_detection(&mut file, file_path, last_scan_time)?;
+                }
+                if metadata_due {
+                    if let Err(error) = Self::refresh_embedded_metadata(&mut file, file_path, last_scan_time) {
+                        eprintln!("Skipped supplemental metadata refresh: {}", error);
+                        if let Some(file_id) = file.id {
+                            let _ = Self::update_column(file_id, "last_scan_time", &last_scan_time);
+                        }
+                    }
+                }
                 return Ok((file, 2));
             }
 
@@ -3756,7 +3897,10 @@ impl AFile {
         )?;
         new_file_info.id = Some(file_id);
         new_file_info.is_favorite = old_file_info.is_favorite;
-        new_file_info.rating = old_file_info.rating;
+        new_file_info.rating = match old_file_info.rating {
+            Some(rating) if rating > 0 => Some(rating),
+            _ => new_file_info.rating,
+        };
         new_file_info.rotate = old_file_info.rotate;
         if old_file_info
             .comments
@@ -3827,6 +3971,94 @@ impl AFile {
             )
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// Re-read file metadata without deleting thumbnails, embeddings, or Lap library fields.
+    fn refresh_embedded_metadata(
+        file: &mut Self,
+        file_path: &str,
+        last_scan_time: i64,
+    ) -> Result<(), String> {
+        let file_id = file.id.ok_or_else(|| "File is missing an id".to_string())?;
+        let fresh = Self::new(file.folder_id, file_path, file.file_type.unwrap_or(0))?;
+        let conn = open_conn()?;
+        Self::write_refreshed_file_metadata(&conn, file_id, &fresh, last_scan_time)?;
+        if file.rating.unwrap_or(0) == 0 {
+            if let Some(rating) = fresh.embedded_rating.filter(|rating| *rating > 0) {
+                conn.execute(
+                    "UPDATE afiles SET rating = ?1 WHERE id = ?2",
+                    params![rating, file_id],
+                )
+                .map_err(|error| error.to_string())?;
+                file.rating = Some(rating);
+            }
+        }
+        file.taken_date = fresh.taken_date;
+        file.e_make = fresh.e_make;
+        file.e_model = fresh.e_model;
+        file.e_date_time = fresh.e_date_time;
+        file.e_software = fresh.e_software;
+        file.e_artist = fresh.e_artist;
+        file.e_copyright = fresh.e_copyright;
+        file.e_description = fresh.e_description;
+        file.e_lens_make = fresh.e_lens_make;
+        file.e_lens_model = fresh.e_lens_model;
+        file.e_exposure_bias = fresh.e_exposure_bias;
+        file.e_exposure_time = fresh.e_exposure_time;
+        file.e_f_number = fresh.e_f_number;
+        file.e_focal_length = fresh.e_focal_length;
+        file.e_iso_speed = fresh.e_iso_speed;
+        file.e_flash = fresh.e_flash;
+        file.e_orientation = fresh.e_orientation;
+        file.gps_latitude = fresh.gps_latitude;
+        file.gps_longitude = fresh.gps_longitude;
+        file.gps_altitude = fresh.gps_altitude;
+        file.geo_name = fresh.geo_name;
+        file.geo_admin1 = fresh.geo_admin1;
+        file.geo_admin2 = fresh.geo_admin2;
+        file.geo_cc = fresh.geo_cc;
+        file.e_title = fresh.e_title;
+        file.e_headline = fresh.e_headline;
+        file.e_keywords = fresh.e_keywords;
+        file.e_credit = fresh.e_credit;
+        file.e_label = fresh.e_label;
+        file.e_location = fresh.e_location;
+        file.embedded_rating = fresh.embedded_rating;
+        file.embedded_metadata_version = fresh.embedded_metadata_version;
+        file.metadata_sidecar_stamp = fresh.metadata_sidecar_stamp;
+        file.last_scan_time = Some(last_scan_time);
+        Ok(())
+    }
+
+    fn write_refreshed_file_metadata(
+        conn: &Connection,
+        file_id: i64,
+        file: &Self,
+        last_scan_time: i64,
+    ) -> Result<(), String> {
+        conn.execute(
+            "UPDATE afiles SET
+                taken_date = ?1,
+                e_make = ?2, e_model = ?3, e_date_time = ?4, e_software = ?5, e_artist = ?6, e_copyright = ?7, e_description = ?8,
+                e_lens_make = ?9, e_lens_model = ?10, e_exposure_bias = ?11, e_exposure_time = ?12, e_f_number = ?13, e_focal_length = ?14, e_iso_speed = ?15, e_flash = ?16, e_orientation = ?17,
+                gps_latitude = ?18, gps_longitude = ?19, gps_altitude = ?20, geo_name = ?21, geo_admin1 = ?22, geo_admin2 = ?23, geo_cc = ?24,
+                e_title = ?25, e_headline = ?26, e_keywords = ?27, e_credit = ?28, e_label = ?29, e_location = ?30,
+                embedded_rating = ?31, embedded_metadata_version = ?32, metadata_sidecar_stamp = ?33,
+                last_scan_time = ?34
+             WHERE id = ?35",
+            params![
+                file.taken_date,
+                file.e_make, file.e_model, file.e_date_time, file.e_software, file.e_artist, file.e_copyright, file.e_description,
+                file.e_lens_make, file.e_lens_model, file.e_exposure_bias, file.e_exposure_time, file.e_f_number, file.e_focal_length, file.e_iso_speed, file.e_flash, file.e_orientation,
+                file.gps_latitude, file.gps_longitude, file.gps_altitude, file.geo_name, file.geo_admin1, file.geo_admin2, file.geo_cc,
+                file.e_title, file.e_headline, crate::t_file_metadata::keywords_to_json(&file.e_keywords), file.e_credit, file.e_label, file.e_location,
+                file.embedded_rating, file.embedded_metadata_version, file.metadata_sidecar_stamp,
+                last_scan_time,
+                file_id,
+            ],
+        )
+        .map(|_| ())
+        .map_err(|error| error.to_string())
     }
 
     /// update a file column value
@@ -4511,10 +4743,31 @@ impl AFile {
         }
 
         if !params.search_file_name.is_empty() {
-            conditions.push("(a.name LIKE ? COLLATE NOCASE OR a.comments LIKE ? COLLATE NOCASE)".to_string());
+            let columns = [
+                "a.name",
+                "a.comments",
+                "a.e_title",
+                "a.e_headline",
+                "a.e_description",
+                "a.e_artist",
+                "a.e_copyright",
+                "a.e_credit",
+                "a.e_keywords",
+                "a.e_label",
+                "a.e_location",
+            ];
+            conditions.push(format!(
+                "({})",
+                columns
+                    .iter()
+                    .map(|column| format!("{column} LIKE ? COLLATE NOCASE"))
+                    .collect::<Vec<_>>()
+                    .join(" OR ")
+            ));
             let pattern = format!("%{}%", params.search_file_name);
-            sql_params.push(Box::new(pattern.clone()));
-            sql_params.push(Box::new(pattern));
+            for _ in columns {
+                sql_params.push(Box::new(pattern.clone()));
+            }
         }
 
         if let Some(condition) = Self::build_file_type_condition(params.search_file_type) {
@@ -9558,6 +9811,15 @@ fn create_db_internal() -> Result<(), String> {
             media_subtype TEXT,
             live_photo_video_id INTEGER,
             motion_photo_offset INTEGER,
+            e_title TEXT,
+            e_headline TEXT,
+            e_keywords TEXT,
+            e_credit TEXT,
+            e_label TEXT,
+            e_location TEXT,
+            embedded_rating INTEGER,
+            embedded_metadata_version INTEGER,
+            metadata_sidecar_stamp TEXT,
             FOREIGN KEY (folder_id) REFERENCES afolders(id) ON DELETE CASCADE
         )",
         [],
@@ -9950,5 +10212,149 @@ mod tag_group_query_tests {
             assert_eq!(counts[&1], expected.len() as i64);
             assert_eq!(counts[&2], 1);
         }
+    }
+
+    #[test]
+    fn file_metadata_search_matches_title_keyword_and_skips_empty_queries() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE afolders(id INTEGER PRIMARY KEY, album_id INTEGER, path TEXT, is_excluded_from_search INTEGER);
+             INSERT INTO afolders VALUES(1, 1, '/photos', 0);
+             CREATE TABLE afiles(
+                id INTEGER PRIMARY KEY, folder_id INTEGER, live_photo_video_id INTEGER,
+                name TEXT, comments TEXT, e_title TEXT, e_headline TEXT, e_description TEXT,
+                e_artist TEXT, e_copyright TEXT, e_credit TEXT, e_keywords TEXT, e_label TEXT, e_location TEXT
+             );
+             INSERT INTO afiles VALUES
+                (1, 1, NULL, 'plain.jpg', NULL, 'Harbor', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+                (2, 1, NULL, 'other.jpg', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '[\"Oslo\",\"Night\"]', NULL, NULL),
+                (3, 1, NULL, 'note.jpg', NULL, NULL, NULL, 'A quiet pier', NULL, NULL, NULL, NULL, NULL, NULL),
+                (4, 1, NULL, 'skip.jpg', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);",
+        )
+        .unwrap();
+        let mut params: QueryParams = serde_json::from_value(serde_json::json!({
+            "searchFileName":"oslo", "searchFileType":0, "sortType":0, "sortOrder":0,
+            "searchAllSubfolders":"", "searchFolder":"", "startDate":0, "endDate":0,
+            "calendarSort":0, "make":"", "model":"", "lensMake":"", "lensModel":"",
+            "locationAdmin1":"", "locationName":"", "isFavorite":false, "rating":-1,
+            "tagId":0, "personId":0, "tagGroupId":0, "smallFileFilter":0
+        }))
+        .unwrap();
+        let ids = |params: &QueryParams, conn: &Connection| {
+            let (joins, conditions, values) = AFile::build_search_query_parts(params);
+            let mut stmt = conn
+                .prepare(&format!(
+                    "SELECT a.id FROM afiles a JOIN afolders b ON b.id = a.folder_id {joins} {conditions} ORDER BY a.id"
+                ))
+                .unwrap();
+            stmt.query_map(rusqlite::params_from_iter(values.iter()), |row| row.get(0))
+                .unwrap()
+                .collect::<Result<Vec<i64>, _>>()
+                .unwrap()
+        };
+        assert_eq!(ids(&params, &conn), vec![2]);
+        params.search_file_name = "Harbor".to_string();
+        assert_eq!(ids(&params, &conn), vec![1]);
+        params.search_file_name = "pier".to_string();
+        assert_eq!(ids(&params, &conn), vec![3]);
+        params.search_file_name = "absent".to_string();
+        assert!(ids(&params, &conn).is_empty());
+    }
+
+    #[test]
+    fn file_metadata_refresh_keeps_rating_and_embeds() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE afiles(
+                id INTEGER PRIMARY KEY, rating INTEGER, embeds BLOB, taken_date INTEGER,
+                e_make TEXT, e_model TEXT, e_date_time TEXT, e_software TEXT, e_artist TEXT, e_copyright TEXT, e_description TEXT,
+                e_lens_make TEXT, e_lens_model TEXT, e_exposure_bias TEXT, e_exposure_time TEXT, e_f_number TEXT, e_focal_length TEXT, e_iso_speed TEXT, e_flash TEXT, e_orientation INTEGER,
+                gps_latitude REAL, gps_longitude REAL, gps_altitude REAL, geo_name TEXT, geo_admin1 TEXT, geo_admin2 TEXT, geo_cc TEXT,
+                e_title TEXT, e_headline TEXT, e_keywords TEXT, e_credit TEXT, e_label TEXT, e_location TEXT,
+                embedded_rating INTEGER, embedded_metadata_version INTEGER, metadata_sidecar_stamp TEXT, last_scan_time INTEGER
+            );
+            INSERT INTO afiles(id, rating, embeds, e_title) VALUES(1, 4, x'abcd', 'old');",
+        )
+        .unwrap();
+        let fresh = AFile {
+            id: Some(1),
+            folder_id: 1,
+            name: "photo.jpg".to_string(),
+            name_pinyin: None,
+            size: 1,
+            file_type: Some(1),
+            format_label: None,
+            created_at: None,
+            modified_at: None,
+            inode: None,
+            taken_date: Some(20),
+            width: None,
+            height: None,
+            duration: None,
+            is_favorite: Some(true),
+            rating: Some(0),
+            culling_flag: Some(1),
+            rotate: Some(90),
+            comments: Some("keep me".to_string()),
+            has_tags: Some(true),
+            has_faces: Some(1),
+            e_make: Some("Canon".to_string()),
+            e_model: None,
+            e_date_time: None,
+            e_software: None,
+            e_artist: Some("Ada".to_string()),
+            e_copyright: None,
+            e_description: None,
+            e_lens_make: None,
+            e_lens_model: None,
+            e_exposure_bias: None,
+            e_exposure_time: None,
+            e_f_number: None,
+            e_focal_length: None,
+            e_iso_speed: None,
+            e_flash: None,
+            e_orientation: Some(1),
+            gps_latitude: None,
+            gps_longitude: None,
+            gps_altitude: None,
+            geo_name: None,
+            geo_admin1: None,
+            geo_admin2: None,
+            geo_cc: None,
+            file_path: None,
+            album_id: None,
+            album_name: None,
+            has_thumbnail: None,
+            has_collections: None,
+            has_embedding: None,
+            last_scan_time: Some(9),
+            content_identifier: None,
+            media_subtype: None,
+            live_photo_video_id: None,
+            live_photo_video_path: None,
+            motion_photo_offset: None,
+            e_title: Some("From sidecar".to_string()),
+            e_headline: None,
+            e_keywords: vec!["Oslo".to_string()],
+            e_credit: None,
+            e_label: None,
+            e_location: None,
+            embedded_rating: Some(5),
+            embedded_metadata_version: Some(1),
+            metadata_sidecar_stamp: None,
+        };
+        AFile::write_refreshed_file_metadata(&conn, 1, &fresh, 11).unwrap();
+        let (rating, embeds, title, artist, keywords): (i64, Vec<u8>, String, String, String) = conn
+            .query_row(
+                "SELECT rating, embeds, e_title, e_artist, e_keywords FROM afiles WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            )
+            .unwrap();
+        assert_eq!(rating, 4);
+        assert_eq!(embeds, vec![0xAB, 0xCD]);
+        assert_eq!(title, "From sidecar");
+        assert_eq!(artist, "Ada");
+        assert_eq!(keywords, "[\"Oslo\"]");
     }
 }

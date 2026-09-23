@@ -36,6 +36,9 @@ pub(crate) enum SidecarTransferSource {
     AppleAae {
         old_path: PathBuf,
     },
+    Xmp {
+        old_path: PathBuf,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -74,6 +77,28 @@ pub(crate) fn build_apple_sidecar_rename_plan(
             {
                 if seen_sidecar_paths.insert(normalize_sidecar_path_key(&plan.old_path)) {
                     plans.push(plan);
+                }
+            }
+        }
+        let dest_media = parent.join(new_name);
+        if let Some(old_path) = crate::t_file_metadata::bound_sidecar(primary_path) {
+            if let Some(new_path) =
+                crate::t_file_metadata::xmp_destination_for(primary_path, &old_path, &dest_media)
+            {
+                if old_path != new_path
+                    && seen_sidecar_paths.insert(normalize_sidecar_path_key(&old_path))
+                {
+                    let new_sidecar_name = new_path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("sidecar.xmp")
+                        .to_string();
+                    plans.push(SidecarRenamePlan {
+                        old_path,
+                        new_path,
+                        new_name: new_sidecar_name,
+                        file_id: None,
+                    });
                 }
             }
         }
@@ -367,6 +392,11 @@ fn resolve_apple_sidecar_transfer_sources(
             sources.push(SidecarTransferSource::AppleAae { old_path: sidecar });
         }
     }
+    if let Some(sidecar) = crate::t_file_metadata::bound_sidecar(Path::new(file_path)) {
+        if seen_paths.insert(normalize_sidecar_path_key(&sidecar)) {
+            sources.push(SidecarTransferSource::Xmp { old_path: sidecar });
+        }
+    }
 
     Ok(sources)
 }
@@ -410,6 +440,19 @@ fn build_apple_sidecar_transfer_plan_from_sources(
                     build_aae_transfer_target_name(primary_path, old_path, target_name, target_stem)
                 {
                     let new_path = target_parent.join(new_name);
+                    if old_path != &new_path {
+                        plans.push(SidecarTransferPlan {
+                            old_path: old_path.clone(),
+                            new_path,
+                            file_id: None,
+                        });
+                    }
+                }
+            }
+            SidecarTransferSource::Xmp { old_path } => {
+                if let Some(new_path) =
+                    crate::t_file_metadata::xmp_destination_for(primary_path, old_path, primary_target)
+                {
                     if old_path != &new_path {
                         plans.push(SidecarTransferPlan {
                             old_path: old_path.clone(),
