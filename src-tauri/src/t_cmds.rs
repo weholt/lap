@@ -2237,6 +2237,17 @@ fn delete_file_group(
     if let Err(error) = delete_apple_aae_sidecars(file_path, permanently) {
         delete_errors.push(format!("Failed to delete Apple sidecar: {}", error));
     }
+    if let Some(sidecar) = crate::t_file_metadata::bound_sidecar(std::path::Path::new(file_path)) {
+        let sidecar_path = sidecar.to_string_lossy();
+        let result = if permanently {
+            t_utils::delete_file_permanently(&sidecar_path)
+        } else {
+            t_utils::trash_path(&sidecar_path)
+        };
+        if let Err(error) = result {
+            delete_errors.push(format!("Failed to delete XMP sidecar: {}", error));
+        }
+    }
 
     AFile::batch_delete(&deleted_file_ids)
         .map_err(|e| format!("Error while deleting removed files from DB: {}", e))?;
@@ -2321,6 +2332,12 @@ pub(crate) fn delete_files_grouped(
                 aae_sidecars.push(sidecar_path);
             }
         }
+        if let Some(sidecar) = crate::t_file_metadata::bound_sidecar(std::path::Path::new(&file.file_path)) {
+            let sidecar_path = sidecar.to_string_lossy().into_owned();
+            if seen_aae_paths.insert(sidecar_path.to_ascii_lowercase()) {
+                aae_sidecars.push(sidecar_path);
+            }
+        }
         delete_groups.push(DeleteGroup {
             primary_id: file.file_id,
             primary_path: file.file_path.clone(),
@@ -2393,6 +2410,186 @@ pub(crate) fn delete_files_grouped(
 pub fn edit_file_comment(file_id: i64, comment: &str) -> Result<usize, String> {
     AFile::update_column(file_id, "comments", &comment)
         .map_err(|e| format!("Error while editing file comment: {}", e))
+}
+
+#[tauri::command]
+pub fn get_files_metadata(file_ids: Vec<i64>) -> Result<Vec<serde_json::Value>, String> {
+    let mut files = Vec::new();
+    for file_id in file_ids.into_iter().take(100) {
+        let Some(path) = AFile::path_for_id(file_id)? else {
+            continue;
+        };
+        let Some(mut metadata) = AFile::load_descriptive(file_id)? else {
+            continue;
+        };
+        let from_file = crate::t_file_metadata::read_supplemental_metadata(Path::new(&path));
+        fill_descriptive_gaps(&mut metadata, &from_file);
+        files.push(metadata_json(file_id, &path, &metadata));
+    }
+    Ok(files)
+}
+
+#[tauri::command]
+pub fn search_file_metadata(
+    text: Option<String>,
+    keyword: Option<String>,
+    place: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<serde_json::Value>, String> {
+    AFile::search_descriptive(
+        text.as_deref().unwrap_or(""),
+        keyword.as_deref().unwrap_or(""),
+        place.as_deref().unwrap_or(""),
+        limit.unwrap_or(30),
+    )
+}
+
+#[tauri::command]
+pub fn update_files_metadata(
+    app: AppHandle,
+    file_ids: Vec<i64>,
+    change: crate::t_file_metadata::MetadataChange,
+) -> Result<Vec<serde_json::Value>, String> {
+    if file_ids.is_empty() {
+        return Err("Choose at least one photo".to_string());
+    }
+    if file_ids.len() > 40 {
+        return Err("Update at most 40 photos at a time".to_string());
+    }
+    let mut results = Vec::new();
+    for file_id in file_ids {
+        let result = match update_one_file_metadata(file_id, &change) {
+            Ok(value) => value,
+            Err(error) => serde_json::json!({ "fileId": file_id, "ok": false, "error": error }),
+        };
+        if result.get("ok").and_then(|value| value.as_bool()) == Some(true) {
+            let _ = app.emit("file-metadata-updated", &result);
+            let _ = app.emit("tags-changed", &result);
+        }
+        results.push(result);
+    }
+    Ok(results)
+}
+
+fn update_one_file_metadata(
+    file_id: i64,
+    change: &crate::t_file_metadata::MetadataChange,
+) -> Result<serde_json::Value, String> {
+    let path = AFile::path_for_id(file_id)?.ok_or_else(|| format!("Photo {file_id} is not in the library"))?;
+    let file_metadata = crate::t_file_metadata::read_supplemental_metadata(Path::new(&path));
+    let mut current = AFile::load_descriptive(file_id)?.unwrap_or_default();
+    fill_descriptive_gaps(&mut current, &file_metadata);
+    current.city = file_metadata.city.clone().or(current.city);
+    current.state = file_metadata.state.clone().or(current.state);
+    current.country = file_metadata.country.clone().or(current.country);
+    current.gps_latitude = file_metadata.gps_latitude;
+    current.gps_longitude = file_metadata.gps_longitude;
+    current.gps_altitude = file_metadata.gps_altitude;
+    let previous_keywords = current.keywords.clone();
+    let updated = crate::t_file_metadata::apply_metadata_patch(&current, change)?;
+    let report = crate::t_file_metadata::write_descriptive_metadata(Path::new(&path), &updated)?;
+    let stamp = if report.sidecar {
+        crate::t_file_metadata::sidecar_stamp(Path::new(&path))
+    } else {
+        None
+    };
+    AFile::save_descriptive(
+        file_id,
+        &updated,
+        change.rating.is_some() || change.clear.iter().any(|field| field == "rating"),
+        change.touches_gps(),
+        change.touches_location(),
+        stamp.as_deref(),
+    )?;
+    let removed = previous_keywords
+        .iter()
+        .filter(|keyword| {
+            !updated
+                .keywords
+                .iter()
+                .any(|next| next.eq_ignore_ascii_case(keyword))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    ATag::detach_keywords(file_id, &removed)?;
+    ATag::apply_keywords_to_file(file_id, &updated.keywords)?;
+    let mut value = metadata_json(file_id, &path, &updated);
+    value["ok"] = serde_json::json!(true);
+    value["wrote"] = serde_json::json!(if report.embedded_iptc {
+        "iptc+xmp"
+    } else if report.embedded_xmp {
+        "xmp"
+    } else {
+        "sidecar"
+    });
+    Ok(value)
+}
+
+fn fill_descriptive_gaps(
+    destination: &mut crate::t_file_metadata::FileMetadata,
+    source: &crate::t_file_metadata::FileMetadata,
+) {
+    let fill = |slot: &mut Option<String>, value: &Option<String>| {
+        if slot.as_ref().is_none_or(|text| text.trim().is_empty()) {
+            if let Some(value) = value.as_deref().map(str::trim).filter(|text| !text.is_empty()) {
+                *slot = Some(value.to_string());
+            }
+        }
+    };
+    fill(&mut destination.title, &source.title);
+    fill(&mut destination.headline, &source.headline);
+    fill(&mut destination.description, &source.description);
+    fill(&mut destination.creator, &source.creator);
+    fill(&mut destination.copyright, &source.copyright);
+    fill(&mut destination.credit, &source.credit);
+    fill(&mut destination.label, &source.label);
+    if destination.keywords.is_empty() {
+        destination.keywords = source.keywords.clone();
+    }
+    if destination.embedded_rating.is_none() {
+        destination.embedded_rating = source.embedded_rating;
+    }
+}
+
+fn metadata_json(file_id: i64, path: &str, metadata: &crate::t_file_metadata::FileMetadata) -> serde_json::Value {
+    serde_json::json!({
+        "fileId": file_id,
+        "path": path,
+        "title": metadata.title,
+        "headline": metadata.headline,
+        "description": metadata.description,
+        "keywords": metadata.keywords,
+        "creator": metadata.creator,
+        "copyright": metadata.copyright,
+        "credit": metadata.credit,
+        "city": metadata.city,
+        "state": metadata.state,
+        "country": metadata.country,
+        "location": crate::t_file_metadata::recorded_place(metadata),
+        "label": metadata.label,
+        "rating": metadata.embedded_rating,
+        "latitude": metadata.gps_latitude,
+        "longitude": metadata.gps_longitude,
+        "takenUnix": taken_unix(file_id),
+        "taken": taken_unix(file_id).map(format_taken_local),
+    })
+}
+
+fn taken_unix(file_id: i64) -> Option<i64> {
+    crate::t_sqlite::open_conn()
+        .ok()?
+        .query_row(
+            "SELECT taken_date FROM afiles WHERE id = ?1 AND taken_date > 0",
+            rusqlite::params![file_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .ok()
+}
+
+fn format_taken_local(unix: i64) -> String {
+    chrono::DateTime::from_timestamp(unix, 0)
+        .map(|time| time.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_default()
 }
 
 /// Remove unreferenced thumbnail cache files. When `library_id` is provided,

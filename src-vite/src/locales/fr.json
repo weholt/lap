@@ -11,7 +11,8 @@
     "people": "Personnes",
     "camera": "Appareils",
     "map": "Carte",
-    "settings": "Paramètres"
+    "settings": "Paramètres",
+    "agent": "Agent"
   },
   "collection": {
     "title": "Collections",
@@ -1060,6 +1061,13 @@
     "artist": "Artiste",
     "copyright": "Droits d'auteur",
     "description": "Description",
+    "subject_title": "Titre",
+    "headline": "Titre principal",
+    "keywords": "Mots-clés",
+    "credit": "Crédit",
+    "color_label": "Libellé",
+    "embedded_rating": "Note du fichier",
+    "recorded_place": "Lieu enregistré",
     "lens": "Objectif",
     "lens_make": "Marque obj.",
     "lens_model": "Modèle obj.",
@@ -1157,6 +1165,19 @@
       "use_external_with_app": "Essayez d'ouvrir dans {app} à la place.",
       "unknown": "Erreur inconnue"
     }
+  },
+  "agent": {
+    "title": "Agent",
+    "close": "Close",
+    "open_photo": "Open this photo",
+    "copy": "Copy chat",
+    "download": "Enregistrer le chat",
+    "empty": "Ask in plain language. For example: find harbor photos from Oslo, make a smart album of 4-star favorites, or set the title and keywords on the selected photos.",
+    "you": "You",
+    "assistant": "Lap",
+    "placeholder": "Find, organize, or describe photos…",
+    "working": "Working",
+    "send": "Send"
   },
   "settings": {
     "general": {
@@ -1572,6 +1593,29 @@
         "Moyen",
         "Faible"
       ]
+    },
+    "agent": {
+      "title": "Agent",
+      "provider": "Provider",
+      "custom": "Custom",
+      "base_url": "API address",
+      "model": "Model",
+      "model_hint": "On OpenRouter, Load models lists models that can call tools. A model without tool support can still chat; Lap will ask it for tools in plain text.",
+      "load_models": "Load models",
+      "api_key": "API key",
+      "api_key_hint": "Stored only on this computer. Leave blank to keep the current key. Ollama does not need one.",
+      "save": "Save",
+      "saved": "Saved",
+      "mcp": "MCP server",
+      "mcp_hint": "Other agents on this computer can search, import, make albums and collections, and read or update IPTC, titles, keywords, and locations.",
+      "mcp_port": "Port",
+      "mcp_url": "Address",
+      "mcp_token": "Token",
+      "copy_config": "Copy config",
+      "new_token": "New token",
+      "mcp_running": "Listening on this computer",
+      "mcp_stopped": "Stopped",
+      "copied": "Copied"
     },
     "about": {
       "title": "À propos",

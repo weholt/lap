@@ -334,6 +334,7 @@ const selection = useAlbumSelectionProvider(
 );
 
 let unlistenAlbumCoverChanged: () => void;
+let unlistenAgentAlbumsChanged: (() => void) | null = null;
 let unlistenExpandAlbumFolder: (() => void) | undefined;
 let unlistenIndexProgress: (() => void) | undefined;
 let unlistenIndexFinished: (() => void) | undefined;
@@ -767,6 +768,10 @@ onMounted( async () => {
   }
 
   // listen for album-cover-changed event
+  unlistenAgentAlbumsChanged = await listen('albums-changed', async () => {
+    albums.value = await getAllAlbums();
+  });
+
   unlistenAlbumCoverChanged = await listen('album-cover-changed', async (event: any) => {
     const eventAlbumId = Number(event.payload?.albumId || 0);
     const fileId = Number(event.payload?.fileId || 0);
@@ -940,6 +945,7 @@ watch(isFolderFiltering, (filtering) => {
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handleReorderOutsidePointerDown, true);
   if (unlistenAlbumCoverChanged) unlistenAlbumCoverChanged();
+  unlistenAgentAlbumsChanged?.();
   if (unlistenExpandAlbumFolder) unlistenExpandAlbumFolder();
   if (unlistenIndexProgress) unlistenIndexProgress();
   if (unlistenIndexFinished) unlistenIndexFinished();

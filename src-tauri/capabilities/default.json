@@ -63,6 +63,7 @@
     "aptabase:allow-track-event",
     "shell:default",
     "fs:default",
+    "fs:allow-write-text-file",
     "fs:scope",
     "updater:default"
   ]

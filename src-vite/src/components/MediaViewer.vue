@@ -12,8 +12,8 @@
       v-if="showToolbar"
       id="responsiveDiv"
       :class="computedToolbarClass"
-      data-tauri-drag-region
     >
+      <div class="absolute inset-0" data-tauri-drag-region></div>
       <!-- App Icon + Title (left side, ImageViewer on Windows) -->
       <div v-if="showDesktopWindowControls && mode === 2 && showWindowControlsBar" class="absolute left-0 top-0 h-10 flex items-center px-3 select-none" data-tauri-drag-region>
         <img :src="iconLogo" class="w-5 h-5 mr-2 rounded" data-tauri-drag-region />
@@ -21,7 +21,7 @@
           {{ $t('image_viewer.title') }}
         </span>
       </div>
-      <div ref="buttonsRef" class="flex items-center space-x-1">
+      <div ref="buttonsRef" class="relative flex items-center space-x-1">
         <TButton
           :icon="IconPrev"
           :disabled="fileIndex <= 0 || isSlideShow || !canInteract"

@@ -1190,6 +1190,22 @@ export async function batchDeleteFiles(files, permanently = false) {
   }
 }
 
+export async function getAgentSettings() {
+  return await invoke('get_agent_settings');
+}
+
+export async function saveAgentSettings(settings) {
+  return await invoke('save_agent_settings', { input: settings });
+}
+
+export async function listAgentModels() {
+  return await invoke('agent_list_models');
+}
+
+export async function agentChat(messages, context) {
+  return await invoke('agent_chat', { messages, context });
+}
+
 // edit file comment
 export async function editFileComment(fileId, comment) {
   try {

@@ -11,7 +11,8 @@
     "people": "Люди",
     "camera": "Камеры",
     "map": "Карта",
-    "settings": "Настройки"
+    "settings": "Настройки",
+    "agent": "Агент"
   },
   "collection": {
     "title": "Коллекции",
@@ -1060,6 +1061,13 @@
     "artist": "Автор",
     "copyright": "Авторские права",
     "description": "Описание",
+    "subject_title": "Название",
+    "headline": "Заголовок",
+    "keywords": "Ключевые слова",
+    "credit": "Источник",
+    "color_label": "Метка",
+    "embedded_rating": "Оценка файла",
+    "recorded_place": "Место в файле",
     "lens": "Объектив",
     "lens_make": "Фирма",
     "lens_model": "Модель",
@@ -1157,6 +1165,19 @@
       "use_external_with_app": "Попробуйте открыть в {app}.",
       "unknown": "Неизвестная ошибка"
     }
+  },
+  "agent": {
+    "title": "Агент",
+    "close": "Close",
+    "open_photo": "Open this photo",
+    "copy": "Copy chat",
+    "download": "Сохранить чат",
+    "empty": "Ask in plain language. For example: find harbor photos from Oslo, make a smart album of 4-star favorites, or set the title and keywords on the selected photos.",
+    "you": "You",
+    "assistant": "Lap",
+    "placeholder": "Find, organize, or describe photos…",
+    "working": "Working",
+    "send": "Send"
   },
   "settings": {
     "general": {
@@ -1572,6 +1593,29 @@
         "Среднее",
         "Низкое"
       ]
+    },
+    "agent": {
+      "title": "Агент",
+      "provider": "Provider",
+      "custom": "Custom",
+      "base_url": "API address",
+      "model": "Model",
+      "model_hint": "On OpenRouter, Load models lists models that can call tools. A model without tool support can still chat; Lap will ask it for tools in plain text.",
+      "load_models": "Load models",
+      "api_key": "API key",
+      "api_key_hint": "Stored only on this computer. Leave blank to keep the current key. Ollama does not need one.",
+      "save": "Save",
+      "saved": "Saved",
+      "mcp": "MCP server",
+      "mcp_hint": "Other agents on this computer can search, import, make albums and collections, and read or update IPTC, titles, keywords, and locations.",
+      "mcp_port": "Port",
+      "mcp_url": "Address",
+      "mcp_token": "Token",
+      "copy_config": "Copy config",
+      "new_token": "New token",
+      "mcp_running": "Listening on this computer",
+      "mcp_stopped": "Stopped",
+      "copied": "Copied"
     },
     "about": {
       "title": "О программе",

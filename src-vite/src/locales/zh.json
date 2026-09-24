@@ -11,7 +11,8 @@
     "people": "人物",
     "camera": "相机",
     "map": "地图",
-    "settings": "设置"
+    "settings": "设置",
+    "agent": "助手"
   },
   "collection": {
     "title": "合集",
@@ -1060,6 +1061,13 @@
     "artist": "艺术家",
     "copyright": "版权",
     "description": "描述",
+    "subject_title": "标题",
+    "headline": "提要",
+    "keywords": "关键词",
+    "credit": "署名",
+    "color_label": "标签",
+    "embedded_rating": "文件评分",
+    "recorded_place": "文件中的地点",
     "lens": "镜头",
     "lens_make": "镜头制造商",
     "lens_model": "镜头型号",
@@ -1157,6 +1165,19 @@
       "use_external_with_app": "请尝试在 {app} 中打开。",
       "unknown": "未知错误"
     }
+  },
+  "agent": {
+    "title": "助手",
+    "close": "Close",
+    "open_photo": "Open this photo",
+    "copy": "Copy chat",
+    "download": "保存聊天",
+    "empty": "Ask in plain language. For example: find harbor photos from Oslo, make a smart album of 4-star favorites, or set the title and keywords on the selected photos.",
+    "you": "You",
+    "assistant": "Lap",
+    "placeholder": "Find, organize, or describe photos…",
+    "working": "Working",
+    "send": "Send"
   },
   "settings": {
     "general": {
@@ -1572,6 +1593,29 @@
         "中 (推荐)",
         "低 (宽松)"
       ]
+    },
+    "agent": {
+      "title": "助手",
+      "provider": "Provider",
+      "custom": "Custom",
+      "base_url": "API address",
+      "model": "Model",
+      "model_hint": "On OpenRouter, Load models lists models that can call tools. A model without tool support can still chat; Lap will ask it for tools in plain text.",
+      "load_models": "Load models",
+      "api_key": "API key",
+      "api_key_hint": "Stored only on this computer. Leave blank to keep the current key. Ollama does not need one.",
+      "save": "Save",
+      "saved": "Saved",
+      "mcp": "MCP server",
+      "mcp_hint": "Other agents on this computer can search, import, make albums and collections, and read or update IPTC, titles, keywords, and locations.",
+      "mcp_port": "Port",
+      "mcp_url": "Address",
+      "mcp_token": "Token",
+      "copy_config": "Copy config",
+      "new_token": "New token",
+      "mcp_running": "Listening on this computer",
+      "mcp_stopped": "Stopped",
+      "copied": "Copied"
     },
     "about": {
       "title": "关于",

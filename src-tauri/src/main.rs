@@ -13,6 +13,7 @@
 use tauri::Manager;
 use tauri_plugin_aptabase::EventTracker;
 
+mod t_agent;
 mod t_ai;
 mod t_ai_png;
 mod t_apple_sidecar;
@@ -22,6 +23,7 @@ mod t_common;
 mod t_config;
 mod t_dedup;
 mod t_face;
+mod t_file_metadata;
 mod t_heif;
 mod t_http;
 mod t_image;
@@ -117,6 +119,7 @@ async fn main() {
             if let Err(e) = t_sqlite::create_db() {
                 eprintln!("Failed to initialize database: {}", e);
             }
+            t_agent::install(&_app.handle());
 
             // Initialize video HTTP server for Linux
             #[cfg(target_os = "linux")]
@@ -342,6 +345,13 @@ async fn main() {
             t_cmds::batch_delete_files,
             // file metadata
             t_cmds::edit_file_comment,
+            t_cmds::get_files_metadata,
+            t_cmds::search_file_metadata,
+            t_cmds::update_files_metadata,
+            t_agent::get_agent_settings,
+            t_agent::save_agent_settings,
+            t_agent::agent_list_models,
+            t_agent::agent_chat,
             t_cmds::clean_unused_thumbnail_cache,
             t_cmds::get_file_thumb,
             t_cmds::get_file_thumb_by_id,

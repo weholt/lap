@@ -657,6 +657,9 @@
         <div v-else-if="config.settings.tabIndex === 7" class="py-2">
             <SettingsAbout />
         </div>
+        <div v-else-if="config.settings.tabIndex === 8" class="py-2">
+            <AgentSettings />
+        </div>
 
       </div>
     </div>
@@ -725,6 +728,7 @@ import { IconClose, IconRestore } from '@/common/icons';
 
 import TitleBar from '@/components/TitleBar.vue';
 import SettingsAbout from '@/components/SettingsAbout.vue';
+import AgentSettings from '@/components/AgentSettings.vue';
 import MessageBox from '@/components/MessageBox.vue';
 import BackupDialog from '@/components/BackupDialog.vue';
 import RestoreDialog from '@/components/RestoreDialog.vue';
@@ -744,6 +748,7 @@ const settingsTabs = [
   'settings.advanced.title',
   'settings.shortcuts.title',
   'settings.about.title',
+  'settings.agent.title',
 ];
 
 const appWindow = getCurrentWebviewWindow()

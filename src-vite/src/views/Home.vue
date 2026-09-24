@@ -26,21 +26,21 @@
           !leftPanelLayoutExpanded && isMac ? 'mt-12 mb-8': '',
         ]"
         :style="{ width: leftPanelLayoutExpanded ? leftPanelWidth : '4rem' }"
-        data-tauri-drag-region
         @focus="uiStore.setActivePane('left-sidebar')"
       >
           <div
             class="absolute inset-y-0 left-0 bg-base-200 rounded-box"
             :class="isDraggingSplitter ? '' : 'transition-[width] duration-200 ease-in-out'"
             :style="{ width: leftPanelVisualExpanded ? leftPanelWidth : '4rem' }"
+            data-tauri-drag-region
           ></div>
 
           <!-- side bar -->
           <div 
             class="fixed top-14 min-w-16 bottom-10 z-10 flex flex-col items-center space-y-1" 
-            data-tauri-drag-region
           >
-            <div v-for="item in visibleButtons" :key="item.index">
+            <div class="absolute inset-0" data-tauri-drag-region></div>
+            <div v-for="item in visibleButtons" :key="item.index" class="relative">
               <TButton
                 :buttonSize="'large'"
                 :icon="item.icon"
@@ -53,10 +53,19 @@
               />
             </div>
 
-            <div class="flex-1"></div>
+            <div class="flex-1 pointer-events-none"></div>
 
-            <TButton 
+            <TButton
               class="mt-auto"
+              :buttonSize="'large'"
+              :icon="IconSparkles"
+              text=""
+              :tooltip="$t('sidebar.agent')"
+              tooltipPlacement="right"
+              :selected="agentPanelOpen"
+              @click="toggleAgentPanel"
+            />
+            <TButton 
               :class="showDebugBadge ? 'text-warning': ''"
               :buttonSize="'large'" 
               :icon="IconSettings" 
@@ -221,6 +230,7 @@ import {
   IconCamera,
   IconSearch,
   IconSettings,
+  IconSparkles,
   IconDot,
   IconPhotoAll,
   IconArrowDown,
@@ -356,6 +366,17 @@ const isDraggingCollectionSplitter = ref(false);
 const appName = ref('');
 const showDebugBadge = import.meta.env.DEV;
 let unlistenOpenPreferences: (() => void) | null = null;
+let unlistenAgentSmartAlbum: (() => void) | null = null;
+const agentPanelOpen = computed(() => config.rightPanel.show && config.rightPanel.mode === 'agent');
+
+function toggleAgentPanel() {
+  if (agentPanelOpen.value) {
+    config.rightPanel.show = false;
+    return;
+  }
+  config.rightPanel.mode = 'agent';
+  config.rightPanel.show = true;
+}
 let unlistenOpenAbout: (() => void) | null = null;
 let unlistenAlbumsRefreshed: (() => void) | null = null;
 let unlistenAddAlbumRequested: (() => void) | null = null;
@@ -478,6 +499,19 @@ onMounted(async () => {
     void checkLibraryEmpty();
   });
 
+  unlistenAgentSmartAlbum = await listen('agent-smart-album', (event: any) => {
+    const album = event.payload;
+    if (!album?.id) return;
+    const albums = Array.isArray(libConfig.smartAlbums) ? libConfig.smartAlbums : [];
+    if (!albums.some((item: any) => item.id === album.id)) {
+      libConfig.smartAlbums = [...albums, album];
+    }
+    showPanel.value = true;
+    config.main.sidebarIndex = SIDEBAR.SMART_ALBUM;
+    libConfig.smartAlbum.type = 'custom';
+    libConfig.smartAlbum.id = album.id;
+  });
+
   try {
     const name = await getName();
     if (name) appName.value = name;
@@ -505,6 +539,8 @@ onBeforeUnmount(() => {
   unlistenAddAlbumRequested = null;
   unlistenEditAlbumRequested?.();
   unlistenEditAlbumRequested = null;
+  unlistenAgentSmartAlbum?.();
+  unlistenAgentSmartAlbum = null;
 });
 
 function handleHomeKeyDown(event: KeyboardEvent) {

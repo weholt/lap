@@ -153,6 +153,11 @@ fn get_migrations() -> Vec<Migration> {
             description: "Add tag groups and persistent ordering",
             sql: "",
         },
+        Migration {
+            version: 18,
+            description: "Add supplemental image metadata columns",
+            sql: "",
+        },
     ]
 }
 
@@ -470,6 +475,8 @@ pub fn check_and_migrate(conn: &Connection) -> Result<(), String> {
                 }
             } else if migration.version == 17 {
                 migrate_tag_groups(conn)?;
+            } else if migration.version == 18 {
+                migrate_embedded_metadata(conn)?;
             } else if !migration.sql.trim().is_empty() {
                 conn.execute_batch(migration.sql)
                     .map_err(|e| format!("Migration {} failed: {}", migration.version, e))?;
@@ -525,4 +532,51 @@ pub(crate) fn migrate_tag_groups(conn: &Connection) -> Result<(), String> {
         WHEN NEW.group_id IS NULL BEGIN SELECT RAISE(ABORT, 'Tag group is required'); END;")
         .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())
+}
+
+fn migrate_embedded_metadata(conn: &Connection) -> Result<(), String> {
+    for (column, kind) in [
+        ("e_title", "TEXT"),
+        ("e_headline", "TEXT"),
+        ("e_keywords", "TEXT"),
+        ("e_credit", "TEXT"),
+        ("e_label", "TEXT"),
+        ("e_location", "TEXT"),
+        ("embedded_rating", "INTEGER"),
+        ("embedded_metadata_version", "INTEGER"),
+        ("metadata_sidecar_stamp", "TEXT"),
+    ] {
+        if !table_has_column(conn, "afiles", column)? {
+            conn.execute(&format!("ALTER TABLE afiles ADD COLUMN {column} {kind}"), [])
+                .map_err(|error| format!("Migration 18 failed adding {column}: {error}"))?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_metadata_schema_adds_columns_idempotently() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE afiles (id INTEGER PRIMARY KEY, name TEXT)")
+            .unwrap();
+        migrate_embedded_metadata(&conn).unwrap();
+        migrate_embedded_metadata(&conn).unwrap();
+        for column in [
+            "e_title",
+            "e_headline",
+            "e_keywords",
+            "e_credit",
+            "e_label",
+            "e_location",
+            "embedded_rating",
+            "embedded_metadata_version",
+            "metadata_sidecar_stamp",
+        ] {
+            assert!(table_has_column(&conn, "afiles", column).unwrap(), "{column}");
+        }
+    }
 }

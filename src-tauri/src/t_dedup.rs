@@ -348,6 +348,15 @@ fn get_files_by_sizes(conn: &Connection) -> Result<Vec<AFile>, String> {
                 live_photo_video_id: None,
                 live_photo_video_path: None,
                 motion_photo_offset: None,
+                e_title: None,
+                e_headline: None,
+                e_keywords: Vec::new(),
+                e_credit: None,
+                e_label: None,
+                e_location: None,
+                embedded_rating: None,
+                embedded_metadata_version: None,
+                metadata_sidecar_stamp: None,
             })
         })
         .map_err(|e| e.to_string())?;

@@ -24,11 +24,14 @@
     <!-- title bar -->
     <div
       v-if="!showWelcomeContent"
-      class="absolute top-0 left-0 right-0 px-2 h-12 flex flex-row flex-nowrap items-center justify-between bg-base-300 z-30 overflow-hidden"
-      data-tauri-drag-region
+      class="absolute top-0 left-0 h-12 z-30"
+      :style="{ right: rightPanelLayoutVisible ? `${activeRightPanelWidth + 4}px` : '0px' }"
     >
+      <!-- Empty drag surface. Icons must not be children of the drag region or WebView2 paints each one twice. -->
+      <div class="absolute inset-0 bg-base-300" data-tauri-drag-region></div>
+      <div class="relative h-full px-2 flex flex-row flex-nowrap items-center justify-between overflow-hidden pointer-events-none">
       <!-- title -->
-      <div class="mr-1 flex flex-row items-center gap-1 min-w-0 flex-1 overflow-hidden" data-tauri-drag-region>
+      <div class="pointer-events-auto mr-1 flex flex-row items-center gap-1 min-w-0 flex-1 overflow-hidden">
         <TButton v-if="tempViewMode !== 'none'"
           :icon="IconPrev"
           :buttonSize="'medium'"
@@ -53,7 +56,7 @@
       </div>
 
       <!-- toolbar -->
-      <div class="flex items-center gap-2 shrink-0">
+      <div class="pointer-events-auto flex items-center gap-2 shrink-0">
 
         <!-- file type options -->
         <DropDownSelect
@@ -173,6 +176,7 @@
             @click="toggleInfoPanel"
           />
         </div>
+      </div>
       </div>
     </div>
 
@@ -481,6 +485,11 @@
             @unselect-file="unselectFileFromSelection"
             @more-action="action => action()"
           />
+          <AgentPanel
+            v-else-if="rightPanelContent === 'agent'"
+            class="h-full"
+            @close="config.rightPanel.show = false"
+          />
           <FileInfo
             v-else-if="rightPanelContent === 'info'"
             ref="fileInfoRef"
@@ -764,6 +773,7 @@ import TaggingDialog from '@/components/TaggingDialog.vue';
 import AddToCollectionDialog from '@/components/AddToCollectionDialog.vue';
 import ExternalAppsDialog from '@/components/ExternalAppsDialog.vue';
 import FileInfo from '@/components/FileInfo.vue';
+import AgentPanel from '@/components/AgentPanel.vue';
 import Breadcrumb from '@/components/Breadcrumb.vue';
 import DedupPane from '@/components/DedupPane.vue';
 import SelectionPanel from '@/components/SelectionPanel.vue';
@@ -994,6 +1004,7 @@ type SelectionRestoreState = {
 let pendingSelectionRestore: SelectionRestoreState | null = null;
 let isRestoringSelection = false;
 let pendingFocusedFileId: number | null = null;
+let pendingOpenAgentViewer = false;
 let isRestoringFocusedFile = false;
 const setItemSelected = (index: number, selected: boolean) => {
   if (index < 0 || index >= fileList.value.length) return;
@@ -1251,8 +1262,119 @@ async function restoreSelectionAfterFileListRefresh() {
 }
 
 function rememberFocusedFileForPresentationRefresh() {
+  if (agentOpenHoldId) {
+    pendingFocusedFileId = agentOpenHoldId;
+    pendingOpenAgentViewer = true;
+    return;
+  }
   const fileId = Number(fileList.value[selectedItemIndex.value]?.id || 0);
   pendingFocusedFileId = fileId > 0 ? fileId : null;
+}
+
+let pendingAgentFolderPath: string | null = null;
+let agentOpenHoldId: number | null = null;
+let agentOpenSettleTimer: ReturnType<typeof setTimeout> | null = null;
+
+function agentFolderMatches(folderPath: string) {
+  return config.main.sidebarIndex === SIDEBAR.ALBUM
+    && !libConfig.album.selected
+    && normalizePathForCompare(libConfig.album.folderPath) === normalizePathForCompare(folderPath);
+}
+
+function isAgentTargetFolderReady() {
+  if (!pendingAgentFolderPath) return true;
+  return agentFolderMatches(pendingAgentFolderPath)
+    && !isLoading.value
+    && contentReady.value;
+}
+
+function queryMatchesAgentFolder() {
+  if (!pendingAgentFolderPath) return true;
+  const folder = String(
+    currentQueryParams.value.searchFolder
+    || currentQueryParams.value.searchAllSubfolders
+    || '',
+  );
+  return normalizePathForCompare(folder) === normalizePathForCompare(pendingAgentFolderPath);
+}
+
+function releaseAgentOpen() {
+  agentOpenHoldId = null;
+  pendingOpenAgentViewer = false;
+  pendingFocusedFileId = null;
+  pendingAgentFolderPath = null;
+  if (agentOpenSettleTimer) {
+    clearTimeout(agentOpenSettleTimer);
+    agentOpenSettleTimer = null;
+  }
+}
+
+function scheduleAgentOpenSettle() {
+  if (!agentOpenHoldId) return;
+  if (agentOpenSettleTimer) clearTimeout(agentOpenSettleTimer);
+  const fileId = agentOpenHoldId;
+  agentOpenSettleTimer = setTimeout(() => {
+    agentOpenSettleTimer = null;
+    if (agentOpenHoldId !== fileId) return;
+    if (!isAgentTargetFolderReady() || !queryMatchesAgentFolder()) {
+      scheduleAgentOpenSettle();
+      return;
+    }
+    const requestId = currentContentRequestId;
+    agentOpenSettleTimer = setTimeout(() => {
+      agentOpenSettleTimer = null;
+      if (agentOpenHoldId !== fileId) return;
+      if (requestId !== currentContentRequestId || !isAgentTargetFolderReady() || !queryMatchesAgentFolder()) {
+        scheduleAgentOpenSettle();
+        return;
+      }
+      const showing = showQuickView.value
+        && Number(fileList.value[selectedItemIndex.value]?.id || 0) === fileId;
+      if (showing) {
+        releaseAgentOpen();
+        return;
+      }
+      pendingFocusedFileId = fileId;
+      pendingOpenAgentViewer = true;
+      void restoreFocusedFileAfterListRefresh();
+      scheduleAgentOpenSettle();
+    }, 150);
+  }, 150);
+}
+
+function armAgentOpen(fileId: number, folderPath: string) {
+  agentOpenHoldId = fileId;
+  pendingFocusedFileId = fileId;
+  pendingOpenAgentViewer = true;
+  pendingAgentFolderPath = folderPath;
+  scheduleAgentOpenSettle();
+}
+
+async function handleAgentOpenFile(event: Event) {
+  const fileId = Number((event as CustomEvent).detail?.fileId || 0);
+  if (fileId <= 0) return;
+  const info = await getFileInfo(fileId);
+  if (!info?.id || !info.file_path || !info.album_id) return;
+  const folderPath = getFolderPath(info.file_path);
+  const sameFolder = agentFolderMatches(folderPath)
+    && Number(libConfig.album.id) === Number(info.album_id);
+  // Arm before navigation. Folder selection rewrites folderId and would
+  // otherwise clear the pending file before the new list can open it.
+  armAgentOpen(fileId, folderPath);
+  if (!sameFolder) {
+    config.main.sidebarIndex = SIDEBAR.ALBUM;
+    libConfig.activePane = 'main';
+    libConfig.album.id = Number(info.album_id);
+    libConfig.album.folderId = Number(info.folder_id || 0) || null;
+    libConfig.album.folderPath = folderPath;
+    libConfig.album.selected = false;
+    tauriEmit('expand-album-folder', { albumId: Number(info.album_id), folderPath });
+    await nextTick();
+    pendingFocusedFileId = fileId;
+    pendingOpenAgentViewer = true;
+  } else if (fileList.value.length > 0 && !isLoading.value) {
+    void restoreFocusedFileAfterListRefresh();
+  }
 }
 
 async function restoreFocusedFileAfterListRefresh() {
@@ -1273,19 +1395,32 @@ async function restoreFocusedFileAfterListRefresh() {
     // `undefined` means the position request failed. Preserve the existing
     // focus and wait for the next list refresh instead of resetting it.
     if (fileIndex === undefined || fileIndex === null) return;
-    pendingFocusedFileId = null;
+    if (pendingOpenAgentViewer && (!isAgentTargetFolderReady() || !queryMatchesAgentFolder())) return;
     if (fileIndex < 0) {
+      if (pendingOpenAgentViewer) {
+        // The list that just arrived is not the destination folder yet.
+        if (!queryMatchesAgentFolder() || isLoading.value || !contentReady.value) return;
+        releaseAgentOpen();
+      } else {
+        pendingFocusedFileId = null;
+      }
       // The refreshed filter no longer contains the focused file. Leave the
       // normal first-item fallback in place rather than retaining a stale index.
       selectedItemIndex.value = totalFileCount.value > 0 ? 0 : -1;
       return;
     }
+    if (!agentOpenHoldId) pendingFocusedFileId = null;
     selectedItemIndex.value = fileIndex;
     await nextTick();
     if (groupedModeActive.value) {
       await scrollToGroupedFile(fileIndex);
     } else {
       gridViewRef.value?.scrollToItem(fileIndex);
+    }
+    if (pendingOpenAgentViewer || agentOpenHoldId) {
+      showQuickView.value = true;
+      quickViewZoomFit.value = true;
+      scheduleAgentOpenSettle();
     }
   } catch (error) {
     console.error('restoreFocusedFileAfterListRefresh error:', error);
@@ -1324,7 +1459,7 @@ async function scrollToGroupedFile(fileIndex: number) {
 watch(fileList, () => {
   if (pendingSelectionRestore && fileList.value.length > 0) {
     void restoreSelectionAfterFileListRefresh();
-  } else if (pendingFocusedFileId && fileList.value.length > 0) {
+  } else if (pendingFocusedFileId && fileList.value.length > 0 && (!pendingOpenAgentViewer || isAgentTargetFolderReady())) {
     void restoreFocusedFileAfterListRefresh();
   }
 });
@@ -1597,6 +1732,14 @@ function updateGroupSelectedSize(groupId: string, size: number) {
 function syncSelectionVersions() {
   selectionVersion.value++;
   selectedFilesVersion.value++;
+  const focused = fileList.value[selectedItemIndex.value];
+  const selected = Array.from(selectedFileIds).slice(0, 200);
+  window.dispatchEvent(new CustomEvent('lap-agent-context', {
+    detail: {
+      fileIds: selected,
+      focusedFileId: isRealFileItem(focused) ? Number(focused.id) : null,
+    },
+  }));
 }
 
 function applySelectionDelta(file: any, delta: number) {
@@ -1871,6 +2014,7 @@ const filmStripZoomFit = ref(true);
 function closeQuickPreview() {
   showQuickView.value = false;
   stopSlideShow();
+  if (agentOpenHoldId) releaseAgentOpen();
 }
 
 function setPreviewViewBackground(value: number) {
@@ -1956,10 +2100,12 @@ const pendingAction = ref<(() => void) | null>(null);
 const fileInfoRef = ref<any>(null);
 const isDedupPanelOpen = computed(() => config.rightPanel.show && config.rightPanel.mode === 'dedup');
 const isInfoPanelOpen = computed(() => config.rightPanel.show && config.rightPanel.mode === 'info');
-const rightPanelContent = computed<'selection' | 'dedup' | 'info' | null>(() => {
-  if (selectMode.value) return 'selection';
+const rightPanelContent = computed<'selection' | 'dedup' | 'info' | 'agent' | null>(() => {
+  if (selectMode.value && config.rightPanel.mode !== 'agent') return 'selection';
   if (!config.rightPanel.show) return null;
-  return config.rightPanel.mode === 'dedup' ? 'dedup' : 'info';
+  if (config.rightPanel.mode === 'dedup') return 'dedup';
+  if (config.rightPanel.mode === 'agent') return 'agent';
+  return 'info';
 });
 const RIGHT_PANEL_MIN_WIDTH = 160; // Keep aligned with left panel minimum width.
 const RIGHT_PANEL_ANIMATION_MS = 200;
@@ -3020,6 +3166,12 @@ const imageSearchError = ref(false);
 const imageSearchLanguageUnsupported = ref(false);
 const hasLoadedInitialResult = ref(false); // avoid showing "No files found" before first real result returns
 const contentReady = ref(false);  // true after current view's content has loaded (empty or not), reset on navigation
+
+watch([contentReady, isLoading], () => {
+  if (pendingOpenAgentViewer && pendingFocusedFileId && fileList.value.length > 0 && isAgentTargetFolderReady()) {
+    void restoreFocusedFileAfterListRefresh();
+  }
+});
 const contentCountIsAuthoritative = ref(false);
 const dedupSourceVersion = ref(0);
 
@@ -3404,6 +3556,7 @@ let unlistenImageEditor: (() => void) | null = null;
 let unlistenFaceIndexProgress: (() => void) | null = null;
 let unlistenLibraryTotalRefreshed: (() => void) | null = null;
 let unlistenImportFilesAdded: (() => void) | null = null;
+let unlistenFileMetadataUpdated: (() => void) | null = null;
 let unlistenPasteClipboard: (() => void) | null = null;
 
 let resizeObserver: ResizeObserver | null = null;
@@ -3474,6 +3627,11 @@ onBeforeUnmount(() => {
     contentUpdateTimer = null;
   }
   window.removeEventListener('resize', handleWindowResize);
+  window.removeEventListener('lap-open-agent-file', handleAgentOpenFile);
+  if (agentOpenSettleTimer) {
+    clearTimeout(agentOpenSettleTimer);
+    agentOpenSettleTimer = null;
+  }
   if (resizeObserver) {
     resizeObserver.disconnect();
   }
@@ -3482,6 +3640,7 @@ onBeforeUnmount(() => {
   if (unlistenImageEditor) unlistenImageEditor();
   if (unlistenLibraryTotalRefreshed) unlistenLibraryTotalRefreshed();
   if (unlistenImportFilesAdded) unlistenImportFilesAdded();
+  if (unlistenFileMetadataUpdated) unlistenFileMetadataUpdated();
 });
 
 async function refreshImportedAlbumContent(albumId: number) {
@@ -5118,6 +5277,7 @@ onMounted( async() => {
 
   window.addEventListener('keydown', handleLocalKeyDown);
   window.addEventListener('keyup', handleLocalKeyUp);
+  window.addEventListener('lap-open-agent-file', handleAgentOpenFile);
   unlistenKeydown = await listen('global-keydown', handleKeyDown);
 
   unlistenLibraryTotalRefreshed = await listen('library-total-refreshed', (event: any) => {
@@ -5131,6 +5291,17 @@ onMounted( async() => {
   });
   unlistenImportFilesAdded = await listen('import-files-added', (event: any) => {
     void refreshImportedAlbumContent(Number(event.payload?.albumId || 0));
+  });
+  unlistenFileMetadataUpdated = await listen('file-metadata-updated', (event: any) => {
+    const fileId = Number(event.payload?.fileId || 0);
+    const file = fileList.value.find((item: any) => item && Number(item.id) === fileId);
+    if (!file) return;
+    file.e_title = event.payload?.title ?? file.e_title;
+    file.e_headline = event.payload?.headline ?? file.e_headline;
+    file.e_description = event.payload?.description ?? file.e_description;
+    file.e_keywords = event.payload?.keywords ?? file.e_keywords;
+    file.e_location = event.payload?.location ?? file.e_location;
+    if (event.payload?.rating != null) file.rating = event.payload.rating;
   });
   unlistenPasteClipboard = await listen('paste-clipboard-to-folder', (event: any) => {
     const albumId = Number(event.payload?.albumId || 0);
@@ -5698,7 +5869,13 @@ watch(
   }),
   (nextView, previousView) => {
     if (previousView !== undefined && nextView !== previousView) {
-      pendingFocusedFileId = null;
+      if (agentOpenHoldId) {
+        pendingFocusedFileId = agentOpenHoldId;
+        pendingOpenAgentViewer = true;
+        scheduleAgentOpenSettle();
+      } else {
+        pendingFocusedFileId = null;
+      }
       if (selectMode.value) selectNoneInCurrentList();
     }
   },
@@ -5796,7 +5973,7 @@ watch(
 watch(
   () => Number(libConfig.album.activateTick || 0),
   () => {
-    if (!showQuickView.value) return;
+    if (!showQuickView.value || agentOpenHoldId) return;
     showQuickView.value = false;
     stopSlideShow();
   }

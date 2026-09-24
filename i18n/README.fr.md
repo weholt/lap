@@ -73,13 +73,13 @@ Lap est centré sur les dossiers, mais toutes les informations affichées dans L
 ### Ce qui reste avec le fichier
 
 - Vos photos et vidéos originales restent toujours des fichiers ordinaires dans leurs dossiers existants.
-- Les métadonnées déjà intégrées à un fichier, telles que la date EXIF, l’appareil, l’objectif, le GPS et l’orientation, sont lues depuis ce fichier lorsque Lap l’indexe.
+- Lors de l’indexation, Lap lit les métadonnées déjà associées au fichier : EXIF, IPTC et XMP intégrés, ainsi qu’un fichier XMP voisin (`photo.xmp` ou `photo.jpg.xmp`). Le titre, le chapô, la description, les mots-clés, l’auteur, le copyright, le crédit, le libellé, la note du fichier et le lieu enregistré apparaissent dans les informations du fichier et dans la recherche textuelle. Les mots-clés de ces métadonnées sont aussi ajoutés comme tags Lap, en réutilisant un tag qui porte déjà le même nom. Les valeurs descriptives du sidecar priment sur le XMP intégré, puis sur l’IPTC. Les données de prise de vue et le GPS déjà présents dans l’EXIF sont conservés ; l’IPTC et le XMP ne remplissent ces champs que s’ils sont vides. L’orientation vient toujours de l’EXIF. Le `.xmp` lié suit la photo lors d’un renommage, déplacement, copie ou suppression dans Lap, et n’est pas affiché comme une photo. Les fichiers AAE restent des sidecars de retouche. Une modification externe du sidecar est prise en compte au prochain scan, même si l’image n’a pas changé.
 - L’enregistrement d’une modification d’image intégrée écrit l’image obtenue à l’emplacement choisi.
 - Lorsque vous renommez, déplacez, copiez ou supprimez des fichiers **dans Lap**, Lap met simultanément à jour son catalogue local. Il conserve également ensemble les éléments groupés pris en charge, tels que les composants Apple Live Photo, les fichiers annexes AAE et les paires RAW + JPEG/HEIC activées.
 
 ### Ce que Lap stocke localement
 
-Les informations suivantes sont des données de bibliothèque Lap. Elles sont stockées dans la base de données locale ou la configuration de bibliothèque de Lap, et ne sont pas écrites dans les données EXIF, IPTC ou les fichiers annexes XMP :
+Les informations suivantes sont des données de bibliothèque Lap. Elles sont stockées dans la base de données locale ou la configuration de bibliothèque de Lap et ne sont pas écrites dans les données EXIF, IPTC ou les fichiers annexes XMP. Les mots-clés du fichier sont copiés vers les tags Lap, et la note du fichier n’est copiée vers la note Lap que si celle-ci n’est pas encore définie. Les libellés et les autres métadonnées du fichier ne remplacent pas les commentaires, les favoris ni le tri. La note lue dans le XMP reste affichée séparément de la note Lap :
 
 - Collections, tags, commentaires, favoris, notes et états de sélection (Sélectionnées et Rejetées)
 - Les albums intelligents, ainsi que leurs règles, regroupements, tris et ordres
