@@ -1990,6 +1990,8 @@ pub struct QueryParams {
     pub gps_max_lon: Option<f64>,
     #[serde(default)]
     pub group_by: i64,
+    #[serde(default)]
+    pub group_span_seconds: i64,
 }
 
 fn default_culling_flag() -> i64 {
@@ -2028,6 +2030,8 @@ pub struct SmartQueryParams {
     pub small_file_filter: i64,
     #[serde(default)]
     pub group_by: i64,
+    #[serde(default)]
+    pub group_span_seconds: i64,
     #[serde(default)]
     pub gps_min_lat: Option<f64>,
     #[serde(default)]
@@ -2104,6 +2108,14 @@ const GROUP_BY_LENS: i64 = 7;
 const GROUP_BY_DATE_YEAR: i64 = 8;
 const GROUP_BY_FILE_TYPE: i64 = 9;
 const GROUP_BY_CULLING: i64 = 10;
+const GROUP_BY_TIMESPAN: i64 = 11;
+
+fn sanitized_group_span_seconds(span: i64) -> i64 {
+    match span {
+        1 | 3 | 5 | 10 | 15 | 30 | 60 | 300 | 1800 | 3600 => span,
+        _ => 60,
+    }
+}
 
 /// Define the AI image search parameters struct
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -3348,7 +3360,7 @@ impl AFile {
         params: &QueryParams,
     ) -> Result<Vec<QueryGroup>, String> {
         let Some((group_id_expr, sort_expr)) =
-            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort)
+            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort, params.group_span_seconds)
         else {
             return Ok(Vec::new());
         };
@@ -3401,7 +3413,7 @@ impl AFile {
             return Ok(Vec::new());
         }
         let Some((group_id_expr, _)) =
-            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort)
+            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort, params.group_span_seconds)
         else {
             return Ok(Vec::new());
         };
@@ -3455,7 +3467,7 @@ impl AFile {
         group_id: &str,
     ) -> Result<Vec<i64>, String> {
         let Some((group_id_expr, _)) =
-            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort)
+            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort, params.group_span_seconds)
         else {
             return Ok(Vec::new());
         };
@@ -4706,7 +4718,7 @@ impl AFile {
         Self::query_files(&query, &final_params)
     }
 
-    fn group_key_and_sort_expr(group_by: i64, calendar_sort: i64) -> Option<(String, String)> {
+    fn group_key_and_sort_expr(group_by: i64, calendar_sort: i64, group_span_seconds: i64) -> Option<(String, String)> {
         let date_col = match calendar_sort / 2 {
             1 => "a.created_at",
             2 => "a.modified_at",
@@ -4764,6 +4776,18 @@ impl AFile {
                 "CAST(COALESCE(a.culling_flag, 0) AS TEXT)".to_string(),
                 "0".to_string(),
             )),
+            GROUP_BY_TIMESPAN => {
+                let span = sanitized_group_span_seconds(group_span_seconds);
+                // Shift into local time before flooring so hour-sized buckets follow the clock,
+                // then convert the bucket start back to a unix timestamp for the group label.
+                let offset = "(strftime('%s','now','localtime') - strftime('%s','now'))";
+                Some((
+                    format!(
+                        "CASE WHEN {date_col} IS NULL OR {date_col} <= 0 THEN 'unknown-time' ELSE CAST(((CAST({date_col} + {offset} AS INTEGER) / {span}) * {span}) - ({offset}) AS TEXT) END"
+                    ),
+                    "0".to_string(),
+                ))
+            }
             _ => None,
         }
     }
@@ -4775,6 +4799,12 @@ impl AFile {
         category_sort: i64,
     ) -> String {
         match group_by {
+            GROUP_BY_TIMESPAN => {
+                let dir = if calendar_sort % 2 == 1 { "DESC" } else { "ASC" };
+                format!(
+                    "CASE WHEN group_id = 'unknown-time' THEN 1 ELSE 0 END, CAST(group_id AS INTEGER) {dir}"
+                )
+            }
             GROUP_BY_DATE_DAY | GROUP_BY_DATE_MONTH | GROUP_BY_DATE_YEAR => {
                 let dir = if calendar_sort % 2 == 1 {
                     "DESC"
@@ -4825,7 +4855,7 @@ impl AFile {
 
     fn query_groups(params: &QueryParams) -> Result<Vec<QueryGroup>, String> {
         let Some((group_id_expr, sort_expr)) =
-            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort)
+            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort, params.group_span_seconds)
         else {
             return Ok(Vec::new());
         };
@@ -4874,7 +4904,7 @@ impl AFile {
             return Ok(Vec::new());
         }
         let Some((group_id_expr, _)) =
-            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort)
+            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort, params.group_span_seconds)
         else {
             return Ok(Vec::new());
         };
@@ -5007,7 +5037,7 @@ impl AFile {
 
     pub fn get_group_file_ids(params: &QueryParams, group_id: &str) -> Result<Vec<i64>, String> {
         let Some((group_id_expr, _)) =
-            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort)
+            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort, params.group_span_seconds)
         else {
             return Ok(Vec::new());
         };
@@ -5052,7 +5082,7 @@ impl AFile {
             return Ok(None);
         }
         let Some((group_id_expr, _)) =
-            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort)
+            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort, params.group_span_seconds)
         else {
             return Ok(None);
         };
@@ -5813,7 +5843,7 @@ impl AFile {
 
     fn query_smart_groups(params: &SmartQueryParams) -> Result<Vec<QueryGroup>, String> {
         let Some((group_id_expr, sort_expr)) =
-            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort)
+            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort, params.group_span_seconds)
         else {
             return Ok(Vec::new());
         };
@@ -5863,7 +5893,7 @@ impl AFile {
             return Ok(Vec::new());
         }
         let Some((group_id_expr, _)) =
-            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort)
+            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort, params.group_span_seconds)
         else {
             return Ok(Vec::new());
         };
@@ -5919,7 +5949,7 @@ impl AFile {
         group_id: &str,
     ) -> Result<Vec<i64>, String> {
         let Some((group_id_expr, _)) =
-            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort)
+            Self::group_key_and_sort_expr(params.group_by, params.calendar_sort, params.group_span_seconds)
         else {
             return Ok(Vec::new());
         };

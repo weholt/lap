@@ -411,8 +411,24 @@
         "レンズ",
         "年",
         "ファイルタイプ",
-        "選別"
+        "選別",
+        "時間幅"
       ],
+      "timespan_options": [
+        "1秒",
+        "3秒",
+        "5秒",
+        "10秒",
+        "15秒",
+        "30秒",
+        "1分",
+        "5分",
+        "30分",
+        "1時間"
+      ],
+      "unknown_time": "不明な時刻",
+      "focus_group": "このグループだけ表示",
+      "show_all_groups": "すべてのグループを表示",
       "sort_type_options": [
         "撮影日",
         "作成日",
@@ -1265,6 +1281,9 @@
     "grid": {
       "title": "レイアウト",
       "section_grid": "グリッド",
+      "section_group": "グループ",
+      "group_by_timespan": "時間幅でグループ化",
+      "group_by_timespan_hint": "ツールバーに時間幅スライダーを表示し、同じ時間幅に撮影された写真をまとめます。",
       "dbl_click_thumbnail": "サムネイルをダブルクリック",
       "dbl_click_quick_preview": "クイックプレビュー",
       "dbl_click_new_window": "新しいウィンドウで開く",

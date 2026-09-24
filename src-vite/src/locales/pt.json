@@ -411,8 +411,24 @@
         "Lente",
         "Ano",
         "Tipo de arquivo",
-        "Seleção"
+        "Seleção",
+        "Intervalo"
       ],
+      "timespan_options": [
+        "1 segundo",
+        "3 segundos",
+        "5 segundos",
+        "10 segundos",
+        "15 segundos",
+        "30 segundos",
+        "1 minuto",
+        "5 minutos",
+        "30 minutos",
+        "1 hora"
+      ],
+      "unknown_time": "Hora desconhecida",
+      "focus_group": "Mostrar só este grupo",
+      "show_all_groups": "Mostrar todos os grupos",
       "sort_type_options": [
         "Data de captura",
         "Data de criação",
@@ -1265,6 +1281,9 @@
     "grid": {
       "title": "Layout",
       "section_grid": "Grade",
+      "section_group": "Agrupamento",
+      "group_by_timespan": "Agrupar por intervalo",
+      "group_by_timespan_hint": "Mostra um controle de intervalo na barra e agrupa as fotos feitas no mesmo intervalo.",
       "dbl_click_thumbnail": "Clique duas vezes na miniatura",
       "dbl_click_quick_preview": "Visualização rápida",
       "dbl_click_new_window": "Abrir em nova janela",

@@ -411,8 +411,24 @@
         "Objetivo",
         "Año",
         "Tipo de archivo",
-        "Selección"
+        "Selección",
+        "Intervalo"
       ],
+      "timespan_options": [
+        "1 segundo",
+        "3 segundos",
+        "5 segundos",
+        "10 segundos",
+        "15 segundos",
+        "30 segundos",
+        "1 minuto",
+        "5 minutos",
+        "30 minutos",
+        "1 hora"
+      ],
+      "unknown_time": "Hora desconocida",
+      "focus_group": "Mostrar solo este grupo",
+      "show_all_groups": "Mostrar todos los grupos",
       "sort_type_options": [
         "Fecha de toma",
         "Fecha de creación",
@@ -1265,6 +1281,9 @@
     "grid": {
       "title": "Diseño",
       "section_grid": "Cuadrícula",
+      "section_group": "Agrupación",
+      "group_by_timespan": "Agrupar por intervalo",
+      "group_by_timespan_hint": "Muestra un control de intervalo en la barra y agrupa las fotos tomadas en el mismo intervalo.",
       "dbl_click_thumbnail": "Doble clic en la miniatura",
       "dbl_click_quick_preview": "Vista rápida",
       "dbl_click_new_window": "Abrir en una ventana nueva",

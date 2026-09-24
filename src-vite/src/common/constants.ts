@@ -69,7 +69,10 @@ export const GROUP = {
   YEAR: 8,
   FILE_TYPE: 9,
   CULLING: 10,
+  TIMESPAN: 11,
 } as const;
+
+export const GROUP_TIMESPAN_SECONDS = [1, 3, 5, 10, 15, 30, 60, 300, 1800, 3600] as const;
 
 export type Group = (typeof GROUP)[keyof typeof GROUP];
 

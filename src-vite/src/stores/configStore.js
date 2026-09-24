@@ -133,6 +133,8 @@ export const useConfigStore = defineStore('configStore', {
         viewMode: 'grid',        // grid | filmstrip | map
         scaling: 1,              // 0: Fit Entire Image, 1: Crop to Fill, 2: Stretch to Fill
         thumbnailCorners: 0,     // 0: Follow theme, 1: Square
+        groupByTimespan: false,  // group the grid by a capture-time span
+        groupByTimespanIndex: 6, // index into 1s … 1h, default 1 minute
         labelPrimary: 1,         // card view: primary label (1: Name)
         labelSecondary: 3,       // card view: secondary label (3: Dimension)
         thumbnailBadge: 0,       // thumbnail badge (0: empty, 1: file format, 2: ISO, 3: shutter, 4: aperture, 5: focal length, 6: exposure)

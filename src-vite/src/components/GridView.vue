@@ -37,7 +37,19 @@
         v-if="isGroupRow(item)"
         class="w-full h-full flex items-center"
       >
-        <div class="w-full h-8 px-1 flex items-center text-base-content/70 select-none bg-base-200/30 rounded-box">
+        <div
+          class="w-full select-none rounded-box"
+          :class="[
+            isTimespanGroup
+              ? (isFilmstripView
+                ? 'h-full px-2 flex flex-col items-center justify-center gap-1 bg-primary/15 text-primary border border-primary/30 cursor-pointer'
+                : 'h-8 px-2 flex items-center bg-primary/15 text-primary border border-primary/25 cursor-pointer')
+              : 'h-8 px-1 flex items-center text-base-content/70 bg-base-200/30',
+            isTimespanGroup && focusedGroupId && String(focusedGroupId) === String(item.group_id) ? 'ring-2 ring-primary' : '',
+          ]"
+          :title="isTimespanGroup ? (focusedGroupId ? $t('toolbar.filter.show_all_groups') : $t('toolbar.filter.focus_group')) : undefined"
+          @click.stop="onTimespanGroupClick(item)"
+        >
           <div class="group flex items-center gap-1">
             <div
               class="flex shrink-0 items-center overflow-hidden transition-all duration-100 ease-out"
@@ -52,6 +64,7 @@
                 class="checkbox checkbox-xs border-base-content/30 hover:border-base-content/70"
                 :checked="getGroupSelectionState(item).checked"
                 :indeterminate.prop="getGroupSelectionState(item).indeterminate"
+                @click.stop
                 @change="(event) => $emit('group-select-toggled', item, (event.target as HTMLInputElement).checked)"
               />
             </div>
@@ -62,9 +75,16 @@
               disabled
               class="min-w-0 flex-1 overflow-hidden"
             />
-            <span v-else class="min-w-0 truncate text-sm text-base-content/30">{{ item.label }}</span>
+            <span
+              v-else
+              class="min-w-0 text-sm"
+              :class="isTimespanGroup ? 'whitespace-normal text-center leading-tight text-primary' : 'truncate text-base-content/30'"
+            >{{ item.label }}</span>
           </div>
-          <span class="ml-auto badge badge-xs shrink-0 text-xs text-base-content/30">
+          <span
+            class="badge badge-xs shrink-0 text-xs"
+            :class="isTimespanGroup ? 'bg-primary/20 text-primary border-0' : 'ml-auto text-base-content/30'"
+          >
             {{ item.countLabel || Number(item.count || 0).toLocaleString() }}
           </span>
         </div>
@@ -165,6 +185,7 @@ const props = withDefaults(defineProps<{
   dedupStatuses?: Record<number, 'keep' | 'dup'>;
   draggedFileIds?: Set<number>;
   gridSize: number;
+  focusedGroupId?: string | null;
 }>(), {
   selectedItemIndex: -1,
   timelineData: () => [],
@@ -182,6 +203,7 @@ const props = withDefaults(defineProps<{
   dedupStatuses: () => ({}),
   draggedFileIds: () => new Set<number>(),
   gridSize: 120,
+  focusedGroupId: null,
 });
 
 const emit = defineEmits([
@@ -192,6 +214,7 @@ const emit = defineEmits([
   'item-select-contextmenu',
   'date-group-select',
   'group-select-toggled',
+  'group-focused',
   'request-scroll',
   'visible-range-update',
   'scroll',
@@ -296,10 +319,13 @@ function isGeometryGridStyle(style: number) {
 
 const isFilmstripView = computed(() => config.settings.grid.viewMode === 'filmstrip');
 const renderItems = computed(() => props.fileList);
-const hasGroupRows = computed(() =>
-  !isFilmstripView.value &&
-  (Number(props.groupBy || 0) > 0 || isGroupRow(renderItems.value[0]))
-);
+const isTimespanGroup = computed(() => Number(props.groupBy || 0) === GROUP.TIMESPAN);
+const hasGroupRows = computed(() => {
+  const grouped = Number(props.groupBy || 0) > 0 || isGroupRow(renderItems.value[0]);
+  if (!grouped) return false;
+  if (isFilmstripView.value) return isTimespanGroup.value;
+  return true;
+});
 const fileIndexToRowIndex = computed(() => {
   const map = new Map<number, number>();
   if (!hasGroupRows.value) return map;
@@ -326,6 +352,25 @@ const rowIndexToFileIndex = computed(() => {
 const groupedLayoutGeometryResult = computed(() => {
   if (!hasGroupRows.value || renderItems.value.length === 0 || containerWidth.value <= 0) {
     return { boxes: [], contentSize: 0 };
+  }
+
+  if (isFilmstripView.value) {
+    const vertical = isVerticalFilmstrip.value;
+    const cross = vertical ? containerWidth.value : Math.max(itemHeight.value, filmStripItemSize.value);
+    const photoMain = vertical ? itemHeight.value : filmStripItemSize.value;
+    const headerMain = vertical ? groupHeaderHeight.value : Math.max(112, Math.round(filmStripItemSize.value * 0.9));
+    const boxes: Geometry[] = new Array(renderItems.value.length);
+    let cursor = 0;
+    renderItems.value.forEach((item, rowIndex) => {
+      const main = isGroupRow(item) ? headerMain : photoMain;
+      if (vertical) {
+        boxes[rowIndex] = { x: 0, y: cursor, width: cross || containerWidth.value, height: main };
+      } else {
+        boxes[rowIndex] = { x: cursor, y: 0, width: main, height: cross };
+      }
+      cursor += main;
+    });
+    return { boxes, contentSize: cursor };
   }
 
   const { style } = config.settings.grid;
@@ -882,6 +927,11 @@ function isGroupRow(item: any) {
   return item?.type === 'group';
 }
 
+function onTimespanGroupClick(item: any) {
+  if (!isTimespanGroup.value) return;
+  emit('group-focused', item);
+}
+
 function getGroupSelectionState(item: any) {
   const groupId = String(item?.group_id || '');
   const selectedCount = Number(props.groupSelectedCounts[groupId] || 0);
@@ -902,6 +952,7 @@ function getGroupIcon(item: any) {
     case GROUP.FOLDER:
       return IconFolder;
     case GROUP.DAY:
+    case GROUP.TIMESPAN:
       return IconCalendarDay;
     case GROUP.MONTH:
     case GROUP.YEAR:

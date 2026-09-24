@@ -411,8 +411,24 @@
         "镜头",
         "年",
         "文件类型",
-        "选片"
+        "选片",
+        "时间段"
       ],
+      "timespan_options": [
+        "1 秒",
+        "3 秒",
+        "5 秒",
+        "10 秒",
+        "15 秒",
+        "30 秒",
+        "1 分钟",
+        "5 分钟",
+        "30 分钟",
+        "1 小时"
+      ],
+      "unknown_time": "未知时间",
+      "focus_group": "只显示这一组",
+      "show_all_groups": "显示所有分组",
       "sort_type_options": [
         "拍摄日期",
         "创建日期",
@@ -1265,6 +1281,9 @@
     "grid": {
       "title": "布局",
       "section_grid": "网格",
+      "section_group": "分组",
+      "group_by_timespan": "按时间段分组",
+      "group_by_timespan_hint": "在工具栏显示时间段滑块，并把同一时间段内拍摄的照片分到一组。",
       "dbl_click_thumbnail": "双击缩略图",
       "dbl_click_quick_preview": "快速预览",
       "dbl_click_new_window": "在新窗口中打开",

@@ -411,8 +411,24 @@
         "Objektiv",
         "Jahr",
         "Dateityp",
-        "Auswahl"
+        "Auswahl",
+        "Zeitspanne"
       ],
+      "timespan_options": [
+        "1 Sekunde",
+        "3 Sekunden",
+        "5 Sekunden",
+        "10 Sekunden",
+        "15 Sekunden",
+        "30 Sekunden",
+        "1 Minute",
+        "5 Minuten",
+        "30 Minuten",
+        "1 Stunde"
+      ],
+      "unknown_time": "Unbekannte Zeit",
+      "focus_group": "Nur diese Gruppe zeigen",
+      "show_all_groups": "Alle Gruppen zeigen",
       "sort_type_options": [
         "Aufnahmedatum",
         "Erstellungsdatum",
@@ -1265,6 +1281,9 @@
     "grid": {
       "title": "Layout",
       "section_grid": "Raster",
+      "section_group": "Gruppierung",
+      "group_by_timespan": "Nach Zeitspanne gruppieren",
+      "group_by_timespan_hint": "Zeigt einen Zeitspannen-Regler in der Symbolleiste und gruppiert Fotos aus derselben Zeitspanne.",
       "dbl_click_thumbnail": "Miniaturansicht doppelklicken",
       "dbl_click_quick_preview": "Schnellvorschau",
       "dbl_click_new_window": "In neuem Fenster öffnen",

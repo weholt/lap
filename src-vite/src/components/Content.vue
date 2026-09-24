@@ -91,6 +91,24 @@
           :selected="isSmartAlbumGroupOverride"
           @select="handleGroupSelect"
         />
+        <div
+          v-if="config.settings.grid.groupByTimespan"
+          class="flex items-center gap-2"
+          data-tauri-drag-region="false"
+          style="-webkit-app-region: no-drag"
+        >
+          <span class="text-xs whitespace-nowrap text-base-content/60">{{ timespanSliderLabel }}</span>
+          <SliderInput
+            id="timespan-slider"
+            :modelValue="timespanSliderIndex"
+            :min="0"
+            :max="GROUP_TIMESPAN_SECONDS.length - 1"
+            :step="1"
+            :slider_width="96"
+            label=""
+            @update:modelValue="setTimespanSlider"
+          />
+        </div>
 
         <!-- select and layout section -->
         <div class="flex flex-row items-center">
@@ -242,6 +260,8 @@
                 @item-select-contextmenu="handleSelectionContextMenu"
                 @date-group-select="handleDateGroupSelect"
                 @group-select-toggled="handleGroupSelectToggled"
+                @group-focused="handleTimespanGroupFocused"
+                :focused-group-id="focusedTimespanGroupId"
                 @visible-range-update="handleVisibleRangeUpdate"
                 @scroll="handleGridScroll"
                 @layout-update="handleLayoutUpdate"
@@ -740,9 +760,9 @@ import { getSmartTagById } from '@/common/smartTags';
 import { clearFolderFileCounts, setFolderFileCount } from '@/composables/useAlbumSelection';
 import { createEmptyLibraryCounts } from '@/stores/libraryStore';
 import { getAlbumScanState, getAlbumScanIcon, shouldAnimateAlbumScanIcon } from '@/common/scanStatus';
-import { CULLING, DATE_SORT, GROUP, LIB_ITEM, RATE, SIDEBAR } from '@/common/constants';
+import { CULLING, DATE_SORT, GROUP, GROUP_TIMESPAN_SECONDS, LIB_ITEM, RATE, SIDEBAR } from '@/common/constants';
 import { isWin, isMac, isLinux, setTheme, separator,
-         formatFileSize, formatDate, getCalendarDateRange, formatFolderBreadcrumb, getThumbnailDataUrl, getAssetSrc, getPreviewUrl,
+         formatFileSize, formatDate, formatTimestamp, getCalendarDateRange, formatFolderBreadcrumb, getThumbnailDataUrl, getAssetSrc, getPreviewUrl,
          getCachedThumbnailDataUrl,
          clearCachedThumbnailDataUrl,
          extractFileName, combineFileName, getFolderPath, getFolderName, getSelectOptions, 
@@ -1118,8 +1138,15 @@ async function handleSelectionContextMenu({ x, y, index, isSelected }: { x: numb
 }
 
 const groupedModeActive = ref(false);
+const focusedTimespanGroupId = ref<string | null>(null);
+const focusedTimespanRows = ref<any[]>([]);
 const selectedFolderHasChildren = ref(true);
-const gridRows = computed(() => groupedModeActive.value && !isFilmstripView.value ? groupedRows.value : fileList.value);
+const gridRows = computed(() => {
+  if (!groupedModeActive.value) return fileList.value;
+  if (focusedTimespanGroupId.value && focusedTimespanRows.value.length > 0) return focusedTimespanRows.value;
+  if (isFilmstripView.value && effectiveGroupBy.value !== GROUP.TIMESPAN) return fileList.value;
+  return groupedRows.value;
+});
 const groupFileIdsCache = new Map<string, number[]>();
 const groupedTimelineGroups = ref<any[]>([]);
 const folderGroupRoots = ref<Array<{ path: string; name?: string }>>([]);
@@ -1337,6 +1364,8 @@ function clearLoadedSelectionFlags() {
 
 function resetGroupingState() {
   groupedModeActive.value = false;
+  focusedTimespanGroupId.value = null;
+  focusedTimespanRows.value = [];
   groupedRows.value = [];
   totalRowCount.value = 0;
   groupFileIdsCache.clear();
@@ -1411,12 +1440,20 @@ const isRandomSort = computed(() => {
 
 const effectiveGroupBy = computed(() => {
   if (isRandomSort.value) return GROUP.NONE;
+  if (
+    config.settings.grid.groupByTimespan
+    && tempViewMode.value === 'none'
+    && config.settings.grid.viewMode !== 'map'
+  ) {
+    return GROUP.TIMESPAN;
+  }
   const smartAlbum = getActiveCustomSmartAlbum();
-  return Number(
+  const stored = Number(
     !isCollectionPane.value && config.main.sidebarIndex === SIDEBAR.SMART_ALBUM && smartAlbum
       ? smartAlbum.group?.type ?? config.search.groupBy ?? GROUP.NONE
       : config.search.groupBy ?? GROUP.NONE
   );
+  return stored === GROUP.TIMESPAN ? GROUP.NONE : stored;
 });
 
 const isSearchGroupingView = computed(() =>
@@ -1439,9 +1476,11 @@ const isGroupingControlAvailable = computed(() =>
 );
 
 function isGroupingSupportedForCurrentView() {
+  const timespanInFilmstrip = isFilmstripView.value && effectiveGroupBy.value === GROUP.TIMESPAN;
   return (
     effectiveGroupBy.value > 0 &&
-    !isFilmstripView.value &&
+    (!isFilmstripView.value || timespanInFilmstrip) &&
+    !isMapView.value &&
     !isScanStreamingMode.value &&
     tempViewMode.value === 'none' &&
     currentQuerySource.value !== 'search'
@@ -1520,6 +1559,18 @@ function formatCullingGroupLabel(label: string) {
   }
 }
 
+function formatTimespanGroupLabel(label: string) {
+  if (!label || label === 'unknown-time') {
+    return localeMsg.value.toolbar.filter?.unknown_time || 'Unknown time';
+  }
+  const timestamp = Number(label);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return label;
+  const formatted = formatTimestamp(timestamp, localeMsg.value.format?.date_time || 'yyyy-MM-dd HH:mm:ss');
+  const when = formatted || new Date(timestamp * 1000).toLocaleString();
+  const span = timespanSliderLabel.value;
+  return span ? `${when} · ${span}` : when;
+}
+
 function formatGroupLabel(label: string) {
   const unknownGroupLabels: Record<string, string> = {
     'unknown-location': localeMsg.value.search?.unknown_location || 'Unknown location',
@@ -1530,6 +1581,7 @@ function formatGroupLabel(label: string) {
 
   const groupBy = Number(effectiveGroupBy.value || 0);
   if (groupBy === GROUP.DAY || groupBy === GROUP.MONTH || groupBy === GROUP.YEAR) return formatDateGroupLabel(groupBy, label);
+  if (groupBy === GROUP.TIMESPAN) return formatTimespanGroupLabel(label);
   if (groupBy === GROUP.FOLDER) return formatFolderGroupLabel(label);
   if (groupBy === GROUP.RATING) return formatRatingGroupLabel(label);
   if (groupBy === GROUP.CULLING) return formatCullingGroupLabel(label);
@@ -1556,6 +1608,7 @@ function getGroupingQueryParams() {
   return {
     ...baseParams,
     groupBy: effectiveGroupBy.value,
+    groupSpanSeconds: GROUP_TIMESPAN_SECONDS[Math.min(GROUP_TIMESPAN_SECONDS.length - 1, Math.max(0, Number(config.settings.grid.groupByTimespanIndex || 0)))] || 60,
     folderSort: Number(config.settings.folderSort || 0),
     calendarSort,
     categorySort: Number(config.settings.categorySort || 0),
@@ -2423,7 +2476,12 @@ const groupTimelineData = computed(() => {
       : null)
     .filter(Boolean);
 });
-const scrollbarTotal = computed(() => groupedModeActive.value ? totalRowCount.value : totalFileCount.value);
+const scrollbarTotal = computed(() => {
+  if (focusedTimespanGroupId.value && focusedTimespanRows.value.length > 0) {
+    return focusedTimespanRows.value.length;
+  }
+  return groupedModeActive.value ? totalRowCount.value : totalFileCount.value;
+});
 const scrollbarPageSize = computed(() => Math.max(1, Math.min(visibleItemCount.value, scrollbarTotal.value || visibleItemCount.value)));
 const scrollbarMarkers = computed(() => {
   if (groupedModeActive.value) return groupTimelineData.value;
@@ -3829,6 +3887,79 @@ async function getCachedGroupFileIds(groupId: string) {
   const normalized = ids.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0);
   groupFileIdsCache.set(groupId, normalized);
   return normalized;
+}
+
+function fileIndexForTimespanGroup(groupId: string) {
+  let cursor = 0;
+  for (const group of groupedTimelineGroups.value) {
+    if (String(group.groupId) === groupId) return cursor;
+    cursor += Number(group.count || 0);
+  }
+  return 0;
+}
+
+async function handleTimespanGroupFocused(item: any) {
+  if (effectiveGroupBy.value !== GROUP.TIMESPAN) return;
+  const groupId = String(item?.group_id || '');
+  if (!groupId) return;
+  if (focusedTimespanGroupId.value === groupId) {
+    focusedTimespanGroupId.value = null;
+    focusedTimespanRows.value = [];
+    await nextTick();
+    gridViewRef.value?.refreshLayout?.();
+    gridViewRef.value?.scrollToPosition?.(0);
+    return;
+  }
+
+  const ids = await getCachedGroupFileIds(groupId);
+  const fetched = ids.length > 0 ? await getFilesByIds(ids) : [];
+  const byId = new Map((fetched || []).map((file: any) => [Number(file?.id || 0), file]));
+  const base = fileIndexForTimespanGroup(groupId);
+  const group = groupedTimelineGroups.value.find((entry: any) => String(entry.groupId) === groupId);
+  const headerRow = group
+    ? createGroupHeaderRow(group)
+    : {
+        type: 'group',
+        id: `group-row-${groupId}`,
+        group_id: groupId,
+        label: item?.label || '',
+        count: ids.length,
+      };
+  const itemRows: any[] = [];
+  const thumbFiles: any[] = [];
+  ids.forEach((id, offset) => {
+    const fileIndex = base + offset;
+    const loaded = byId.get(id);
+    const existing = fileList.value[fileIndex];
+    const file = loaded
+      ? {
+          ...(isRealFileItem(existing) ? existing : {}),
+          ...loaded,
+          isPlaceholder: false,
+          isSelected: Boolean(existing?.isSelected) || selectedFileIds.has(id),
+          thumbnail: existing?.thumbnail,
+        }
+      : existing;
+    if (file && fileList.value[fileIndex]) fileList.value[fileIndex] = file;
+    if (!isRealFileItem(file)) return;
+    itemRows.push({
+      type: 'item',
+      id: `focus-item-${id}`,
+      group_id: groupId,
+      file_index: fileIndex,
+      file,
+    });
+    thumbFiles.push(file);
+  });
+  focusedTimespanGroupId.value = groupId;
+  focusedTimespanRows.value = [headerRow, ...itemRows];
+  if (itemRows.length > 0 && itemRows[0].file_index >= 0) {
+    selectedItemIndex.value = itemRows[0].file_index;
+  }
+  await nextTick();
+  gridViewRef.value?.refreshLayout?.();
+  gridViewRef.value?.scrollToPosition?.(0);
+  if (thumbFiles.length > 0) void getFileListThumb(thumbFiles);
 }
 
 function unselectFileFromSelection(fileId: number) {
@@ -5721,6 +5852,7 @@ watch(
     config.search.fileType, config.search.sortType, config.search.sortOrder, // search and sort 
     config.settings.showSubfolderFiles,                                            // album folder view
     config.settings.folderSort, config.settings.calendarSort, config.settings.categorySort, config.search.groupBy, // group sorting and filtering
+    config.settings.grid.groupByTimespan, config.settings.grid.groupByTimespanIndex,
     libConfig.person.id,                                                              // person
     config.calendar.view, libConfig.calendar.year, libConfig.calendar.month, libConfig.calendar.date, // calendar
     libConfig.tag.id, libConfig.tag.groupId, libConfig.tag.activateTick, // tag
@@ -9496,10 +9628,31 @@ const handleSortTypeSelect = (option: any, extendOption: any) => {
   }
 };
 
+const timespanSliderIndex = computed(() =>
+  Math.min(GROUP_TIMESPAN_SECONDS.length - 1, Math.max(0, Number(config.settings.grid.groupByTimespanIndex || 0)))
+);
+
+const timespanSliderLabel = computed(() => {
+  const labels = localeMsg.value.toolbar.filter?.timespan_options || [];
+  return labels[timespanSliderIndex.value] || '';
+});
+
+function setTimespanSlider(value: number) {
+  const index = Math.min(GROUP_TIMESPAN_SECONDS.length - 1, Math.max(0, Number(value)));
+  config.settings.grid.groupByTimespanIndex = index;
+}
+
 const handleGroupSelect = (optionIndex: any) => {
   if (isScanStreamingMode.value) return;
   rememberFocusedFileForPresentationRefresh();
-  const nextGroupBy = Number(groupOptions.value[Number(optionIndex)]?.value ?? GROUP.NONE);
+  const nextGroupBy = Number(toolbarGroupOptions.value[Number(optionIndex)]?.value ?? GROUP.NONE);
+  if (nextGroupBy === GROUP.TIMESPAN) {
+    config.settings.grid.groupByTimespan = true;
+    return;
+  }
+  if (config.settings.grid.groupByTimespan) {
+    config.settings.grid.groupByTimespan = false;
+  }
   if (isSmartAlbumView.value) {
     const album = getActiveCustomSmartAlbum();
     if (album) album.group = { ...(album.group || {}), type: nextGroupBy };
@@ -9687,9 +9840,11 @@ const groupOptions = computed(() => {
     value: GROUP.NONE,
   }];
 
+  const values = [GROUP.FOLDER, GROUP.FILE_TYPE, GROUP.DAY, GROUP.MONTH, GROUP.YEAR, GROUP.RATING, GROUP.CULLING, GROUP.LOCATION, GROUP.CAMERA, GROUP.LENS];
+  if (config.settings.grid.groupByTimespan) values.unshift(GROUP.TIMESPAN);
   return [
     ...options,
-    ...[GROUP.FOLDER, GROUP.FILE_TYPE, GROUP.DAY, GROUP.MONTH, GROUP.YEAR, GROUP.RATING, GROUP.CULLING, GROUP.LOCATION, GROUP.CAMERA, GROUP.LENS]
+    ...values
       .map(value => ({ label: groupTypeLabels.value[value], value }))
       .filter(option => option.label),
   ];

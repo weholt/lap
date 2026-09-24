@@ -411,8 +411,24 @@
         "Objectif",
         "Année",
         "Type de fichier",
-        "Sélection"
+        "Sélection",
+        "Intervalle"
       ],
+      "timespan_options": [
+        "1 seconde",
+        "3 secondes",
+        "5 secondes",
+        "10 secondes",
+        "15 secondes",
+        "30 secondes",
+        "1 minute",
+        "5 minutes",
+        "30 minutes",
+        "1 heure"
+      ],
+      "unknown_time": "Heure inconnue",
+      "focus_group": "Afficher seulement ce groupe",
+      "show_all_groups": "Afficher tous les groupes",
       "sort_type_options": [
         "Date de prise",
         "Date de création",
@@ -1265,6 +1281,9 @@
     "grid": {
       "title": "Disposition",
       "section_grid": "Grille",
+      "section_group": "Regroupement",
+      "group_by_timespan": "Grouper par intervalle",
+      "group_by_timespan_hint": "Affiche un curseur d’intervalle dans la barre d’outils et regroupe les photos prises dans le même intervalle.",
       "dbl_click_thumbnail": "Double-cliquer sur la miniature",
       "dbl_click_quick_preview": "Aperçu rapide",
       "dbl_click_new_window": "Ouvrir dans une nouvelle fenêtre",

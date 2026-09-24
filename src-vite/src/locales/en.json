@@ -411,8 +411,24 @@
         "Lens",
         "Year",
         "File type",
-        "Culling"
+        "Culling",
+        "Timespan"
       ],
+      "timespan_options": [
+        "1 second",
+        "3 seconds",
+        "5 seconds",
+        "10 seconds",
+        "15 seconds",
+        "30 seconds",
+        "1 minute",
+        "5 minutes",
+        "30 minutes",
+        "1 hour"
+      ],
+      "unknown_time": "Unknown time",
+      "focus_group": "Show only this group",
+      "show_all_groups": "Show all groups",
       "sort_type_options": [
         "Taken Date",
         "Created Date",
@@ -1265,6 +1281,9 @@
     "grid": {
       "title": "Layout",
       "section_grid": "Grid",
+      "section_group": "Grouping",
+      "group_by_timespan": "Group by timespan",
+      "group_by_timespan_hint": "Shows a timespan slider in the toolbar and groups photos that were taken in the same span.",
       "dbl_click_thumbnail": "Double-click thumbnail",
       "dbl_click_quick_preview": "Quick preview",
       "dbl_click_new_window": "Open in new window",

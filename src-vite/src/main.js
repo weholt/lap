@@ -143,6 +143,9 @@ if (isMainWindow) {
   listen('settings-gridStyle-changed', (event) => {
     config.setGridStyle(event.payload)
   })
+  listen('settings-groupByTimespan-changed', (event) => {
+    config.settings.grid.groupByTimespan = Boolean(event.payload)
+  })
   listen('settings-gridScaling-changed', (event) => {
     config.setGridScaling(event.payload)
   })
