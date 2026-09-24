@@ -1333,6 +1333,8 @@
       "title": "Viewer",
       "section_navigation": "Navigation",
       "mouse_wheel": "Mausrad",
+      "goto_next_on_rating": "Zum nächsten Foto",
+      "goto_next_on_rating_hint": "Nach einer Sternebewertung oder einem Auswahlstatus (Ausgewählt, Abgelehnt oder Nicht geprüft). Favoriten bleiben beim aktuellen Foto.",
       "mouse_wheel_options": [
         "Vorheriges / Nächstes Foto (Strg zum Zoomen)",
         "Zoom +/-"

@@ -176,6 +176,9 @@ if (isMainWindow) {
   listen('settings-loopVideo-changed', (event) => {
     config.settings.loopVideo = event.payload
   })
+  listen('settings-gotoNextOnRating-changed', (event) => {
+    config.settings.gotoNextOnRating = Boolean(event.payload)
+  })
   listen('settings-groupRawJpegPairs-changed', (event) => {
     config.settings.groupRawJpegPairs = event.payload
   })

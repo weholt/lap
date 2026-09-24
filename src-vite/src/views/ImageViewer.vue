@@ -1278,10 +1278,16 @@ const setCurrentFileRating = async (rating: number, pane: Pane = 'left') => {
   const currentFileId = getFileIdByPane(pane);
   if (!target || currentFileId <= 0) return;
 
-  const normalized = Number(target.rating || 0) === rating ? 0 : rating;
+  const previous = Number(target.rating || 0);
+  const normalized = previous === rating ? 0 : rating;
   applyFileMetaToPanes(currentFileId, { rating: normalized });
-  await setFileRating(currentFileId, normalized);
+  const result = await setFileRating(currentFileId, normalized);
+  if (result === null) {
+    applyFileMetaToPanes(currentFileId, { rating: previous });
+    return;
+  }
   syncFileMetaToContent(currentFileId, { rating: normalized });
+  if (normalized >= 1 && normalized <= 5) goToNextAfterReview(pane);
 };
 
 const setCurrentFileCullingFlag = async (cullingFlag: number, pane: Pane = 'left') => {
@@ -1299,7 +1305,15 @@ const setCurrentFileCullingFlag = async (cullingFlag: number, pane: Pane = 'left
   }
   syncFileMetaToContent(currentFileId, { culling_flag: normalized });
   void emit('culling-status-updated');
+  goToNextAfterReview(pane);
 };
+
+function goToNextAfterReview(pane: Pane = 'left') {
+  if (!config.settings.gotoNextOnRating || isSlideShow.value) return;
+  const index = getFileIndexByPane(pane);
+  if (index < 0 || index >= fileCount.value - 1) return;
+  requestFileAtIndex(index + 1, pane);
+}
 
 const clickRotate = async (pane: Pane = 'left', rotateDelta = 90) => {
   const target = getFileInfoByPane(pane);

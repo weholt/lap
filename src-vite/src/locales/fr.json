@@ -1333,6 +1333,8 @@
       "title": "Visionneuse",
       "section_navigation": "Navigation",
       "mouse_wheel": "Molette",
+      "goto_next_on_rating": "Photo suivante",
+      "goto_next_on_rating_hint": "Après une note ou un statut de sélection (sélectionnée, rejetée ou non examinée). Les favoris restent sur la photo actuelle.",
       "mouse_wheel_options": [
         "Photo précédente / suivante (Ctrl pour zoomer)",
         "Zoom +/-"

@@ -8980,13 +8980,24 @@ const toggleSelectModeFavorite = async () => {
   await selectModeSetFavorites(shouldFavorite);
 };
 
+function goToNextAfterReview() {
+  if (!config.settings.gotoNextOnRating || selectMode.value || isSlideShow.value) return;
+  requestNavigate('next');
+}
+
 const setSelectedFileRating = async (rating: number) => {
   if (selectedItemIndex.value >= 0) {
     const item = fileList.value[selectedItemIndex.value];
-    const normalized = item.rating === rating ? 0 : rating;
+    const previous = item.rating;
+    const normalized = previous === rating ? 0 : rating;
     item.rating = normalized;
-    await setFileRating(item.id, normalized);
+    const result = await setFileRating(item.id, normalized);
+    if (result === null) {
+      item.rating = previous;
+      return;
+    }
     syncFileMetaToImageViewer(item.id, { rating: normalized });
+    if (normalized >= 1 && normalized <= 5) goToNextAfterReview();
   }
 };
 
@@ -9025,6 +9036,7 @@ const setSelectedFileCullingFlag = async (cullingFlag: number) => {
   }
   syncFileMetaToImageViewer(item.id, { culling_flag: normalized });
   void tauriEmit('culling-status-updated', { fileIds: [item.id], cullingFlag: normalized });
+  goToNextAfterReview();
 };
 
 const selectModeSetCullingFlags = async (cullingFlag: number) => {

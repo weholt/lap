@@ -217,6 +217,15 @@
             </div>
             <div class="flex items-center justify-between px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
               <div class="flex flex-col gap-0.5 text-sm leading-5">
+                <div>{{ $t('settings.image_view.goto_next_on_rating') }}</div>
+                <div class="text-xs text-base-content/30">
+                  {{ $t('settings.image_view.goto_next_on_rating_hint') }}
+                </div>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary toggle-sm" v-model="config.settings.gotoNextOnRating" />
+            </div>
+            <div class="flex items-center justify-between px-1 rounded-box hover:bg-base-100/10 transition-colors duration-200">
+              <div class="flex flex-col gap-0.5 text-sm leading-5">
                 <div>{{ $t('settings.image_view.mouse_wheel') }}</div>
               </div>
               <select class="select select-bordered select-sm min-w-32" v-model="config.settings.mouseWheelMode">
@@ -1570,6 +1579,9 @@ watch(() => config.settings.autoPlayVideo, (newValue) => {
 });
 watch(() => config.settings.loopVideo, (newValue) => {
   emit('settings-loopVideo-changed', newValue);
+});
+watch(() => config.settings.gotoNextOnRating, (newValue) => {
+  emit('settings-gotoNextOnRating-changed', newValue);
 });
 
 // image search settings

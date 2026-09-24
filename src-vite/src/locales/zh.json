@@ -1333,6 +1333,8 @@
       "title": "查看器",
       "section_navigation": "导航",
       "mouse_wheel": "鼠标滚轮",
+      "goto_next_on_rating": "转到下一张照片",
+      "goto_next_on_rating_hint": "在星级评分或选片状态（已选、已排除或待筛选）之后。收藏不会离开当前照片。",
       "mouse_wheel_options": [
         "上一张/下一张照片 (Ctrl 缩放)",
         "放大/缩小"

@@ -1333,6 +1333,8 @@
       "title": "ビューア",
       "section_navigation": "ナビゲーション",
       "mouse_wheel": "マウスホイール",
+      "goto_next_on_rating": "次の写真へ移動",
+      "goto_next_on_rating_hint": "星評価または選別（採用、除外、未選別）のあと。お気に入りでは移動しません。",
       "mouse_wheel_options": [
         "前 / 次の写真（Ctrl でズーム）",
         "拡大/縮小"

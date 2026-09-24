@@ -1333,6 +1333,8 @@
       "title": "Visualizador",
       "section_navigation": "Navegación",
       "mouse_wheel": "Rueda ratón",
+      "goto_next_on_rating": "Ir a la siguiente foto",
+      "goto_next_on_rating_hint": "Tras una valoración o un estado de selección (seleccionada, rechazada o sin revisar). Los favoritos se quedan en la foto actual.",
       "mouse_wheel_options": [
         "Foto anterior / siguiente (Ctrl para zoom)",
         "Acercar/Alejar"

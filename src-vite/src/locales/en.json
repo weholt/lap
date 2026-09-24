@@ -1333,6 +1333,8 @@
       "title": "Viewer",
       "section_navigation": "Navigation",
       "mouse_wheel": "Mouse wheel",
+      "goto_next_on_rating": "Go to next photo",
+      "goto_next_on_rating_hint": "After a star rating or a culling flag (pick, reject, or unreviewed). Favorites stay on the current photo.",
       "mouse_wheel_options": [
         "Previous / Next photo (Ctrl to zoom)",
         "Zoom in / out"

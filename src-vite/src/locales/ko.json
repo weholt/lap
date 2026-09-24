@@ -1333,6 +1333,8 @@
       "title": "뷰어",
       "section_navigation": "탐색",
       "mouse_wheel": "마우스 휠",
+      "goto_next_on_rating": "다음 사진으로 이동",
+      "goto_next_on_rating_hint": "별점 또는 선별 상태(선택됨, 제외됨, 미선별) 이후. 즐겨찾기는 현재 사진에 머뭅니다.",
       "mouse_wheel_options": [
         "이전 / 다음 사진 (Ctrl로 확대/축소)",
         "확대/축소"
