@@ -1,0 +1,75 @@
+{
+  "original_plan_sha256": "5753e60060626c3c8cde43581facfa737e45067a270eb79240e86e00d644e204",
+  "checkpoint": "572a31f45b4f1af1a192b6885b9b0b64482afd33",
+  "completed": {
+    "TASK-101": {
+      "id": "lap-7f5.1",
+      "title": "Establish the two-checkout workflow and executable baseline gates",
+      "description": "Prepare Lap and RapidRAW-engine for scoped development. Reconcile P2/P6/P7 using the fresh Lap revision and writable-sidecar design. Existing RapidRAW checkout remains untouched. Governing contract: docs/raw-development/spec.md. Work locally on the dedicated feature branches; no publication or changes to the original RapidRAW checkout. Do not close this implementation issue unless its acceptance criteria pass.\n\nAcceptance criteria:\n- Both repository revisions, local feature branches and spec digest are recorded in a reproducible development manifest.\n- Lap test runner and regression-test command exist alongside npm --prefix src-vite run build; the Rust tests use rustup/MSVC consistently.\n- Required native submodules are initialized; missing toolchain/build dependencies are repaired locally or block this task with exact diagnostics.\n- Create a linked extraction issue through pb in RapidRAW-engine before source edits. Baseline failures have command logs; required focused development gates pass.\n\nVerification:\n- Check git rev-parse HEAD in both checkouts and SHA256 of the copied spec.\n- Run npm --prefix src-vite run build, the new frontend test command, cargo test --manifest-path src-tauri/Cargo.toml, cargo fmt --manifest-path src-tauri/Cargo.toml -- --check, and cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets in Lap.\n- Run all canonical RapidRAW AGENTS.md gates in RapidRAW-engine, distinguishing inherited lint/format failures from regressions.\n- Record exact commands, results, fixture/engine revisions and RED/GREEN evidence through pb; run git diff --check.\n\nConstraints:\n- Prepend rustup bin to PATH for every cargo command; Windows uses default features, never --all-features.\n- Keep originals immutable, explicit errors visible, and unknown qualification results unclaimed.\n\nImplementation notes:\n- Prerequisite task outputs are mandatory dependency gates, not assumed existing capabilities.\n- Keep the shared schema and engine authoritative across both hosts; obey each checkout AGENTS.md.\n\nImplementation steps:\n- Read both repository instructions and manifest/build scripts; record source commits and tool versions.\n- Initialize native submodules using their pinned gitlinks and establish a small Vue unit/component test runner without inventing an existing npm test script.\n- Create a linked RapidRAW Pebbles issue, preserve known failures and repair stale generated paths only in the isolated checkout.\n- Document common gate commands, local dependency locations and the writable-sidecar assumption; prove the focused tests run.\n\nIntermediate checks:\n- Run the smallest behavior regression before implementation and capture the expected failure.\n- Run the same regression after implementation, then the issue-specific integration checks; inspect the diff for scope and unintended source writes.\n\nExpected areas:\n- docs/raw-development/development-manifest.json\n- docs/raw-development/baseline.md\n- src-vite/package.json\n- src-vite/tests/**\n- scripts/**\n- ../RapidRAW-engine/AGENTS.md\n\nParallel scope paths:\n- docs/raw-development/development-manifest.json\n- docs/raw-development/baseline.md\n- src-vite/package.json\n- src-vite/tests/**\n- scripts/**\n- ../RapidRAW-engine/AGENTS.md\n\nExclusive resources:\n- raw-development-cross-repository\n\nSource references:\n- docs/raw-development/spec.md\n- P2\n- P6\n- P7\n\n[pebbles-autonomy]\n{\"human_input\": \"none\", \"on_unavailable\": \"reject\", \"prerequisites\": [{\"evidence\": \"Fresh Lap clone at spec revision and isolated RapidRAW-engine clone with dedicated feature branches were created on 2026-09-26.\", \"id\": \"local-source-checkouts\", \"status\": \"ready\"}, {\"evidence\": \"User explicitly requested importing these issues and starting the harness. Scope is local implementation; no publication or distribution approval is asserted.\", \"id\": \"local-execution-authorization\", \"status\": \"ready\"}]}\n[/pebbles-autonomy]\n\n[pebbles-plan]\nschema=pebbles-plan/v1\nplan=PLAN-260926\nkey=TASK-101\n[/pebbles-plan]",
+      "type": "task",
+      "status": "closed",
+      "priority": "P1",
+      "created_at": "2026-09-26T18:22:17.51961Z",
+      "updated_at": "2026-09-26T19:21:13.1490251Z",
+      "closed_at": "2026-09-26T19:21:13.1490251Z",
+      "deps": [],
+      "parents": [
+        "lap-7f5"
+      ],
+      "siblings": [
+        "lap-7f5.2",
+        "lap-7f5.3"
+      ],
+      "children": [],
+      "comments": [
+        {
+          "body": "RED: npm --prefix src-vite run test -> npm error Missing script: 'test' (exit 1), with tests/geometry.test.js and tests/uiStore.adjustments.test.js already written. The regression tests pin existing behavior (editor geometry contracts, temporary activeAdjustments defaults incl. saturation 100) so extraction tasks must migrate them consciously.",
+          "timestamp": "2026-09-26T18:29:34.0049475Z"
+        },
+        {
+          "body": "GREEN: npm --prefix src-vite run test -> Test Files 2 passed (2), Tests 12 passed (12), exit 0. Runner: vitest 5.0.2 + @vue/test-utils 2.5.1 + happy-dom 20.14.5, script 'test' added to src-vite/package.json with vitest.config.js reusing the '@' alias. Also npm --prefix src-vite run build -> built in 4.16s, exit 0 (pre-existing chunk-size/plugin-timing warnings only).",
+          "timestamp": "2026-09-26T18:31:19.9246439Z"
+        },
+        {
+          "body": "Verification evidence (full logs referenced in earlier comments; manifest: docs/raw-development/development-manifest.json, baseline: docs/raw-development/baseline.md). Revisions: Lap branch pebbles-harness/raw-development baseline a2d0e01c21acc7fcd338f4d5ef6b46c7e7a7b2a6 (work commit a64ce574), engine branch feature/lap-engine-extraction baseline 5e30bcbb246395d391ba2e9662510641ffe68e6b (work commits 1d43c939, b871028a); spec SHA256 49680993969aa54b0265c7671eaa3b172043425bbeb33e69f1855c8293c9284c (certutil, unchanged after work). Lap gates: npm --prefix src-vite run build PASS; npm --prefix src-vite run test PASS 12/12 (RED->GREEN recorded); cargo test PASS 20/20; cargo fmt --check FAIL pre-existing upstream drift (no .rs files changed by this task); cargo clippy --all-targets PASS 205 warnings/0 errors. Engine gates: npm test 80/80 PASS; typecheck PASS; lint FAIL inherited (867/52, identical to spec baseline at same commit); format:check FAIL inherited (208 files, identical); i18n:check PASS; cargo test 131/131 PASS; fmt PASS; clippy PASS. Repairs: submodules initialized at pinned gitlinks (LibRaw b860248a, libde265 3cd9fbf1, libheif 62f1b8c7, libjpeg-turbo 9217719d); VS2022 cmake PATH repair; scripts/download_ffmpeg_sidecar.ps1 and download_models.ps1 run (tauri.conf.json glob errors otherwise); engine .cargo/config.toml guard recreated. Linked engine issue rapidraw-dfa created before source edits, evidenced, and closed; harness validation_commands now git diff --check + npm --prefix src-vite run test. git diff --check clean in both checkouts; original RapidRAW checkout untouched (status identical to first observation). No RAW fixtures or parity claims (P4 unqualified). Issue left for harness disposition.",
+          "timestamp": "2026-09-26T19:20:54.5394113Z"
+        }
+      ]
+    }
+  },
+  "interrupted_task": "TASK-102",
+  "original_issue_map": {
+    "EPIC-100": "lap-7f5",
+    "TASK-101": "lap-7f5.1",
+    "TASK-102": "lap-7f5.2",
+    "TASK-103": "lap-7f5.3",
+    "EPIC-200": "lap-a35",
+    "TASK-201": "lap-a35.1",
+    "TASK-202": "lap-a35.2",
+    "TASK-203": "lap-a35.3",
+    "TASK-204": "lap-a35.4",
+    "TASK-205": "lap-a35.5",
+    "EPIC-300": "lap-f19",
+    "TASK-301": "lap-f19.1",
+    "TASK-302": "lap-f19.2",
+    "TASK-303": "lap-f19.3",
+    "TASK-304": "lap-f19.4",
+    "TASK-305": "lap-f19.5",
+    "TASK-306": "lap-f19.6",
+    "EPIC-400": "lap-002",
+    "TASK-401": "lap-002.1",
+    "TASK-402": "lap-002.2",
+    "TASK-403": "lap-002.3",
+    "TASK-404": "lap-002.4",
+    "TASK-405": "lap-002.5",
+    "EPIC-500": "lap-ec7",
+    "TASK-501": "lap-ec7.1",
+    "TASK-502": "lap-ec7.2",
+    "TASK-503": "lap-ec7.3",
+    "EPIC-600": "lap-404",
+    "TASK-601": "lap-404.1",
+    "TASK-602": "lap-404.2",
+    "TASK-603": "lap-404.3"
+  },
+  "remaining_tasks": 24
+}
