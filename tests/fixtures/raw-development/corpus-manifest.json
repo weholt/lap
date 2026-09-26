@@ -1,0 +1,94 @@
+﻿{
+    "schema":  "lap-raw-corpus/v1",
+    "issue":  "lap-7f5.2",
+    "acquisition":  {
+                        "tool":  "scripts/raw-development/acquire-corpus.ps1",
+                        "date":  "2026-09-26",
+                        "source":  "https://rawdb.dnglab.org (dnglab RawDB)",
+                        "policy":  "Pinned file list only; sha256 verified against RawDB API records before acceptance; deterministic derived orientation variant; no private photo libraries; no unlicensed sources",
+                        "maxTotalBytes":  209715200,
+                        "totalBytes":  83305796
+                    },
+    "files":  [
+                  {
+                      "path":  "corpus/canon-eos-r6-craw-iso100-nocrop.CR3",
+                      "bytes":  11205206,
+                      "sha256":  "4775df76433b1e5844bc7a42b95d93efc8438c0a4cd9681e120e23fe3e3007e8",
+                      "origin":  "rawdb.dnglab.org",
+                      "sourceUrl":  "https://rawdb.dnglab.org/api/download/Canon/EOS%20R6/raw_modes/Canon%20EOS%20R6_CRAW_ISO_100_nocrop_nodual.CR3",
+                      "license":  "CC0-1.0",
+                      "licenseEvidence":  "RawDB API record license field (\u0027CC0 1.0\u0027); dnglab CONTRIBUTE_SAMPLES.md requires contributed sample sets to be CC0 with contributor copyright ownership",
+                      "categories":  [
+                                         "bayer",
+                                         "real",
+                                         "fullres"
+                                     ],
+                      "notes":  "CI-exercised rawler set; 5472x3648 Bayer CFA, \u003e4096 px; primary per-adjustment matrix fixture"
+                  },
+                  {
+                      "path":  "corpus/fujifilm-xt5-lossy-iso125.RAF",
+                      "bytes":  28040304,
+                      "sha256":  "cddd7ae0c43f9280876e5fdcbdf8878718972ebd3d034d8affc8cfc6752d33dc",
+                      "origin":  "rawdb.dnglab.org",
+                      "sourceUrl":  "https://rawdb.dnglab.org/api/download/Fujifilm/X-T5/raw_modes/X-T5_ISO_125_Bitdepth_14_lossy.RAF",
+                      "license":  "CC0-1.0",
+                      "licenseEvidence":  "RawDB API record license field (\u0027CC0 1.0\u0027); dnglab CONTRIBUTE_SAMPLES.md requires contributed sample sets to be CC0 with contributor copyright ownership",
+                      "categories":  [
+                                         "xtrans",
+                                         "real",
+                                         "fullres"
+                                     ],
+                      "notes":  "X-Trans CMOS 5 HR (7728x5152), lossy-compressed; X-Trans demosaic coverage"
+                  },
+                  {
+                      "path":  "corpus/dng-jpegxl-lossy-16bit-linear-tiles.DNG",
+                      "bytes":  14544148,
+                      "sha256":  "21adc5c88d0dd723dc9ca76173b3f1b1515c2aff9abbbb657fc7dfb494c1507d",
+                      "origin":  "rawdb.dnglab.org",
+                      "sourceUrl":  "https://rawdb.dnglab.org/api/download/dnglab/dng-compression-variants/variants/dng_jpegxl_lossy_16bit_linear_tiles.dng",
+                      "license":  "CC0-1.0",
+                      "licenseEvidence":  "RawDB API record license field (\u0027CC0 1.0\u0027); dnglab CONTRIBUTE_SAMPLES.md requires contributed sample sets to be CC0 with contributor copyright ownership",
+                      "categories":  [
+                                         "linear-dng",
+                                         "real"
+                                     ],
+                      "notes":  "Linear (non-CFA) 16-bit DNG, JPEG-XL lossy tiles; dnglab-authored CC0 fixture"
+                  },
+                  {
+                      "path":  "corpus/canon-eos-r6-craw-iso204800-nocrop.CR3",
+                      "bytes":  14971990,
+                      "sha256":  "faabad3baceab3545fd9ae8e716f987534106e866101bfa431a74e0ae92e9653",
+                      "origin":  "rawdb.dnglab.org",
+                      "sourceUrl":  "https://rawdb.dnglab.org/api/download/Canon/EOS%20R6/iso_craw_nocrop_nodual/Canon%20EOS%20R6_CRAW_ISO_204800_nocrop_nodual.CR3",
+                      "license":  "CC0-1.0",
+                      "licenseEvidence":  "RawDB API record license field (\u0027CC0 1.0\u0027); dnglab CONTRIBUTE_SAMPLES.md requires contributed sample sets to be CC0 with contributor copyright ownership",
+                      "categories":  [
+                                         "highlight-stress",
+                                         "bayer",
+                                         "real",
+                                         "fullres"
+                                     ],
+                      "notes":  "ISO 204800 daylight capture: massively clipped highlights + extreme noise"
+                  },
+                  {
+                      "path":  "corpus/dng-linear-orientation6.DNG",
+                      "bytes":  14544148,
+                      "sha256":  "212459ee6918a5e39fefe71045e5af5dd118d5a009a6e67112f4e29f171e8ed1",
+                      "origin":  "derived",
+                      "derivedFrom":  {
+                                          "path":  "corpus/dng-jpegxl-lossy-16bit-linear-tiles.DNG",
+                                          "sha256":  "21adc5c88d0dd723dc9ca76173b3f1b1515c2aff9abbbb657fc7dfb494c1507d",
+                                          "transformation":  "TIFF tag 274 (Orientation): 1 -\u003e 6; no other bytes changed",
+                                          "tool":  "scripts/raw-development/make-orientation-variant.mjs"
+                                      },
+                      "license":  "CC0-1.0",
+                      "licenseEvidence":  "Byte-identical copy of the CC0-1.0 RawDB linear DNG except the 2-byte inline TIFF Orientation value; no new authorship",
+                      "categories":  [
+                                         "orientation",
+                                         "linear-dng",
+                                         "derived"
+                                     ],
+                      "notes":  "Orientation=6 fixture: exercises the engine\u0027s rawler orientation application path; expect transposed output dimensions"
+                  }
+              ]
+}

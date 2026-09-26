@@ -1,0 +1,78 @@
+{
+  "schema": "lap-raw-synthetic/v1",
+  "issue": "lap-7f5.2",
+  "generator": "scripts/raw-development/generate-synthetic-fixtures.mjs",
+  "policy": "Deterministic byte-for-byte output; no timestamps or randomness. Synthetic fixtures complement the real CC0 corpus for numerical and failure tests and do not establish camera-RAW parity (spec P4).",
+  "files": [
+    {
+      "path": "synthetic/dng-linear-gradient-64x48.dng",
+      "bytes": 18835,
+      "sha256": "e64b59b69c48b30c8545ab3a6b2dbaa976c8a45f18425550460973318c5d23eb",
+      "purpose": "numerical",
+      "brief": "64x48 linear RGB DNG; R=x/(w-1), G=y/(h-1), B=(x+y)/(w+h-2), scaled to 65535"
+    },
+    {
+      "path": "synthetic/dng-linear-orientation6-64x48.dng",
+      "bytes": 18835,
+      "sha256": "0ac047bade160558477339581d752a05a8f088808d217b334b5281c8fa7285f2",
+      "purpose": "numerical",
+      "brief": "Same gradient as dng-linear-gradient-64x48.dng with TIFF Orientation=6; engine must apply the display rotation"
+    },
+    {
+      "path": "synthetic/dng-highlight-clipped-64x48.dng",
+      "bytes": 18835,
+      "sha256": "2e36279c57b85e0a348ee89f86ee06d3e636f47f0370087e4e69d1d9fdbaed83",
+      "purpose": "numerical",
+      "brief": "All channels at WhiteLevel 65535 except a 4x4 near-white patch at 65530; exercises highlight rolloff/clipping math"
+    },
+    {
+      "path": "synthetic/dng-linear-wide-5000x64.dng",
+      "bytes": 1920403,
+      "sha256": "1164afb8289e57b50ffd845dd31491b6432f745ec6822c9b65314a99b65ca298",
+      "purpose": "numerical",
+      "brief": "5000x64 linear gradient (width > 4096 px) for geometry/downscale edge cases at a bounded size"
+    },
+    {
+      "path": "synthetic/dng-extreme-constants-8x2.dng",
+      "bytes": 499,
+      "sha256": "61e55ee188d54b8536571611d71ffa2d6f70cdc42f63a70935bfbcd78b46ad54",
+      "purpose": "numerical",
+      "brief": "8x2 exact constants incl. 0, 1, 65534, 65535 per channel for boundary rounding checks"
+    },
+    {
+      "path": "synthetic/truncated-linear.dng",
+      "bytes": 96,
+      "sha256": "99b319ff996ff2c9a5a2c690eedc2ab5a5b80657008badccb560f96dd1f5b300",
+      "purpose": "failure",
+      "brief": "First 96 bytes of dng-linear-gradient-64x48.dng: valid header, cut before the IFD body completes"
+    },
+    {
+      "path": "synthetic/header-only-linear.dng",
+      "bytes": 8,
+      "sha256": "e14e7408990dc136663693d7e57816e5e10b2c0668ede991ca62072d380c3d7a",
+      "purpose": "failure",
+      "brief": "TIFF header (8 bytes) only; IFD offset points past EOF"
+    },
+    {
+      "path": "synthetic/wrong-tiff-magic.dng",
+      "bytes": 18835,
+      "sha256": "94b51b94aabd83f59ce293d134038aa8cb4ac9a986691113d918b6ad3ec8060a",
+      "purpose": "numerical",
+      "brief": "Gradient DNG with TIFF magic changed 42->43. Measured engine behavior at the pinned revision: rawler tolerates the wrong magic and renders byte-identically to dng-linear-gradient-64x48.dng; the baseline pins this. A future decoder must either keep this behavior or change the output explicitly (never silently)"
+    },
+    {
+      "path": "synthetic/not-a-raw.dng",
+      "bytes": 54,
+      "sha256": "11774897a924ece20619fdf76aeb0309255d677bf40705337703a9e3ad6eb9fa",
+      "purpose": "failure",
+      "brief": "ASCII text with a .dng extension; must fail decode explicitly, never fall through silently"
+    },
+    {
+      "path": "synthetic/empty-raw.dng",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "purpose": "failure",
+      "brief": "Zero-byte file; the emptiest possible failure input"
+    }
+  ]
+}

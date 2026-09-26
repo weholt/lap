@@ -1,0 +1,67 @@
+﻿{
+    "schema":  "lap-raw-presets/v1",
+    "issue":  "lap-7f5.2",
+    "note":  "Adjustment override JSON files passed via --adjustments to the headless export; values in frontend UI units",
+    "presets":  [
+                    {
+                        "file":  "presets/clarity-plus20.json",
+                        "sha256":  "5750ae88e56b8b2b2e304ae6500c84120e93b31ae952f9b7092802c6e0c687d0",
+                        "bytes":  15
+                    },
+                    {
+                        "file":  "presets/combined-color.json",
+                        "sha256":  "e189d4c3d20932e0e2f76afe959a6a98b21643baa52ce436cba9573a36c9cf47",
+                        "bytes":  48
+                    },
+                    {
+                        "file":  "presets/combined-full.json",
+                        "sha256":  "3bdf81242a7ca55d8d5796bcfea72c0352cd59b800c2d5e8a7dadd1500027eb1",
+                        "bytes":  147
+                    },
+                    {
+                        "file":  "presets/combined-tone.json",
+                        "sha256":  "6c12300323ed8966a3fa99f54e7d022bcda4dd9c7348f30e289b061428699497",
+                        "bytes":  67
+                    },
+                    {
+                        "file":  "presets/contrast-plus25.json",
+                        "sha256":  "697359735be155af64a27ef2e3367617876a9de9f03b1531c96edc09161807c6",
+                        "bytes":  16
+                    },
+                    {
+                        "file":  "presets/default.json",
+                        "sha256":  "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+                        "bytes":  2
+                    },
+                    {
+                        "file":  "presets/exposure-plus1.json",
+                        "sha256":  "719bbdb6be8f748331d3caf871006ba742d666beb891899a4293d5833502f02e",
+                        "bytes":  17
+                    },
+                    {
+                        "file":  "presets/highlights-minus50.json",
+                        "sha256":  "8b49b2e132d972babae8ea0ebcb72ec07e3d2d406cefef068a28531e3fef5693",
+                        "bytes":  19
+                    },
+                    {
+                        "file":  "presets/saturation-plus30.json",
+                        "sha256":  "dae208dbc9da8ae57396647898c55cc58bfc2eb368aff52e8540db0e62c6478a",
+                        "bytes":  18
+                    },
+                    {
+                        "file":  "presets/shadows-plus40.json",
+                        "sha256":  "e0e59881528face83ccf9262ceb655ed7e45ab75628fd72441db9bc81d819a44",
+                        "bytes":  15
+                    },
+                    {
+                        "file":  "presets/sharpness-plus30.json",
+                        "sha256":  "daeeacb5198e0287dd2b9b6cd79a7fe9721937ef752643f681e4777255dc17ea",
+                        "bytes":  17
+                    },
+                    {
+                        "file":  "presets/temperature-plus40.json",
+                        "sha256":  "b9a2bbcbf5c59e16914b1d05725f31c323eca23feb295d9fdeee8ec17d2f5a76",
+                        "bytes":  19
+                    }
+                ]
+}
