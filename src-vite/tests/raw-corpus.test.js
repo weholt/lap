@@ -150,9 +150,18 @@ describe('pinned pre-extraction baseline manifest', () => {
     const cases = manifest.cases
     expect(Array.isArray(cases)).toBe(true)
     expect(cases.length).toBeGreaterThan(0)
+    // Failure-expectation cases pin explicit rejection (exit code + logged
+    // error), never a render checksum.
+    expect(cases.some((c) => c.expectFailure)).toBe(true)
     for (const c of cases) {
       expect(c.fixture).toMatch(/\.(cr3|raf|dng)$/i)
       expect(c.preset.length).toBeGreaterThan(0)
+      if (c.expectFailure) {
+        expect(c.exitCode).not.toBe(0)
+        expect(typeof c.errorEvidence).toBe('string')
+        expect(c.errorEvidence.length).toBeGreaterThan(0)
+        continue
+      }
       expect(c.outputSha256).toMatch(/^[0-9a-f]{64}$/)
       expect(Array.isArray(c.outputDimensions)).toBe(true)
       expect(c.outputDimensions.length).toBe(2)

@@ -1,4 +1,4 @@
-﻿{
+{
     "schema":  "lap-raw-corpus/v1",
     "issue":  "lap-7f5.2",
     "acquisition":  {
@@ -23,7 +23,11 @@
                                          "real",
                                          "fullres"
                                      ],
-                      "notes":  "CI-exercised rawler set; 5472x3648 Bayer CFA, \u003e4096 px; primary per-adjustment matrix fixture"
+                      "notes":  "CI-exercised rawler set; 5472x3648 Bayer CFA, \u003e4096 px; primary per-adjustment matrix fixture",
+                      "decodedDimensions":  [
+                                                5472,
+                                                3648
+                                            ]
                   },
                   {
                       "path":  "corpus/fujifilm-xt5-lossy-iso125.RAF",
@@ -38,7 +42,11 @@
                                          "real",
                                          "fullres"
                                      ],
-                      "notes":  "X-Trans CMOS 5 HR (7728x5152), lossy-compressed; X-Trans demosaic coverage"
+                      "notes":  "X-Trans CMOS 5 HR (7728x5152), lossy-compressed; X-Trans demosaic coverage",
+                      "decodedDimensions":  [
+                                                7728,
+                                                5152
+                                            ]
                   },
                   {
                       "path":  "corpus/dng-jpegxl-lossy-16bit-linear-tiles.DNG",
@@ -52,7 +60,11 @@
                                          "linear-dng",
                                          "real"
                                      ],
-                      "notes":  "Linear (non-CFA) 16-bit DNG, JPEG-XL lossy tiles; dnglab-authored CC0 fixture"
+                      "notes":  "Linear (non-CFA) 16-bit DNG, JPEG-XL lossy tiles; dnglab-authored CC0 fixture",
+                      "decodedDimensions":  [
+                                                8192,
+                                                5464
+                                            ]
                   },
                   {
                       "path":  "corpus/canon-eos-r6-craw-iso204800-nocrop.CR3",
@@ -68,7 +80,11 @@
                                          "real",
                                          "fullres"
                                      ],
-                      "notes":  "ISO 204800 daylight capture: massively clipped highlights + extreme noise"
+                      "notes":  "ISO 204800 daylight capture: massively clipped highlights + extreme noise",
+                      "decodedDimensions":  [
+                                                5472,
+                                                3648
+                                            ]
                   },
                   {
                       "path":  "corpus/dng-linear-orientation6.DNG",
@@ -88,7 +104,11 @@
                                          "linear-dng",
                                          "derived"
                                      ],
-                      "notes":  "Orientation=6 fixture: exercises the engine\u0027s rawler orientation application path; expect transposed output dimensions"
+                      "notes":  "Orientation=6 fixture: exercises the engine\u0027s rawler orientation application path; expect transposed output dimensions",
+                      "decodedDimensions":  [
+                                                5464,
+                                                8192
+                                            ]
                   }
               ]
 }

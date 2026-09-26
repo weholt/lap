@@ -1,4 +1,4 @@
-﻿{
+{
     "schema":  "lap-raw-presets/v1",
     "issue":  "lap-7f5.2",
     "note":  "Adjustment override JSON files passed via --adjustments to the headless export; values in frontend UI units",

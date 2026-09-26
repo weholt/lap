@@ -1,0 +1,489 @@
+{
+    "schema":  "lap-raw-baseline/v1",
+    "issue":  "lap-7f5.2",
+    "captured":  "2026-09-27",
+    "engine":  {
+                   "commit":  "1e072132364ea0ae0ceb7ffd17fe2c14eab903c7",
+                   "renderBaselineCommit":  "5e30bcbb246395d391ba2e9662510641ffe68e6b",
+                   "renderSourceSha256":  {
+                                              "src-tauri/src/raw_processing.rs":  "e6192a18978a9e75b3991c810a1b24c84b4f227ba32a1f5432072c6786ef52d1",
+                                              "src-tauri/src/image_processing.rs":  "4f1ad091e1639edb3cccce7a3d882c7555d00451a9e30677ea7fa4cb616def22",
+                                              "src-tauri/src/gpu_processing.rs":  "6ac779f38f690fbd95d3be144f11f533fa31aaf60c94b5c0adc01cf0235ea153",
+                                              "src-tauri/src/export_processing.rs":  "6146c40a06c13d7dd2d773cd385c258a2cd6940792557de8d082938a8a5789e6",
+                                              "src-tauri/src/adjustment_utils.rs":  "23cb2bceaddc1f8d6546fed996f19ef897e0d9c26e2e39dfd2c5f3f01e8b8523",
+                                              "src-tauri/src/image_loader.rs":  "6ad729902db88854b1329da5b8dabf9e25769ee79d4e65f280337ee516799eda"
+                                          },
+                   "headlessEntry":  "RapidRAW.exe export \u003cfixture\u003e --output \u003cpng\u003e --format png --adjustments \u003cpreset\u003e",
+                   "gpu":  {
+                               "backend":  "Dx12",
+                               "adapter":  "NVIDIA GeForce RTX 4060",
+                               "evidence":  "\u0027processed (ROI: ...) on GPU in\u0027 log line asserted for every non-failure case"
+                           }
+               },
+    "decodeOptions":  {
+                          "fastDemosaic":  false,
+                          "highlightCompression":  2.5,
+                          "linearRawMode":  "auto",
+                          "preprocessingColorNoiseReduction":  0.5,
+                          "preprocessingSharpening":  0.35,
+                          "applyPreprocessingToNonRaws":  false,
+                          "processingBackend":  "dx12",
+                          "source":  "effective decode options: host profile settings.json values for keys (processingBackend, rawHighlightCompression, linearRawMode, rawPreprocessingColorNr, rawPreprocessingSharpening, applyPreprocessingToNonRaws); keys absent from the profile fall back to the engine code defaults (re-verified against the pinned engine source at capture time): processingBackend=auto, rawHighlightCompression=2.5, linearRawMode=auto, rawPreprocessingColorNr=0.5, rawPreprocessingSharpening=0.35, applyPreprocessingToNonRaws=false"
+                      },
+    "colorSpaces":  {
+                        "working":  "linear scene-referred f32 (rawler RawDevelop with calibration on, sRGB step removed; GPU WGSL pipeline in linear)",
+                        "output":  "display-referred sRGB-encoded PNG (engine default tone curve + OETF; sampled: linear 0.51 encodes to ~212/255)"
+                    },
+    "defaults":  {
+                     "recipe":  "presets/default.json ({}): engine zero-defaults; equals frontend INITIAL_ADJUSTMENTS with every effective adjustment at its neutral value",
+                     "geometry":  "crop=null, rotation=0, orientationSteps=0, flipHorizontal=false, flipVertical=false",
+                     "pipelineOrder":  [
+                                           "geometry warp",
+                                           "lens blur",
+                                           "coarse rotation (orientationSteps)",
+                                           "flip",
+                                           "fine rotation",
+                                           "crop",
+                                           "GPU adjustment pipeline (masks, exposure/tone/color/detail/effects, LUT)",
+                                           "output encode"
+                                       ],
+                     "preview":  "editor preview path: fast demosaic (DemosaicAlgorithm::Speed) + editorPreviewResolution downscale; not exercised headless, recorded as contract of the pinned revision",
+                     "histogram":  "computed from rendered preview pixels in the GUI; not exercised headless, recorded as contract of the pinned revision"
+                 },
+    "determinism":  {
+                        "method":  "repeat-runs-sha256",
+                        "runs":  2,
+                        "result":  "deterministic",
+                        "maxObservedAbsChannelDelta":  0,
+                        "tolerance":  0,
+                        "note":  "All cases produced byte-identical PNG outputs across 2 consecutive runs (same machine, same adapter). Exact checksum equality is therefore the frozen tolerance; any future drift is a regression or a deliberate engine change."
+                    },
+    "cases":  [
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso100-nocrop.CR3",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "default",
+                      "exitCode":  0,
+                      "outputSha256":  "d20f3c1e5b1bb37943d915fc9c2970f7e5dc88d19635baf1081f7f0ac9265e61",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso100-nocrop.CR3",
+                      "preset":  "combined-tone",
+                      "presetFile":  "presets/combined-tone.json",
+                      "kind":  "combined",
+                      "exitCode":  0,
+                      "outputSha256":  "b6c54cffb0581f50ab8fc6a2a1e4d312bc49cb4d6cdb3d88da13f130c806f984",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso100-nocrop.CR3",
+                      "preset":  "combined-color",
+                      "presetFile":  "presets/combined-color.json",
+                      "kind":  "combined",
+                      "exitCode":  0,
+                      "outputSha256":  "56938b840f5bef4b34d31ca8f869a8ab64515c10e440ff231ca3c6ebe15fd5f3",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso100-nocrop.CR3",
+                      "preset":  "exposure-plus1",
+                      "presetFile":  "presets/exposure-plus1.json",
+                      "kind":  "per-adjustment",
+                      "exitCode":  0,
+                      "outputSha256":  "22baa6fbb46ee64318e8809c7738956d76c8749425dacd8a070eaa0193c2b53d",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso100-nocrop.CR3",
+                      "preset":  "contrast-plus25",
+                      "presetFile":  "presets/contrast-plus25.json",
+                      "kind":  "per-adjustment",
+                      "exitCode":  0,
+                      "outputSha256":  "a48244465d7d4d04e7da6684f8da7dd2971345846fc5cc47b28cc1aa201a79cc",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso100-nocrop.CR3",
+                      "preset":  "highlights-minus50",
+                      "presetFile":  "presets/highlights-minus50.json",
+                      "kind":  "per-adjustment",
+                      "exitCode":  0,
+                      "outputSha256":  "a8bae32a7025595a589d0102672e8389b18b0653491591994265ef37e8284a42",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso100-nocrop.CR3",
+                      "preset":  "shadows-plus40",
+                      "presetFile":  "presets/shadows-plus40.json",
+                      "kind":  "per-adjustment",
+                      "exitCode":  0,
+                      "outputSha256":  "cf7b8e5026ff2e698616e4a5e8052eb734403f78c1e641381547c9b87307dc6e",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso100-nocrop.CR3",
+                      "preset":  "saturation-plus30",
+                      "presetFile":  "presets/saturation-plus30.json",
+                      "kind":  "per-adjustment",
+                      "exitCode":  0,
+                      "outputSha256":  "9e65214f82ba3f01d35ce28db0167335ec3bdd12e4c30ea912205ed5b427a213",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso100-nocrop.CR3",
+                      "preset":  "temperature-plus40",
+                      "presetFile":  "presets/temperature-plus40.json",
+                      "kind":  "per-adjustment",
+                      "exitCode":  0,
+                      "outputSha256":  "18da1bdd981ca62d6ad52821e9e48296ece609ef2c2d205ed282156ad2f76314",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso100-nocrop.CR3",
+                      "preset":  "sharpness-plus30",
+                      "presetFile":  "presets/sharpness-plus30.json",
+                      "kind":  "per-adjustment",
+                      "exitCode":  0,
+                      "outputSha256":  "74e1b977ee53c89ee0b5e0f8ac0585f1a8ffd39c3087a9780c010a594c959408",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso100-nocrop.CR3",
+                      "preset":  "clarity-plus20",
+                      "presetFile":  "presets/clarity-plus20.json",
+                      "kind":  "per-adjustment",
+                      "exitCode":  0,
+                      "outputSha256":  "0c2a0b5ce00f73e45e7249008339ff88ae77a23fbe96a9066e080e9c5dd8cfcd",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso100-nocrop.CR3",
+                      "preset":  "combined-full",
+                      "presetFile":  "presets/combined-full.json",
+                      "kind":  "combined",
+                      "exitCode":  0,
+                      "outputSha256":  "260061ade88b4c0637842b9fd488aea2b9cfe43494464e6212eb0bddfb0a3850",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/fujifilm-xt5-lossy-iso125.RAF",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "default",
+                      "exitCode":  0,
+                      "outputSha256":  "4e3b453cff9e412c501116a9ddc90353311b71723e8ea53dc8c483e3718fe0a9",
+                      "outputDimensions":  [
+                                               7728,
+                                               5152
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/fujifilm-xt5-lossy-iso125.RAF",
+                      "preset":  "combined-tone",
+                      "presetFile":  "presets/combined-tone.json",
+                      "kind":  "combined",
+                      "exitCode":  0,
+                      "outputSha256":  "2452bbccd88965e0732e4f9793d50d1073c6d594779ad3b6df9d9afb93d3bec5",
+                      "outputDimensions":  [
+                                               7728,
+                                               5152
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/fujifilm-xt5-lossy-iso125.RAF",
+                      "preset":  "combined-color",
+                      "presetFile":  "presets/combined-color.json",
+                      "kind":  "combined",
+                      "exitCode":  0,
+                      "outputSha256":  "3c66127dcbe0f3a33af71693affa89bd55e733526ee345ed30f1e4c9cbcc8697",
+                      "outputDimensions":  [
+                                               7728,
+                                               5152
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/dng-jpegxl-lossy-16bit-linear-tiles.DNG",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "default",
+                      "exitCode":  0,
+                      "outputSha256":  "0c2ba3c5e3b561216dc63796040a44ff47735bd78536b407821c249aced8dc25",
+                      "outputDimensions":  [
+                                               8192,
+                                               5464
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/dng-jpegxl-lossy-16bit-linear-tiles.DNG",
+                      "preset":  "combined-tone",
+                      "presetFile":  "presets/combined-tone.json",
+                      "kind":  "combined",
+                      "exitCode":  0,
+                      "outputSha256":  "145021cbc1d5b2a77e41bf0d9d74d08a0d8356f9969b8932b23d43ea841c5708",
+                      "outputDimensions":  [
+                                               8192,
+                                               5464
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/dng-jpegxl-lossy-16bit-linear-tiles.DNG",
+                      "preset":  "combined-color",
+                      "presetFile":  "presets/combined-color.json",
+                      "kind":  "combined",
+                      "exitCode":  0,
+                      "outputSha256":  "b0dec0396d9e53e9648b08eb7fdfef0f80819ddbfbcfa1b8e1a894aa9a6adabb",
+                      "outputDimensions":  [
+                                               8192,
+                                               5464
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso204800-nocrop.CR3",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "default",
+                      "exitCode":  0,
+                      "outputSha256":  "33451fc8a0ce601e971e63b4035e4addb35953119726be6fc4c97e089ae1e4a9",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso204800-nocrop.CR3",
+                      "preset":  "combined-tone",
+                      "presetFile":  "presets/combined-tone.json",
+                      "kind":  "combined",
+                      "exitCode":  0,
+                      "outputSha256":  "182b0f86fbb3658125adf63fa6eba796f799a301918454ad069272e0e920c501",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/canon-eos-r6-craw-iso204800-nocrop.CR3",
+                      "preset":  "combined-color",
+                      "presetFile":  "presets/combined-color.json",
+                      "kind":  "combined",
+                      "exitCode":  0,
+                      "outputSha256":  "21dbfd3420dfc2f40fe967fc5eafbdb138470fe576c7e4b4de3fb99997e67ae4",
+                      "outputDimensions":  [
+                                               5472,
+                                               3648
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/dng-linear-orientation6.DNG",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "default",
+                      "exitCode":  0,
+                      "outputSha256":  "69416518640f563be53810a24cab971eac89ea962e4855e50639c52538a3dfc0",
+                      "outputDimensions":  [
+                                               5464,
+                                               8192
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/dng-linear-orientation6.DNG",
+                      "preset":  "combined-tone",
+                      "presetFile":  "presets/combined-tone.json",
+                      "kind":  "combined",
+                      "exitCode":  0,
+                      "outputSha256":  "6018f888520284f6675b5677b08f19b63099ea9e105de2d6c17e39ab4e6fe8c9",
+                      "outputDimensions":  [
+                                               5464,
+                                               8192
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "corpus/dng-linear-orientation6.DNG",
+                      "preset":  "combined-color",
+                      "presetFile":  "presets/combined-color.json",
+                      "kind":  "combined",
+                      "exitCode":  0,
+                      "outputSha256":  "287373ff2fb3ce67c1d31ff00f66cf628a0675241d5e5a0190a7530fd31623dc",
+                      "outputDimensions":  [
+                                               5464,
+                                               8192
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "synthetic/dng-linear-gradient-64x48.dng",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "default",
+                      "exitCode":  0,
+                      "outputSha256":  "917156e0361a96918a00267c6698e371b1d978781ca114cc636257a8fbdfa9f2",
+                      "outputDimensions":  [
+                                               64,
+                                               48
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "synthetic/dng-linear-orientation6-64x48.dng",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "default",
+                      "exitCode":  0,
+                      "outputSha256":  "100b17023ebec7bc9330cf304c4c1c38b388237f268df4c48ed8e224222c19b1",
+                      "outputDimensions":  [
+                                               48,
+                                               64
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "synthetic/dng-highlight-clipped-64x48.dng",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "default",
+                      "exitCode":  0,
+                      "outputSha256":  "8aed123f5824d643b24b76d65d194387caabd0971e89378315b1696f682dcf2a",
+                      "outputDimensions":  [
+                                               64,
+                                               48
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "synthetic/dng-linear-wide-5000x64.dng",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "default",
+                      "exitCode":  0,
+                      "outputSha256":  "8b3956558e01bb654858548f30d8cf5f4f10de42db78ebe91dc8304a9169943c",
+                      "outputDimensions":  [
+                                               5000,
+                                               64
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "synthetic/dng-extreme-constants-8x2.dng",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "default",
+                      "exitCode":  0,
+                      "outputSha256":  "47e393d5a6aa01f35ad0cdc4263c80d040ff089ae1062f1081b5a068c0400aae",
+                      "outputDimensions":  [
+                                               8,
+                                               2
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "synthetic/truncated-linear.dng",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "failure-expectation",
+                      "exitCode":  1,
+                      "expectFailure":  true,
+                      "errorEvidence":  "Failed to load from mmap: Error: Couldn\u0027t find a decoder for make \"Lap\", mode"
+                  },
+                  {
+                      "fixture":  "synthetic/header-only-linear.dng",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "failure-expectation",
+                      "exitCode":  1,
+                      "expectFailure":  true,
+                      "errorEvidence":  "Failed to load from mmap: Error: No decoder found, model \u0027\u0027, make: \u0027\u0027, mode: "
+                  },
+                  {
+                      "fixture":  "synthetic/wrong-tiff-magic.dng",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "default",
+                      "exitCode":  0,
+                      "outputSha256":  "917156e0361a96918a00267c6698e371b1d978781ca114cc636257a8fbdfa9f2",
+                      "outputDimensions":  [
+                                               64,
+                                               48
+                                           ],
+                      "gpu":  true
+                  },
+                  {
+                      "fixture":  "synthetic/not-a-raw.dng",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "failure-expectation",
+                      "exitCode":  1,
+                      "expectFailure":  true,
+                      "errorEvidence":  "Failed to load from mmap: Error: No decoder found, model \u0027\u0027, make: \u0027\u0027, mode: "
+                  },
+                  {
+                      "fixture":  "synthetic/empty-raw.dng",
+                      "preset":  "default",
+                      "presetFile":  "presets/default.json",
+                      "kind":  "failure-expectation",
+                      "exitCode":  1,
+                      "expectFailure":  true,
+                      "errorEvidence":  "Failed to load from bytes: Error: No decoder found, model \u0027\u0027, make: \u0027\u0027, mode:"
+                  }
+              ]
+}

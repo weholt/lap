@@ -52,6 +52,40 @@ $RenderSettingsKeys = @(
     "rawPreprocessingSharpening",
     "applyPreprocessingToNonRaws"
 )
+# Engine code defaults applied when a key is absent from the host profile
+# (Settings::default in src-tauri/src/app_settings.rs; the decode path applies
+# the same values via unwrap_or in src-tauri/src/image_loader.rs). The engine
+# normalizes settings.json on exit, so a key can appear between two runs with
+# exactly these values; recording effective values keeps the baseline stable
+# while the checksum comparison proves the decode behavior did not change.
+# Each default is re-verified against the pinned engine source below so an
+# engine default change fails the capture instead of recording a stale value.
+$EngineDecodeDefaults = @{
+    processingBackend           = "auto"
+    rawHighlightCompression     = 2.5
+    linearRawMode               = "auto"
+    rawPreprocessingColorNr     = 0.5
+    rawPreprocessingSharpening  = 0.35
+    applyPreprocessingToNonRaws = $false
+}
+# Manifest field names for the decode options recorded in
+# baselines/capture-manifest.json (differ from the settings.json key names).
+$DecodeOptionFields = @{
+    processingBackend           = "processingBackend"
+    rawHighlightCompression     = "highlightCompression"
+    linearRawMode               = "linearRawMode"
+    rawPreprocessingColorNr     = "preprocessingColorNoiseReduction"
+    rawPreprocessingSharpening  = "preprocessingSharpening"
+    applyPreprocessingToNonRaws = "applyPreprocessingToNonRaws"
+}
+$EngineDefaultProofs = @(
+    @{ key = "processingBackend";           file = "src-tauri/src/app_settings.rs"; pattern = 'processing_backend:\s*Some\("auto"' },
+    @{ key = "rawHighlightCompression";     file = "src-tauri/src/app_settings.rs"; pattern = "raw_highlight_compression:\s*Some\(2\.5\)" },
+    @{ key = "linearRawMode";               file = "src-tauri/src/app_settings.rs"; pattern = '(?s)default_linear_raw_mode\(\) -> String \{\s*"auto"' },
+    @{ key = "rawPreprocessingColorNr";     file = "src-tauri/src/app_settings.rs"; pattern = "raw_preprocessing_color_nr:\s*Some\(0\.5\)" },
+    @{ key = "rawPreprocessingSharpening";  file = "src-tauri/src/app_settings.rs"; pattern = "raw_preprocessing_sharpening:\s*Some\(0\.35\)" },
+    @{ key = "applyPreprocessingToNonRaws"; file = "src-tauri/src/app_settings.rs"; pattern = "apply_preprocessing_to_non_raws:\s*Some\(false\)" }
+)
 
 function Get-Sha256([string]$File) {
     $sha = [System.Security.Cryptography.SHA256]::Create()
@@ -67,6 +101,14 @@ function Get-Sha256([string]$File) {
 
 function Get-Json([string]$Path) {
     Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+}
+
+# BOM-free UTF-8 writer: Set-Content -Encoding UTF8 in Windows PowerShell 5.1
+# prepends a BOM, which JSON.parse (vitest) and serde_json (engine gates)
+# reject. All manifests under tests/fixtures must stay BOM-free.
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+function Write-Utf8NoBom([string]$Path, [string]$Text) {
+    [System.IO.File]::WriteAllText($Path, $Text, $Utf8NoBom)
 }
 
 # ---------------------------------------------------------------------------
@@ -95,10 +137,18 @@ if (Test-Path -LiteralPath $hostSettingsPath) {
     foreach ($key in $RenderSettingsKeys) {
         $value = $hostSettings.$key
         if ($null -ne $value) { $decodeSettings[$key] = $value }
+        else { $decodeSettings[$key] = $EngineDecodeDefaults[$key] }
     }
 }
 else {
     throw "Host RapidRAW settings not found at $hostSettingsPath"
+}
+# The recorded engine defaults must still be the pinned engine's defaults.
+foreach ($proof in $EngineDefaultProofs) {
+    $src = Get-Content -LiteralPath (Join-Path $EngineRoot $proof.file) -Raw
+    if (-not ($src -match $proof.pattern)) {
+        throw "Engine default verification failed for $($proof.key): pattern '$($proof.pattern)' not found in $($proof.file). The pinned engine changed its decode defaults; update the baseline deliberately (explicit -Update with a reviewed diff)."
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -169,6 +219,11 @@ foreach ($case in $cases) {
         New-Item -ItemType Directory -Force $runDir | Out-Null
         $outPng = Join-Path $runDir ("$($case.Preset).png")
         $logFile = Join-Path $runDir ("$($case.Preset).log")
+        # A prior case (or a killed earlier session) may have left a PNG with
+        # this preset name in the shared run dir; remove it so a missing write
+        # can never be masked by a stale file.
+        Remove-Item -LiteralPath $outPng -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $logFile -ErrorAction SilentlyContinue
 
         $sw = [Diagnostics.Stopwatch]::StartNew()
         # Native stderr must not become terminating ErrorRecords under the
@@ -208,6 +263,12 @@ foreach ($case in $cases) {
         }
         Write-Host ("  {0}{1} exit={2} {3}s{4}" -f $caseName, " [r$r]", $exit, $elapsed, $(if ($case.ExpectFailure) { " (expected failure)" } else { "" }))
     }
+
+    # Bound disk usage: hash/dimension evidence is collected inline, so the
+    # per-case PNG (up to ~80 MB) and debug log (up to ~13 MB) are transient.
+    # Keeping them would accumulate ~2 GB per session across the matrix.
+    Remove-Item -LiteralPath (Join-Path $WorkRoot "r1") -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $WorkRoot "r2") -Recurse -Force -ErrorAction SilentlyContinue
 
     $deterministic = (@($repeatHashes | Select-Object -Unique).Count -le 1)
     if (-not $case.ExpectFailure -and -not $deterministic) {
@@ -284,7 +345,7 @@ $manifest = [ordered]@{
         preprocessingSharpening = $decodeSettings.rawPreprocessingSharpening
         applyPreprocessingToNonRaws = $decodeSettings.applyPreprocessingToNonRaws
         processingBackend = $decodeSettings.processingBackend
-        source = "host profile settings.json snapshot (keys: $($RenderSettingsKeys -join ', ')); fresh-install code defaults are identical except processingBackend ('auto' vs pinned backend recorded above)"
+        source = "effective decode options: host profile settings.json values for keys ($($RenderSettingsKeys -join ', ')); keys absent from the profile fall back to the engine code defaults (re-verified against the pinned engine source at capture time): processingBackend=auto, rawHighlightCompression=2.5, linearRawMode=auto, rawPreprocessingColorNr=0.5, rawPreprocessingSharpening=0.35, applyPreprocessingToNonRaws=false"
     }
     colorSpaces = [ordered]@{
         working = "linear scene-referred f32 (rawler RawDevelop with calibration on, sRGB step removed; GPU WGSL pipeline in linear)"
@@ -306,7 +367,8 @@ if ((Test-Path -LiteralPath $BaselinePath) -and -not $Update.IsPresent) {
         }
     }
     foreach ($key in $RenderSettingsKeys) {
-        $frozenValue = $frozen.decodeOptions.($key)
+        $field = $DecodeOptionFields[$key]
+        $frozenValue = $frozen.decodeOptions.($field)
         $nowValue = $decodeSettings[$key]
         if ("$frozenValue" -ne "$nowValue") { $failures += "decode setting drifted: $key ($frozenValue -> $nowValue)" }
     }
@@ -335,7 +397,7 @@ if ((Test-Path -LiteralPath $BaselinePath) -and -not $Update.IsPresent) {
 if ($Update.IsPresent) {
     Write-Host "WARNING: overwriting frozen baseline at $BaselinePath (explicit -Update)" -ForegroundColor Yellow
 }
-$manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $BaselinePath -Encoding UTF8
+Write-Utf8NoBom $BaselinePath ($manifest | ConvertTo-Json -Depth 8)
 Write-Host "Baseline manifest written: $BaselinePath ($($results.Count) cases)"
 
 # Enrich the corpus manifest with engine-verified decoded dimensions.
@@ -353,23 +415,26 @@ foreach ($entry in $corpusRaw.files) {
         $entry | Add-Member -NotePropertyName decodedDimensions -NotePropertyValue $defaultDims[$entry.path] -Force
     }
 }
-$corpusRaw | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $corpusPath -Encoding UTF8
+Write-Utf8NoBom $corpusPath ($corpusRaw | ConvertTo-Json -Depth 6)
 Write-Host "Corpus manifest enriched with decoded dimensions."
 
 # Presets manifest (checksums of the exact preset files used).
 $presetsDir = Join-Path $CorpusRoot "presets"
 $presetsOut = @()
-Get-ChildItem -LiteralPath $presetsDir -Filter *.json | Sort-Object Name | ForEach-Object {
+# Presets manifest (checksums of the exact preset files used). The manifest
+# file itself lives in the same directory and must be excluded: listing it
+# would embed a self-hash that can never match the rewritten file.
+Get-ChildItem -LiteralPath $presetsDir -Filter *.json | Where-Object { $_.Name -ne "presets-manifest.json" } | Sort-Object Name | ForEach-Object {
     $presetsOut += [ordered]@{
         file = "presets/$($_.Name)"
         sha256 = (Get-Sha256 $_.FullName)
         bytes = $_.Length
     }
 }
-[ordered]@{
+Write-Utf8NoBom (Join-Path $presetsDir "presets-manifest.json") (([ordered]@{
     schema = "lap-raw-presets/v1"
     issue = "lap-7f5.2"
     note = "Adjustment override JSON files passed via --adjustments to the headless export; values in frontend UI units"
     presets = $presetsOut
-} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $presetsDir "presets-manifest.json") -Encoding UTF8
+}) | ConvertTo-Json -Depth 5)
 Write-Host "Presets manifest written."
