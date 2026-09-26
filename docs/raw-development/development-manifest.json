@@ -1,0 +1,87 @@
+{
+  "schema": "lap-raw-development-manifest/v1",
+  "generated": "2026-09-26",
+  "plan": "PLAN-260926",
+  "task": "TASK-101",
+  "lapIssue": "lap-7f5.1",
+  "linkedEngineIssue": "rapidraw-dfa",
+  "repositories": {
+    "lap": {
+      "path": "C:/Users/Thomas/Desktop/lap",
+      "branch": "pebbles-harness/raw-development",
+      "baselineCommit": "a2d0e01c21acc7fcd338f4d5ef6b46c7e7a7b2a6",
+      "baselineCommitParent": "67cda34420587dd3590a7e63cb008e55b0f9acb1",
+      "notes": "P2 reconciliation: the working branch descends directly from the spec-inspected Lap revision 67cda344 (one import commit ahead). The separate pre-existing Lap checkout discovered during analysis was not used."
+    },
+    "rapidraw-engine": {
+      "path": "C:/Users/Thomas/Desktop/RapidRAW-engine",
+      "branch": "feature/lap-engine-extraction",
+      "baselineCommit": "5e30bcbb246395d391ba2e9662510641ffe68e6b",
+      "notes": "Isolated extraction checkout; identical to the revision inspected by the spec."
+    },
+    "rapidraw-reference": {
+      "path": "C:/Users/Thomas/Desktop/RapidRAW",
+      "commit": "5e30bcbb246395d391ba2e9662510641ffe68e6b",
+      "policy": "reference-only; never modified by the extraction workflow"
+    }
+  },
+  "governingSpec": {
+    "path": "docs/raw-development/spec.md",
+    "sha256": "49680993969aa54b0265c7671eaa3b172043425bbeb33e69f1855c8293c9284c",
+    "bytes": 33534,
+    "verifyCommand": "certutil -hashfile docs/raw-development/spec.md SHA256"
+  },
+  "lapSubmodules": {
+    "src-tauri/third_party/LibRaw": "b860248a89d9082b8e0a1e202e516f46af9adb29",
+    "src-tauri/third_party/libde265": "3cd9fbf15ae30edafa22a29fdd8a89355ad52ad0",
+    "src-tauri/third_party/libheif": "62f1b8c76ed4d8305071fdacbe74ef9717bacac5",
+    "src-tauri/third_party/libjpeg-turbo": "9217719d3a58633923b096af4c1d50d304768a64",
+    "initCommand": "git submodule update --init"
+  },
+  "toolchain": {
+    "node": "22.19.0",
+    "npm": "11.1.0",
+    "rustup": "1.29.1",
+    "cargo": "1.98.0 (797e8a9bc 2026-08-05)",
+    "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+    "rustcHostTriple": "x86_64-pc-windows-msvc",
+    "cmake": "3.30.5-msvc23 (Visual Studio 2022 Community bundle)",
+    "msvcToolset": "14.43.34808",
+    "lapVitest": "5.0.2",
+    "lapVueTestUtils": "2.5.1",
+    "lapHappyDom": "20.14.5",
+    "cargoInvocation": "$env:PATH = \"$env:USERPROFILE\\.cargo\\bin;<cmake bin>;$env:PATH\" before every cargo command; never --all-features on Windows"
+  },
+  "machineLocalDependencies": {
+    "rustupBin": "C:/Users/Thomas/.cargo/bin (prepend before every cargo/rustc invocation; an older standalone GNU 1.85 toolchain sits earlier on the default PATH)",
+    "cmakeBin": "C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin (not on the default PATH; required by Lap build.rs for libheif/libde265/libjpeg-turbo)",
+    "lapFfmpegSidecar": "src-tauri/resources/ffmpeg (gitignored; scripts/download_ffmpeg_sidecar.ps1, required by tauri.conf.json resources)",
+    "lapOnnxModels": "src-tauri/resources/models (gitignored; scripts/download_models.ps1, required by tauri.conf.json resources)",
+    "engineCargoGuard": "RapidRAW-engine/.cargo/config.toml (gitignored; pins build.rustc/rustdoc to rustup 1.98.0 MSVC per its AGENTS.md)"
+  },
+  "designDecisions": {
+    "persistence": "Writable adjacent sidecar filename.ext.lapedit.json is authoritative for the first release; SQLite stores only a rebuildable projection (spec section Persistence and compatibility).",
+    "readOnlyLibraries": "A read-only source directory produces an explicit save failure with the session retained for retry or moved to a writable copy (P6 resolved by design; no second recipe authority).",
+    "p7BuildIntegration": "Both hosts build with rustup 1.98.0 x86_64-pc-windows-msvc with default features; Lap native submodules and sidecar/model resources plus the engine cargo guard are documented above."
+  },
+  "gateSummary": {
+    "lap": {
+      "npm --prefix src-vite run build": "pass",
+      "npm --prefix src-vite run test": "pass (12 tests / 2 files)",
+      "cargo test --manifest-path src-tauri/Cargo.toml": "pass (20 tests)",
+      "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check": "fail (pre-existing upstream formatting drift; no .rs files modified by TASK-101)",
+      "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets": "pass (205 pre-existing warnings, 0 errors)"
+    },
+    "rapidraw-engine": {
+      "npm test": "pass (80 tests / 17 files)",
+      "npm run typecheck": "pass",
+      "npm run lint": "fail (867 errors / 52 warnings; identical to spec baseline at same commit => inherited, not regression)",
+      "npm run format:check": "fail (208 files; identical to spec baseline => inherited, not regression)",
+      "npm run i18n:check": "pass",
+      "cargo test --manifest-path src-tauri/Cargo.toml": "pass (131 tests)",
+      "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check": "pass",
+      "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets": "pass (1 warning, 0 errors)"
+    }
+  },
+  "fixtures": "No RAW fixtures were used or claimed by TASK-101; renderer parity fixtures remain prerequisite P4 and are out of scope here."
+}
