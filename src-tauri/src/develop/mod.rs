@@ -1,3 +1,4 @@
+pub mod export;
 pub mod recipe_repository;
 pub mod sessions;
 

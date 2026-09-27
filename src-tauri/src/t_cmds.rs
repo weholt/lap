@@ -3574,3 +3574,181 @@ pub async fn develop_get_capabilities(
         .await
         .map_err(|e| format!("develop capabilities task failed: {e}"))
 }
+
+// ----------------------------------------------------------------------------
+// Durable derivative export commands (lap-7ae / TASK-304)
+//
+// `export_developed` per docs/raw-development/spec.md: the UI flushes edits
+// (develop_commit_recipe) and then requests the derivative at exactly the
+// acknowledged committed revision. The backend resolves the durable sidecar
+// at that revision, decodes the original at full resolution through the
+// shared engine, renders through the bounded export queue, and writes the
+// derivative atomically. Source destinations and their aliases are rejected
+// before any write; cancellation is cooperative and leaves no partial file.
+// ----------------------------------------------------------------------------
+
+/// Active derivative-export jobs keyed by the frontend-supplied export id.
+/// Each entry carries the same managed [`DevelopService`] that enqueued the
+/// engine job, so `develop_cancel_export` can reach the exact bounded export
+/// queue the work runs on.
+#[derive(Default)]
+pub struct DevelopExportJobs(std::sync::Mutex<std::collections::HashMap<String, DevelopExportJob>>);
+
+struct DevelopExportJob {
+    service: std::sync::Arc<DevelopService>,
+    cancel_source: rapidraw_develop::CancelSource,
+    slot: std::sync::Arc<lap_lib::develop::export::ExportCancelSlot>,
+}
+
+impl DevelopExportJobs {
+    fn register(
+        self: &std::sync::Arc<Self>,
+        export_job: &str,
+        service: std::sync::Arc<DevelopService>,
+    ) -> (
+        rapidraw_develop::CancelToken,
+        std::sync::Arc<lap_lib::develop::export::ExportCancelSlot>,
+        DevelopJobGuard,
+    ) {
+        let (cancel_source, cancel) = rapidraw_develop::CancelToken::pair();
+        let slot = std::sync::Arc::new(lap_lib::develop::export::ExportCancelSlot::new());
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(
+                export_job.to_string(),
+                DevelopExportJob {
+                    service: std::sync::Arc::clone(&service),
+                    cancel_source: cancel_source.clone(),
+                    slot: std::sync::Arc::clone(&slot),
+                },
+            );
+        (
+            cancel,
+            slot,
+            DevelopJobGuard {
+                registry: std::sync::Arc::clone(self),
+                key: export_job.to_string(),
+            },
+        )
+    }
+
+    /// Cooperatively cancels a registered export: the caller-side token ends
+    /// any decode/encode phase, and the engine export job (once enqueued) is
+    /// cancelled in its own bounded queue. Returns false for unknown or
+    /// already-finished ids.
+    pub fn cancel(&self, export_job: &str) -> bool {
+        let entry = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(export_job)
+            .map(|job| {
+                (
+                    job.cancel_source.clone(),
+                    job.slot.engine_job_id(),
+                    std::sync::Arc::clone(&job.service),
+                )
+            });
+        match entry {
+            Some((cancel_source, engine_job, service)) => {
+                cancel_source.cancel();
+                if let Some(engine_job) = engine_job {
+                    service.cancel_engine_export(engine_job);
+                }
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+/// Drops the registry entry when the export command returns (success,
+/// failure or cancellation); late cancels of expired ids report false.
+struct DevelopJobGuard {
+    registry: std::sync::Arc<DevelopExportJobs>,
+    key: String,
+}
+
+impl Drop for DevelopJobGuard {
+    fn drop(&mut self) {
+        self.registry
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&self.key);
+    }
+}
+
+fn develop_error_string_export(error: lap_lib::develop::export::ExportError) -> String {
+    error.to_string()
+}
+
+/// Exports the committed recipe revision as a full-resolution derivative.
+/// The UI flushes edits first (`develop_commit_recipe`) and passes the
+/// acknowledged revision; a durable sidecar at any other revision is a
+/// typed revision mismatch, never a silent "latest" export.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn develop_export_developed(
+    state: tauri::State<'_, DevelopAppState>,
+    export_jobs: tauri::State<'_, std::sync::Arc<DevelopExportJobs>>,
+    asset_id: i64,
+    variant_id: String,
+    revision: u64,
+    destination: String,
+    format: String,
+    quality: Option<u8>,
+    max_edge: Option<u32>,
+    export_job: String,
+) -> Result<lap_lib::develop::export::ExportCompletion, String> {
+    if export_job.is_empty() {
+        return Err("export_job id is required for cancellation".to_string());
+    }
+    let format = lap_lib::develop::export::ExportFormat::parse(&format)
+        .ok_or_else(|| format!("unknown export format '{format}' (expected 'png' or 'jpeg')"))?;
+    let settings = lap_lib::develop::export::ExportSettings {
+        destination: std::path::PathBuf::from(&destination),
+        format,
+        jpeg_quality: quality.unwrap_or(90),
+        max_edge,
+    };
+    let service = state.service();
+    let (cancel, slot, guard) = export_jobs.register(&export_job, std::sync::Arc::clone(&service));
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = (|| {
+            let source_path = develop_asset_source_path(asset_id)?;
+            let source_bytes = fs::read(&source_path)
+                .map_err(|e| format!("failed to read source {}: {e}", source_path.display()))?;
+            lap_lib::develop::export::export_developed(
+                &service,
+                lap_lib::develop::export::AssetExportInput {
+                    asset_id: asset_id.to_string(),
+                    variant_id,
+                    source_path,
+                    source_bytes,
+                    requested_revision: revision,
+                },
+                settings,
+                &cancel,
+                &slot,
+            )
+            .map_err(develop_error_string_export)
+        })();
+        drop(guard);
+        result
+    })
+    .await
+    .map_err(|e| format!("develop export task failed: {e}"))?
+}
+
+/// Cooperatively cancels an in-flight or queued derivative export. Reports
+/// false for unknown or already-finished export ids.
+#[tauri::command]
+pub async fn develop_cancel_export(
+    export_jobs: tauri::State<'_, std::sync::Arc<DevelopExportJobs>>,
+    export_job: String,
+) -> Result<bool, String> {
+    Ok(export_jobs.cancel(&export_job))
+}

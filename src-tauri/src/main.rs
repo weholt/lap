@@ -95,6 +95,7 @@ async fn main() {
         .manage(t_dedup::DedupState::default())
         .manage(t_similar::SimilarState::default())
         .manage(t_cmds::DevelopAppState::default())
+        .manage(std::sync::Arc::new(t_cmds::DevelopExportJobs::default()))
         .setup(|_app| {
             t_video::init_ffmpeg_path(&_app.handle());
             t_config::set_app_identifier(&_app.config().identifier);
@@ -446,6 +447,9 @@ async fn main() {
             t_cmds::develop_commit_recipe,
             t_cmds::develop_close_edit_session,
             t_cmds::develop_get_capabilities,
+            // durable derivative export (lap-7ae / TASK-304)
+            t_cmds::develop_export_developed,
+            t_cmds::develop_cancel_export,
         ])
         .build(tauri::generate_context!());
 

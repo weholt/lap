@@ -804,3 +804,32 @@ export interface CapabilityReport {
   schemaVersion: number;
   previewMaxEdge: number;
 }
+
+// ---------------------------------------------------------------------------
+// DURABLE DERIVATIVE EXPORT (mirrors src-tauri/src/develop/export.rs, lap-7ae)
+// ---------------------------------------------------------------------------
+
+/** Output container of the derivative. */
+export type ExportFormat = 'png' | 'jpeg';
+
+/** Receipt of a completed derivative export (`export_developed`). */
+export interface ExportReceipt {
+  assetId: string;
+  variantId: string;
+  /** The committed revision that was rendered (exactly the requested one). */
+  revision: number;
+  destination: string;
+  format: ExportFormat;
+  width: number;
+  height: number;
+  bytesWritten: number;
+  sourceFingerprint: string;
+  /** Content hash of the committed recipe that produced this derivative. */
+  contentHash: string | null;
+}
+
+/** Final state of one export request. Cancellation is an outcome, not an
+ * error; a cancelled export never leaves a partial file. */
+export type ExportCompletion =
+  | { status: 'completed'; receipt: ExportReceipt }
+  | { status: 'cancelled' };

@@ -489,7 +489,9 @@ impl PreviewRenderer for GpuPreviewRenderer {
     }
 }
 
-fn tonemapper_override_code(tone_mapper: rapidraw_edit_model::ToneMapper) -> u32 {
+/// Engine code for the envelope's recorded tone-mapper override, shared by
+/// the preview and export renderers.
+pub(crate) fn tonemapper_override_code(tone_mapper: rapidraw_edit_model::ToneMapper) -> u32 {
     match tone_mapper {
         rapidraw_edit_model::ToneMapper::Agx => 1,
         rapidraw_edit_model::ToneMapper::Basic => 0,
@@ -1123,6 +1125,21 @@ impl DevelopService {
     /// The session's committed envelope (engine-aligned revisions).
     pub fn session_envelope(&self, session_id: u64) -> Option<RecipeEnvelope> {
         self.manager.session_envelope(SessionId(session_id))
+    }
+
+    /// Cancels one engine export job (queued: dropped; in-flight: cooperative
+    /// token). Returns true when the job was found. Used by the durable
+    /// derivative export to route external cancellation into the bounded
+    /// export queue without touching preview domains.
+    pub fn cancel_engine_export(&self, job_id: rapidraw_develop::session::ExportJobId) -> bool {
+        self.manager.cancel_export(job_id)
+    }
+
+    /// Engine session-manager access for the durable export path
+    /// (`develop/export.rs`): snapshot enqueue plus job cancellation run
+    /// through the same bounded queues as every other session operation.
+    pub(crate) fn engine_manager(&self) -> &rapidraw_develop::session::SessionManager {
+        &self.manager
     }
 
     /// Explicit capability report: GPU status + engine identity.

@@ -58,6 +58,10 @@ rstar = "0.12"
 csv = "1"
 dirs = "5.0.1"
 walkdir = "2.5.0"
+# Hard-link alias detection for develop export source protection (std's
+# windows_by_handle metadata APIs are still unstable); already in the graph
+# via walkdir.
+same-file = "1.0.6"
 trash = "3.3.1"
 base64 = "0.22.1"
 flate2 = "1"
