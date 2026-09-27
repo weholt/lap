@@ -38,8 +38,17 @@
             </transition>
 
             <template v-if="imageSrc">
+
+              <!-- Developed assets display the rendered engine frame
+                   (recipe geometry and adjustments already baked in). -->
+              <canvas
+                v-if="isDevelopedAsset"
+                ref="developPreviewCanvasRef"
+                class="block max-w-full max-h-full object-contain rounded-box"
+              ></canvas>
+
               <figure
-                v-if="showDiffPreview && canShowDiffPreview"
+                v-if="!isDevelopedAsset && showDiffPreview && canShowDiffPreview"
                 class="diff absolute inset-0 z-20 h-full w-full"
                 tabindex="0"
               >
@@ -63,26 +72,26 @@
               </figure>
 
               <div
-                v-if="showDiffPreview && canShowDiffPreview"
+                v-if="!isDevelopedAsset && showDiffPreview && canShowDiffPreview"
                 class="pointer-events-none absolute z-50 rounded-box bg-base-100/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-base-content/70 left-3 top-3"
               >
                 {{ $t('msgbox.image_editor.original') }}
               </div>
               <div
-                v-if="showDiffPreview && canShowDiffPreview"
+                v-if="!isDevelopedAsset && showDiffPreview && canShowDiffPreview"
                 class="pointer-events-none absolute z-50 rounded-box bg-base-100/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-base-content/70 right-3 top-3"
               >
                 {{ currentPresetLabel || $t('msgbox.image_editor.adjusted') }}
               </div>
               <div
-                v-if="imageReady && !(showDiffPreview && canShowDiffPreview) && currentPresetLabel"
+                v-if="!isDevelopedAsset && imageReady && !(showDiffPreview && canShowDiffPreview) && currentPresetLabel"
                 class="pointer-events-none absolute z-50 rounded-box bg-base-100/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-base-content/70 right-3 top-3"
               >
                 {{ currentPresetLabel }}
               </div>
 
               <img
-                v-show="imageReady && !(showDiffPreview && canShowDiffPreview)"
+                v-show="!isDevelopedAsset && imageReady && !(showDiffPreview && canShowDiffPreview)"
                 ref="imageRef"
                 :src="imageSrc"
                 :style="imageStyle"
@@ -207,6 +216,16 @@
         </div>
 
         <template v-if="activeEditorTab === 'edit'">
+        <!-- Developed assets edit geometry through the shared recipe-backed
+             controls; the legacy CSS transform/crop UI never applies. -->
+        <div
+          v-if="isDevelopedAsset"
+          class="rounded-box p-3 space-y-2 bg-base-300/30 border border-base-content/5 shadow-sm"
+        >
+          <GeometryControls />
+        </div>
+
+        <template v-else>
         <section class="rounded-box p-3 space-y-2 bg-base-300/30 border border-base-content/5 shadow-sm">
           <div class="flex items-center justify-between gap-2">
             <div class="text-[11px] font-bold uppercase tracking-[0.22em] text-base-content/30">{{ $t('msgbox.image_editor.transform') }}</div>
@@ -295,6 +314,7 @@
             </div>
           </div>
         </section>
+        </template>
 
         <section class="rounded-box p-3 space-y-2 bg-base-300/30 border border-base-content/5 shadow-sm">
           <div class="flex items-center justify-between gap-2">
@@ -571,8 +591,10 @@ import {
   developExportFormatFor,
   exportDevelopedDerivative,
   isDevelopedAssetFile,
+  useDevelopEditor,
   verifyDevelopedAssetDurable,
 } from '@/composables/useDevelopEditor';
+import GeometryControls from '@/components/develop/GeometryControls.vue';
 import { getMaxInscribedRect, clampCenterInRotatedRect, maxResizeT } from '@/common/geometry';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { emit as tauriEmit, listen } from '@tauri-apps/api/event';
@@ -621,6 +643,15 @@ function sendToParent(payload: Record<string, any>) {
 }
 
 async function closeEditorWindow() {
+  if (isDevelopedAsset.value) {
+    // Editing autosaves: pending develop edits are awaited on close; a failed
+    // commit stays retained for retry and the window still closes.
+    try {
+      await develop.close();
+    } catch {
+      // Best effort; the backend reaps stale sessions.
+    }
+  }
   try {
     await appWindow.close();
   } catch (error) {
@@ -672,6 +703,48 @@ const imageReady = ref(false);
 const activeEditorTab = ref<'edit' | 'adjust'>('edit');
 const isDevelopedAsset = ref(false);
 const developSaveError = ref('');
+// Developed assets are edited through the shared develop session (lap-6bc):
+// geometry interactions live in the recipe, the preview is the rendered
+// engine frame, and exports resolve the committed revision.
+const develop = useDevelopEditor();
+const developPreviewCanvasRef = ref<HTMLCanvasElement | null>(null);
+
+watch(
+  () => [Number(fileInfo.value?.id || 0), isDevelopedAsset.value] as const,
+  async ([fileId, developed]) => {
+    if (!developed || !fileId) return;
+    try {
+      await develop.openAsset({ id: fileId });
+    } catch {
+      // Session failures surface through the export/verify paths; the
+      // committed recipe stays authoritative either way.
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => develop.preview.value,
+  async (frame) => {
+    await nextTick();
+    const canvas = developPreviewCanvasRef.value;
+    if (!canvas || !frame) return;
+    canvas.width = frame.width;
+    canvas.height = frame.height;
+    const context = canvas.getContext('2d');
+    if (context) {
+      context.putImageData(
+        new ImageData(new Uint8ClampedArray(frame.bytes), frame.width, frame.height),
+        0,
+        0,
+      );
+    }
+    // The engine frame arrived; the session is interactive even when the
+    // canvas surface itself is unavailable.
+    imageReady.value = true;
+    isProcessing.value = false;
+  },
+);
 
 const containerRef = ref<HTMLElement | null>(null);
 const containerRect = ref<DOMRect | null>(null);
@@ -1434,6 +1507,9 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown);
   uiStore.removeInputHandler('EditImage');
+  if (isDevelopedAsset.value) {
+    void develop.flush().catch(() => {});
+  }
   if (containerResizeObserver) {
     containerResizeObserver.disconnect();
     containerResizeObserver = null;
@@ -2244,8 +2320,14 @@ const executeSave = async (overrides: { fileName?: string; destFilePath?: string
   try {
     if (isDevelopedAsset.value) {
       // Developed assets never take the same-path pixel-write path and never
-      // render through CSS filters: same-path saves acknowledge the durable
-      // recipe; save-as-new exports a derivative from the committed recipe.
+      // render through CSS filters: pending edits are committed first so the
+      // export/verification resolves EXACTLY the transforms the user sees
+      // (lap-6bc); same-path saves acknowledge the durable recipe, save-as-new
+      // exports a derivative rendered from the committed revision.
+      const flushed = await develop.flush({ autoRetry: true });
+      if (!flushed) {
+        throw new Error(develop.lastError.value || t('develop.save.failed'));
+      }
       if (saveAsNew) {
         const format = developExportFormatFor(overrides.outputFormat || getSelectedOutputFormat());
         if (!format) {

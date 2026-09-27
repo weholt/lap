@@ -135,6 +135,21 @@ export interface DevelopEditor {
     setCurveMode(mode: CurveMode): void;
     setParametricCurveValueLive(channel: string, key: string, value: number): void;
     setParametricCurveValue(channel: string, key: string, value: number): void;
+    /**
+     * Applies a validated partial recipe update (geometry fields for
+     * lap-6bc) as one complete undo transaction.
+     */
+    applyRecipePatch(patch: Partial<Recipe>, label: string): void;
+    /**
+     * Live gesture variant: opens the transaction when none is open and
+     * never closes it (the gesture completion calls endEditTransaction).
+     */
+    applyRecipePatchLive(patch: Partial<Recipe>, label: string): void;
+    /**
+     * Cancels the open gesture transaction and restores an exact prior
+     * recipe without recording a history entry.
+     */
+    cancelEditTransaction(restored: Recipe): void;
     flush(options?: { autoRetry?: boolean }): Promise<boolean>;
     flushAsset(assetId: number | string): Promise<boolean>;
     retry(): Promise<boolean>;
@@ -519,6 +534,43 @@ function createDevelopEditor(): DevelopEditor {
         endEditTransaction();
     }
 
+    /**
+     * Merges a validated partial recipe update (geometry fields) into the
+     * working recipe. The patch values come from useDevelopGeometry, which
+     * owns crop validation and oriented-frame conversions.
+     */
+    function mergePatch(patch: Partial<Recipe>): Recipe | null {
+        if (!recipe.value) return null;
+        const next = JSON.parse(JSON.stringify(recipe.value)) as Recipe;
+        Object.assign(next as unknown as Record<string, unknown>, patch);
+        return next;
+    }
+
+    function applyRecipePatchLive(patch: Partial<Recipe>, label: string) {
+        const next = mergePatch(patch);
+        if (!next) return;
+        ensureTransaction(label);
+        history.record(next);
+        afterRecipeReplaced(next);
+    }
+
+    function applyRecipePatch(patch: Partial<Recipe>, label: string) {
+        const next = mergePatch(patch);
+        if (!next) return;
+        const unchanged = JSON.stringify(next) === JSON.stringify(recipe.value);
+        beginEditTransaction(label);
+        if (!unchanged) {
+            history.record(next);
+            afterRecipeReplaced(next);
+        }
+        endEditTransaction();
+    }
+
+    function cancelEditTransaction(restored: Recipe) {
+        history.cancelTransaction();
+        afterRecipeReplaced(restored);
+    }
+
     function beginEditTransaction(label: string) {
         history.beginTransaction(label);
     }
@@ -687,6 +739,9 @@ function createDevelopEditor(): DevelopEditor {
         setCurveMode,
         setParametricCurveValueLive,
         setParametricCurveValue,
+        applyRecipePatch,
+        applyRecipePatchLive,
+        cancelEditTransaction,
         flush,
         flushAsset,
         retry,
@@ -713,8 +768,11 @@ export function developExportFormatFor(extension: string): ExportFormat | null {
 
 /**
  * Renders the asset's committed recipe at full resolution into an explicit
- * derivative destination. Opens a short-lived session so the export resolves
- * exactly the durable sidecar revision.
+ * derivative destination. Reuses the develop editor's already-open session
+ * when it belongs to the same asset (so a flush-then-export sequence resolves
+ * exactly the revision that was just committed); otherwise opens a
+ * short-lived session. The export always resolves an immutable durable
+ * revision.
  */
 export async function exportDevelopedDerivative(options: {
     assetId: number;
@@ -723,8 +781,22 @@ export async function exportDevelopedDerivative(options: {
     quality?: number | null;
     maxEdge?: number | null;
 }): Promise<ExportReceipt> {
+    const editorSession = useDevelopEditor().session as {
+        value: { assetId: string | number; variantId: string; revision: number } | null;
+    };
+    const current = editorSession.value;
+    const reusable = Boolean(
+        current &&
+            String(current.assetId) === String(options.assetId) &&
+            current.variantId === 'default',
+    );
     const session = useDevelopSession();
-    const opened = await session.openEditSession(options.assetId, 'default');
+    if (!reusable) {
+        await session.openEditSession(options.assetId, 'default');
+    }
+    const opened = reusable
+        ? (current as { variantId: string; revision: number })
+        : (session.session.value as { variantId: string; revision: number });
     try {
         const completion = await invoke<{ status: string; receipt?: ExportReceipt }>(
             'develop_export_developed',
@@ -744,10 +816,12 @@ export async function exportDevelopedDerivative(options: {
         }
         throw new Error('develop derivative export was cancelled; no file was written');
     } finally {
-        try {
-            await session.closeEditSession();
-        } catch {
-            // Best effort cleanup.
+        if (!reusable) {
+            try {
+                await session.closeEditSession();
+            } catch {
+                // Best effort cleanup.
+            }
         }
     }
 }

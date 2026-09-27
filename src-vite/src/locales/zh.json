@@ -1748,6 +1748,20 @@
         "shadows": "阴影",
         "blackLevel": "黑场"
       }
+    },
+    "geometry": {
+      "title": "裁剪与旋转",
+      "rotateLeft": "向左旋转",
+      "rotateRight": "向右旋转",
+      "flipHorizontal": "水平翻转",
+      "flipVertical": "垂直翻转",
+      "reset": "重置几何",
+      "aspect": "宽高比",
+      "aspectFree": "自由",
+      "aspectOriginal": "原始",
+      "cropRemove": "移除裁剪",
+      "cropAria": "裁剪框：拖动框体或手柄，方向键移动，Enter 确认，Esc 取消",
+      "cropHint": "拖动框体调整位置，拖动角点调整大小。方向键移动（Shift：更大步长），Esc 取消拖动。"
     }
   }
 }

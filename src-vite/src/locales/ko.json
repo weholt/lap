@@ -1748,6 +1748,20 @@
         "shadows": "섀도",
         "blackLevel": "블랙 레벨"
       }
+    },
+    "geometry": {
+      "title": "자르기 및 회전",
+      "rotateLeft": "왼쪽으로 회전",
+      "rotateRight": "오른쪽으로 회전",
+      "flipHorizontal": "수평 뒤집기",
+      "flipVertical": "수직 뒤집기",
+      "reset": "지오메트리 초기화",
+      "aspect": "가로세로 비",
+      "aspectFree": "자유",
+      "aspectOriginal": "원본",
+      "cropRemove": "자르기 제거",
+      "cropAria": "자르기 프레임: 상자나 핸들을 드래그하고, 화살표 키로 이동, Enter로 확정, Esc로 취소",
+      "cropHint": "상자를 드래그해 위치를 정하고 모서리를 드래그해 크기를 조절합니다. 화살표 키로 이동(Shift: 더 큰 폭), Esc로 드래그 취소."
     }
   }
 }

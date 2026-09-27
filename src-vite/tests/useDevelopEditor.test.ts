@@ -517,4 +517,105 @@ describe('useDevelopEditor transactions, undo/redo and section controls (lap-adc
         expect(editor.canUndo.value).toBe(false);
         expect(editor.historySize.value).toBe(0);
     });
+
+    // -----------------------------------------------------------------------
+    // Geometry patches (lap-6bc / TASK-402): crop/orientation edits are
+    // recipe edits like any other — undoable, resettable, committed through
+    // the same debounced durable save.
+    // -----------------------------------------------------------------------
+
+    it('applies a geometry patch as exactly one transaction with dirty/pending state', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+
+        editor.applyRecipePatch(
+            {
+                orientationSteps: 1,
+                flipHorizontal: true,
+                crop: { x: 0.1, y: 0.2, width: 0.5, height: 0.4 },
+                aspectRatio: 1.25,
+            },
+            'rotate',
+        );
+
+        expect(editor.recipe.value?.orientationSteps).toBe(1);
+        expect(editor.recipe.value?.flipHorizontal).toBe(true);
+        expect(editor.recipe.value?.crop).toEqual({ x: 0.1, y: 0.2, width: 0.5, height: 0.4 });
+        expect(editor.historySize.value).toBe(1);
+        expect(editor.dirty.value).toBe(true);
+        expect(editor.saveState.value).toBe('pending');
+        expect(editor.undo()).toBe(true);
+        expect(editor.recipe.value?.orientationSteps).toBe(0);
+        expect(editor.recipe.value?.crop).toBeNull();
+    });
+
+    it('coalesces live geometry gesture steps into the open transaction', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+
+        editor.beginEditTransaction('crop drag');
+        editor.applyRecipePatchLive({ crop: { x: 0.1, y: 0.1, width: 0.5, height: 0.5 } }, 'crop drag');
+        editor.applyRecipePatchLive({ crop: { x: 0.2, y: 0.2, width: 0.4, height: 0.4 } }, 'crop drag');
+        expect(editor.historySize.value).toBe(0);
+        editor.endEditTransaction();
+
+        expect(editor.historySize.value).toBe(1);
+        expect(editor.recipe.value?.crop).toEqual({ x: 0.2, y: 0.2, width: 0.4, height: 0.4 });
+    });
+
+    it('cancels an open gesture transaction and restores the exact prior recipe', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+
+        const before = editor.recipe.value;
+        editor.beginEditTransaction('crop drag');
+        editor.applyRecipePatchLive({ crop: { x: 0.3, y: 0.3, width: 0.2, height: 0.2 } }, 'crop drag');
+        expect(editor.recipe.value?.crop).not.toBeNull();
+
+        editor.cancelEditTransaction(before!);
+        expect(editor.recipe.value?.crop).toBeNull();
+        expect(editor.historySize.value).toBe(0);
+        expect(editor.dirty.value).toBe(false);
+        expect(editor.saveState.value).toBe('idle');
+    });
+
+    it('commits a geometry patch through the debounced durable save', async () => {
+        vi.useFakeTimers();
+        try {
+            const editor = useDevelopEditor();
+            await openAssetA(editor);
+            queueCommand('develop_commit_recipe', receipt(1, 1));
+
+            editor.applyRecipePatch({ crop: { x: 0, y: 0, width: 0.5, height: 0.5 } }, 'crop');
+            await vi.advanceTimersByTimeAsync(DEVELOP_COMMIT_DEBOUNCE_MS);
+
+            expect(lastCommitArgs()?.envelope.recipe).toEqual(
+                expect.objectContaining({ crop: { x: 0, y: 0, width: 0.5, height: 0.5 } }),
+            );
+            expect(editor.saveState.value).toBe('saved');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('includes geometry defaults in reset-all (geometry participates in reset)', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+
+        editor.applyRecipePatch(
+            {
+                orientationSteps: 2,
+                flipHorizontal: true,
+                crop: { x: 0.1, y: 0.1, width: 0.5, height: 0.5 },
+                aspectRatio: 1,
+            },
+            'geometry',
+        );
+        editor.resetAll();
+
+        expect(editor.recipe.value?.orientationSteps).toBe(0);
+        expect(editor.recipe.value?.flipHorizontal).toBe(false);
+        expect(editor.recipe.value?.crop).toBeNull();
+        expect(editor.recipe.value?.aspectRatio).toBeNull();
+    });
 });

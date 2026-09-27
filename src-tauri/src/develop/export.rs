@@ -39,7 +39,7 @@ use rapidraw_develop::session::{
 };
 use rapidraw_develop::{
     CancelToken, DecodeOptions, DecodedOriginal, DevelopError as EngineError, LinearImage,
-    apply_coarse_rotation, apply_crop_normalized, apply_flip, decode_original,
+    decode_original,
 };
 use serde::Serialize;
 
@@ -402,21 +402,13 @@ impl ExportRenderer for GpuExportRenderer {
         job.cancel.check()?;
         let renderer = self.renderer()?;
 
-        // Recipe geometry in the engine's oriented coordinate system:
-        // coarse quarter-turns, flips, then the normalized crop. The decode
-        // already applied the RAW metadata orientation.
-        let recipe = &job.envelope.recipe;
-        let mut linear = job.original.image.clone();
-        let orientation_steps = (recipe.orientation_steps % 4) as u8;
-        if orientation_steps != 0 {
-            linear = apply_coarse_rotation(&linear, orientation_steps);
-        }
-        if recipe.flip_horizontal || recipe.flip_vertical {
-            linear = apply_flip(&linear, recipe.flip_horizontal, recipe.flip_vertical);
-        }
-        if let Some(crop) = &recipe.crop {
-            linear = apply_crop_normalized(&linear, crop)?;
-        }
+        // Recipe geometry in the engine's oriented coordinate system,
+        // applied by the SAME shared helper the preview renderer uses
+        // (lap-6bc): preview and export can never diverge on
+        // crop/rotation/flip. The decode already applied the RAW metadata
+        // orientation.
+        let linear =
+            super::sessions::apply_recipe_geometry(&job.original.image, &job.envelope.recipe)?;
 
         // Explicit resize only; otherwise the original decoded dimensions
         // pass through untouched (spec A5). The RGBA32F input is the same

@@ -1748,6 +1748,20 @@
         "shadows": "Sombras",
         "blackLevel": "Punto negro"
       }
+    },
+    "geometry": {
+      "title": "Recorte y rotación",
+      "rotateLeft": "Girar a la izquierda",
+      "rotateRight": "Girar a la derecha",
+      "flipHorizontal": "Voltear horizontal",
+      "flipVertical": "Voltear vertical",
+      "reset": "Restablecer geometría",
+      "aspect": "Relación de aspecto",
+      "aspectFree": "Libre",
+      "aspectOriginal": "Original",
+      "cropRemove": "Quitar recorte",
+      "cropAria": "Marco de recorte: arrastra el marco o las asas, flechas para mover, Intro confirma, Esc cancela",
+      "cropHint": "Arrastra el marco para colocarlo y sus esquinas para redimensionarlo. Flechas para mover (Mayús: pasos mayores), Esc cancela un arrastre."
     }
   }
 }

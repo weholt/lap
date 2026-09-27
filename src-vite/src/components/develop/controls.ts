@@ -439,7 +439,25 @@ export function fullResetPatch(): Partial<Recipe> {
     for (const section of DEVELOP_SECTIONS) {
         Object.assign(patch, sectionResetPatch(section.id));
     }
+    // Geometry (crop/orientation) has no section of its own but is still
+    // recipe render data: reset-all must restore its defaults too.
+    Object.assign(patch, geometryResetPatch());
     return patch as Partial<Recipe>;
+}
+
+/**
+ * Recipe defaults for the geometry fields (lap-6bc). Geometry lives outside
+ * the five canonical sections, so it is reset explicitly alongside them.
+ */
+export function geometryResetPatch(): Partial<Recipe> {
+    return {
+        rotation: DEFAULT_RECIPE.rotation,
+        orientationSteps: DEFAULT_RECIPE.orientationSteps,
+        flipHorizontal: DEFAULT_RECIPE.flipHorizontal,
+        flipVertical: DEFAULT_RECIPE.flipVertical,
+        crop: structuredClone(DEFAULT_RECIPE.crop),
+        aspectRatio: DEFAULT_RECIPE.aspectRatio,
+    };
 }
 
 // ---------------------------------------------------------------------------

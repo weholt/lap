@@ -352,17 +352,68 @@ fn new_preview_handle(session_id: u64) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Shared recipe geometry (lap-6bc): one host-side implementation for the
+// preview and the export renderers, so both apply the engine's oriented
+// coordinate system identically.
+// ---------------------------------------------------------------------------
+
+/// Applies the recipe's coarse geometry to a decoded linear image, in the
+/// render order the engine documents: quarter turns, then the horizontal and
+/// the vertical flip, then the normalized crop in the oriented frame. Invalid
+/// crops are typed errors, never silently ignored.
+pub(crate) fn apply_recipe_geometry(
+    image: &LinearImage,
+    recipe: &rapidraw_edit_model::Recipe,
+) -> Result<LinearImage, EngineError> {
+    let mut oriented = image.clone();
+    let orientation_steps = (recipe.orientation_steps % 4) as u8;
+    if orientation_steps != 0 {
+        oriented = rapidraw_develop::apply_coarse_rotation(&oriented, orientation_steps);
+    }
+    if recipe.flip_horizontal || recipe.flip_vertical {
+        oriented =
+            rapidraw_develop::apply_flip(&oriented, recipe.flip_horizontal, recipe.flip_vertical);
+    }
+    if let Some(crop) = &recipe.crop {
+        oriented = rapidraw_develop::apply_crop_normalized(&oriented, crop)?;
+    }
+    Ok(oriented)
+}
+
+/// Stable hash of exactly the recipe fields that change the geometry-applied
+/// input pixels. The renderers' input caches are keyed by their transform
+/// hash, so a geometry change at a constant output size (e.g. a 180-degree
+/// turn) must change this value or previews would reuse a stale texture.
+pub(crate) fn recipe_geometry_hash(recipe: &rapidraw_edit_model::Recipe) -> u64 {
+    const PRIME: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut hash = (recipe.orientation_steps % 4) as u64;
+    hash = hash.wrapping_mul(PRIME)
+        ^ (u64::from(recipe.flip_horizontal)).rotate_left(17)
+        ^ (u64::from(recipe.flip_vertical)).rotate_left(31);
+    if let Some(crop) = &recipe.crop {
+        for value in [crop.x, crop.y, crop.width, crop.height] {
+            hash = hash.wrapping_mul(PRIME) ^ value.to_bits();
+        }
+    } else {
+        hash = hash.wrapping_mul(PRIME) ^ 0x517C_C1B7_2722_0A95;
+    }
+    hash
+}
+
+// ---------------------------------------------------------------------------
 // GPU preview renderer
 // ---------------------------------------------------------------------------
 
 /// Host preview renderer: renders a preview generation from the session's
 /// linear original through the engine's offscreen GPU pipeline.
 ///
-/// The original is downscaled (linear f32, before any adjustment) to the
-/// requested preview size so the transport stays bounded, then rendered with
-/// the recipe's adjustments. Missing devices, device loss, oversized textures
-/// and missing LUT resources surface as explicit engine errors Ã¢â‚¬â€ never as an
-/// unadjusted frame.
+/// The recipe's geometry (quarter turns, flips, normalized crop) is applied
+/// first, exactly like the export renderer; the oriented result is then
+/// downscaled (linear f32, before any adjustment) to the requested preview
+/// size so the transport stays bounded, then rendered with the recipe's
+/// adjustments. Missing devices, device loss, oversized textures and missing
+/// LUT resources surface as explicit engine errors, never as an unadjusted
+/// frame.
 pub struct GpuPreviewRenderer {
     renderer: OnceLock<Result<OffscreenRenderer, String>>,
     factory: Mutex<Option<GpuContextFactory>>,
@@ -448,9 +499,13 @@ impl PreviewRenderer for GpuPreviewRenderer {
         job.cancel.check()?;
         let renderer = self.renderer()?;
 
-        let (width, height) = job.original.image.dimensions();
+        // Recipe geometry in the engine's oriented coordinate system, applied
+        // by the SAME helper the export renderer uses (lap-6bc): preview and
+        // export can never diverge on crop/rotation/flip.
+        let oriented = apply_recipe_geometry(&job.original.image, &job.envelope.recipe)?;
+        let (width, height) = oriented.dimensions();
         let (target_w, target_h) = preview_dimensions(width, height, job.max_edge);
-        let base = preview_base(&job.original.image, target_w, target_h)?;
+        let base = preview_base(&oriented, target_w, target_h)?;
 
         let recipe_json = serde_json::to_value(&job.envelope.recipe).map_err(|err| {
             EngineError::InvalidInput(format!("recipe serialization failed: {err}"))
@@ -463,11 +518,13 @@ impl PreviewRenderer for GpuPreviewRenderer {
                 .tonemapper_override
                 .map(tonemapper_override_code),
         );
-        // Stable per (session base, preview size): identical previews reuse the
-        // uploaded input texture; different sessions never collide.
+        // Stable per (session base, preview size, geometry): identical
+        // previews reuse the uploaded input texture; different sessions or a
+        // geometry change never collide.
         let transform_hash = job.session_id.0.wrapping_mul(0x9E37_79B9_7F4A_7C15)
             ^ ((target_w as u64) << 32)
-            ^ target_h as u64;
+            ^ target_h as u64
+            ^ recipe_geometry_hash(&job.envelope.recipe);
 
         let request = RenderRequest {
             adjustments,
@@ -1230,8 +1287,8 @@ mod tests {
         RecipeStore, SessionManagerConfig,
     };
     use rapidraw_develop::{
-        CancelToken, DecodeOptions, DecodedOriginal, DevelopError as EngineError, SessionId,
-        decode_original,
+        CancelToken, DecodeOptions, DecodedOriginal, DevelopError as EngineError, LinearImage,
+        SessionId, decode_original,
     };
     use rapidraw_edit_model::{RecipeEnvelope, sha256_hex};
     use std::collections::HashMap;
@@ -1447,7 +1504,205 @@ mod tests {
         }
     }
 
-    // ------------------------------------------------------------------ tests
+    // ------------------------------------------------------------------
+    // Recipe geometry (lap-6bc / TASK-402): the shared host helper that
+    // preview AND export renderers apply before rendering, and the
+    // preview-path behavior that must match the export path.
+    // ------------------------------------------------------------------
+
+    fn geometry_test_image() -> LinearImage {
+        let mut image = LinearImage::new(4, 3);
+        for y in 0..3u32 {
+            for x in 0..4u32 {
+                let v = (x * 16 + y) as f32 / 255.0;
+                image.set_pixel(x, y, [v, v, v]);
+            }
+        }
+        image
+    }
+
+    fn pixel_value(image: &LinearImage, x: u32, y: u32) -> f32 {
+        image.pixel(x, y)[0]
+    }
+
+    #[test]
+    fn recipe_geometry_quarter_turn_maps_pixels_like_the_engine() {
+        let image = geometry_test_image();
+        let mut recipe = rapidraw_edit_model::Recipe::default();
+        recipe.orientation_steps = 1;
+
+        let out = super::apply_recipe_geometry(&image, &recipe).expect("valid geometry");
+        let (w, h) = out.dimensions();
+        assert_eq!((w, h), (3, 4), "a 90-degree turn swaps dimensions");
+        // Engine Rotate90 forward map: source (sx, sy) -> oriented (h-1-sy, sx).
+        // Inverse: oriented (ox, oy) -> source (oy, h-1-ox) with h = 3.
+        for oy in 0..4u32 {
+            for ox in 0..3u32 {
+                let expected = pixel_value(&image, oy, 2 - ox);
+                assert!(
+                    (pixel_value(&out, ox, oy) - expected).abs() < 1e-6,
+                    "oriented ({ox},{oy}) must carry source pixel ({oy},{})",
+                    2 - ox
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recipe_geometry_flips_compose_after_rotation_like_the_export_path() {
+        let image = geometry_test_image();
+        let mut recipe = rapidraw_edit_model::Recipe::default();
+        recipe.orientation_steps = 1;
+        recipe.flip_horizontal = true;
+
+        let out = super::apply_recipe_geometry(&image, &recipe).expect("valid geometry");
+        let (w, h) = out.dimensions();
+        assert_eq!((w, h), (3, 4));
+        // Final = flip_horizontal(rotation(source)): final (fx, fy) carries
+        // rotated pixel (w-1-fx, fy), i.e. source (fy, h-1-(w-1-fx)) = (fy, fx).
+        for fy in 0..4u32 {
+            for fx in 0..3u32 {
+                let expected = pixel_value(&image, fy, fx);
+                assert!((pixel_value(&out, fx, fy) - expected).abs() < 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn recipe_geometry_crops_in_the_oriented_frame() {
+        let image = geometry_test_image();
+        let mut recipe = rapidraw_edit_model::Recipe::default();
+        recipe.crop = Some(rapidraw_edit_model::CropRect {
+            x: 0.5,
+            y: 0.0,
+            width: 0.5,
+            height: 1.0,
+        });
+
+        let out = super::apply_recipe_geometry(&image, &recipe).expect("valid geometry");
+        let (w, h) = out.dimensions();
+        assert_eq!((w, h), (2, 3), "right half of a 4x3 image");
+        for y in 0..3u32 {
+            for x in 0..2u32 {
+                let expected = pixel_value(&image, 2 + x, y);
+                assert!((pixel_value(&out, x, y) - expected).abs() < 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn recipe_geometry_without_transforms_returns_the_original() {
+        let image = geometry_test_image();
+        let recipe = rapidraw_edit_model::Recipe::default();
+        let out = super::apply_recipe_geometry(&image, &recipe).expect("valid geometry");
+        assert_eq!(out.dimensions(), image.dimensions());
+        assert_eq!(out.rgb(), image.rgb());
+    }
+
+    #[test]
+    fn recipe_geometry_rejects_out_of_frame_crops() {
+        let image = geometry_test_image();
+        let mut recipe = rapidraw_edit_model::Recipe::default();
+        recipe.crop = Some(rapidraw_edit_model::CropRect {
+            x: 0.8,
+            y: 0.0,
+            width: 0.5,
+            height: 1.0,
+        });
+        let err = super::apply_recipe_geometry(&image, &recipe)
+            .expect_err("out-of-frame crops must be rejected");
+        assert!(matches!(err, EngineError::Geometry(_)), "{err:?}");
+    }
+
+    #[test]
+    fn preview_geometry_hash_tracks_every_geometry_field() {
+        let base = rapidraw_edit_model::Recipe::default();
+        let base_hash = super::recipe_geometry_hash(&base);
+
+        let mut rotated = base.clone();
+        rotated.orientation_steps = 2;
+        assert_ne!(super::recipe_geometry_hash(&rotated), base_hash);
+
+        let mut flipped = base.clone();
+        flipped.flip_horizontal = true;
+        assert_ne!(super::recipe_geometry_hash(&flipped), base_hash);
+
+        let mut cropped = base.clone();
+        cropped.crop = Some(rapidraw_edit_model::CropRect {
+            x: 0.1,
+            y: 0.1,
+            width: 0.5,
+            height: 0.5,
+        });
+        assert_ne!(super::recipe_geometry_hash(&cropped), base_hash);
+
+        let mut nudged = cropped.clone();
+        nudged.crop.as_mut().unwrap().x = 0.2;
+        assert_ne!(
+            super::recipe_geometry_hash(&nudged),
+            super::recipe_geometry_hash(&cropped)
+        );
+    }
+
+    #[test]
+    fn gpu_preview_renderer_applies_recipe_geometry_like_export() {
+        // Honest capability probe: with a device the preview must reflect the
+        // recipe geometry (identically to the export path's orientation ->
+        // flips -> crop order); without one the failure stays explicit.
+        let renderer = GpuPreviewRenderer::new();
+        let bytes = gradient_bytes();
+        let decoded: Arc<DecodedOriginal> =
+            Arc::new(decode_original(&bytes, &DecodeOptions::default()).expect("decode"));
+        let (source_w, source_h) = decoded.image.dimensions();
+
+        let mut envelope =
+            RecipeEnvelope::new("lap-test/0", "asset-a", "default", &fingerprint(&bytes));
+        envelope.recipe.orientation_steps = 1;
+        envelope.recipe.crop = Some(rapidraw_edit_model::CropRect {
+            x: 0.5,
+            y: 0.5,
+            width: 0.5,
+            height: 0.5,
+        });
+
+        let (cancel_source, cancel) = CancelToken::pair();
+        let _ = cancel_source;
+        let job = PreviewJob {
+            session_id: SessionId(11),
+            asset_id: "asset-a".to_string(),
+            variant_id: "default".to_string(),
+            generation: 1,
+            quality: PreviewQuality::Settled,
+            max_edge: 48,
+            original: Arc::clone(&decoded),
+            envelope,
+            cancel,
+        };
+        match renderer.render(&job) {
+            Ok(frame) => {
+                // Oriented dims (swap for one turn), then the bottom-right
+                // quarter crop halves both sides again.
+                let (oriented_w, oriented_h) = (source_h, source_w);
+                let cropped = super::preview_dimensions(oriented_w / 2, oriented_h / 2, 48);
+                eprintln!(
+                    "gpu_preview_geometry: rendered {}x{} (expected {:?})",
+                    frame.width, frame.height, cropped
+                );
+                assert_eq!(
+                    (frame.width, frame.height),
+                    cropped,
+                    "preview must render the oriented, cropped frame"
+                );
+            }
+            Err(err) => {
+                eprintln!("gpu_preview_geometry: no device ({err})");
+                assert!(
+                    matches!(err, EngineError::Unsupported(_)),
+                    "without a device the failure must be a typed explicit error, got {err:?}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn cargo_lock_pins_engine_revision() {

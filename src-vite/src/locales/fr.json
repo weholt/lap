@@ -1748,6 +1748,20 @@
         "shadows": "Ombres",
         "blackLevel": "Point noir"
       }
+    },
+    "geometry": {
+      "title": "Recadrage et rotation",
+      "rotateLeft": "Pivoter à gauche",
+      "rotateRight": "Pivoter à droite",
+      "flipHorizontal": "Miroir horizontal",
+      "flipVertical": "Miroir vertical",
+      "reset": "Réinitialiser la géométrie",
+      "aspect": "Ratio",
+      "aspectFree": "Libre",
+      "aspectOriginal": "Original",
+      "cropRemove": "Supprimer le recadrage",
+      "cropAria": "Cadre de recadrage : faites glisser le cadre ou les poignées, flèches pour déplacer, Entrée valide, Échap annule",
+      "cropHint": "Faites glisser le cadre pour le positionner et ses coins pour le redimensionner. Flèches pour déplacer (Maj : pas plus grands), Échap annule un glissement."
     }
   }
 }

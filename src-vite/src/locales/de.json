@@ -1748,6 +1748,20 @@
         "shadows": "Tiefen",
         "blackLevel": "Schwarzpunkt"
       }
+    },
+    "geometry": {
+      "title": "Zuschnitt & Drehung",
+      "rotateLeft": "Nach links drehen",
+      "rotateRight": "Nach rechts drehen",
+      "flipHorizontal": "Horizontal spiegeln",
+      "flipVertical": "Vertikal spiegeln",
+      "reset": "Geometrie zurücksetzen",
+      "aspect": "Seitenverhältnis",
+      "aspectFree": "Frei",
+      "aspectOriginal": "Original",
+      "cropRemove": "Zuschnitt entfernen",
+      "cropAria": "Zuschnittrahmen: Rahmen oder Griffe ziehen, Pfeiltasten verschieben, Enter bestätigt, Escape bricht ab",
+      "cropHint": "Rahmen ziehen, um ihn zu positionieren, Ecken ziehen, um die Größe zu ändern. Pfeiltasten verschieben (Umschalt: größere Schritte), Escape bricht ab."
     }
   }
 }

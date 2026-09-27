@@ -1748,6 +1748,20 @@
         "shadows": "シャドウ",
         "blackLevel": "ブラックレベル"
       }
+    },
+    "geometry": {
+      "title": "トリミングと回転",
+      "rotateLeft": "左に回転",
+      "rotateRight": "右に回転",
+      "flipHorizontal": "左右に反転",
+      "flipVertical": "上下に反転",
+      "reset": "ジオメトリをリセット",
+      "aspect": "アスペクト比",
+      "aspectFree": "自由",
+      "aspectOriginal": "元の比率",
+      "cropRemove": "トリミングを解除",
+      "cropAria": "トリミング枠: 枠またはハンドルをドラッグ、矢印キーで移動、Enterで確定、Escでキャンセル",
+      "cropHint": "枠をドラッグして位置を、角をドラッグしてサイズを調整します。矢印キーで移動（Shiftで大きく）、Escでドラッグをキャンセル。"
     }
   }
 }
