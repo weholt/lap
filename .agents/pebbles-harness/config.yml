@@ -2,7 +2,7 @@ version: 1
 profiles:
   opencode:
     provider: zai-coding-plan
-    model: zai-coding-plan/glm-5.3
+    model: zai-coding-plan/glm-5.3-flash
     effort: max
     command: opencode
     args:
@@ -43,7 +43,7 @@ review:
 triage:
   primary:
     provider: zai-coding-plan
-    model: zai-coding-plan/glm-5.3
+    model: zai-coding-plan/glm-5.3-flash
     effort: max
     command: opencode
     args:
