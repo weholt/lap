@@ -1,0 +1,385 @@
+{
+  "schema": "lap-raw-provenance/v1",
+  "recorded": "2026-09-27",
+  "issue": "lap-d7f",
+  "legacyIssue": "lap-7f5.3",
+  "planKey": "TASK-103",
+  "purpose": "Machine-readable inventory of copied/extracted code and bundled resources for the Lap RAW-development extraction. This file records provenance only; it does not provide, imply, or authorize the unresolved combined-product distribution decision (spec prerequisite P3). Unknowns are marked explicitly and must never be read as qualifications.",
+  "governingSpec": {
+    "path": "docs/raw-development/spec.md",
+    "sha256": "49680993969aa54b0265c7671eaa3b172043425bbeb33e69f1855c8293c9284c",
+    "verifyCommand": "certutil -hashfile docs/raw-development/spec.md SHA256"
+  },
+  "repositories": {
+    "lap": {
+      "path": "C:/Users/Thomas/Desktop/lap",
+      "branch": "pebbles-harness/raw-development",
+      "headAtInventory": "8802be12f4ad62a4f1b71175e35d1e9c99631ae2",
+      "specInspectedRevision": "67cda34420587dd3590a7e63cb008e55b0f9acb1",
+      "declaredLicense": "GPL-3.0-or-later",
+      "licenseEvidence": [
+        "LICENSE (GPL-3.0 verbatim text)",
+        "src-vite/package.json:54 license field",
+        "src-tauri/Cargo.toml license field"
+      ]
+    },
+    "rapidraw-engine": {
+      "path": "C:/Users/Thomas/Desktop/RapidRAW-engine",
+      "branch": "feature/lap-engine-extraction",
+      "extractionBaseRevision": "5e30bcbb246395d391ba2e9662510641ffe68e6b",
+      "headAtInventory": "89f775cd",
+      "declaredLicense": "AGPL-3.0",
+      "licenseEvidence": [
+        "LICENSE (GNU Affero General Public License v3 verbatim text)"
+      ]
+    },
+    "rapidraw-reference": {
+      "path": "C:/Users/Thomas/Desktop/RapidRAW",
+      "revision": "5e30bcbb246395d391ba2e9662510641ffe68e6b",
+      "policy": "reference-only; never modified by the extraction workflow"
+    }
+  },
+  "components": {
+    "rapidraw-agpl-source": {
+      "kind": "code",
+      "role": "Upstream RapidRAW application; the source of all extracted engine code and bundled engine resources.",
+      "upstream": "https://github.com/CyberTimon/RapidRAW",
+      "sourceRevision": "5e30bcbb246395d391ba2e9662510641ffe68e6b",
+      "license": {
+        "status": "identified",
+        "licenseId": "AGPL-3.0",
+        "evidence": "LICENSE at the engine checkout (AGPL-3.0 verbatim); mirrored by src-tauri/resources/licenses/AGPL-3.0.txt"
+      },
+      "extractedAreas": [
+        "src/utils/adjustments.ts (recipe/defaults)",
+        "src-tauri/src/raw_processing.rs, image_loader.rs (decode)",
+        "src-tauri/src/image_processing.rs, gpu_processing.rs, adjustment_utils.rs (adjust/render)",
+        "src-tauri/src/lut_processing.rs, mask_generation.rs, lens_correction.rs (related resources; not yet extracted)"
+      ],
+      "notice": "RapidRAW-engine/LICENSE"
+    },
+    "lap-gpl-application": {
+      "kind": "code",
+      "role": "Lap application (cataloging host) receiving the extracted engine.",
+      "sourceRevision": "pebbles-harness/raw-development@8802be12f4ad62a4f1b71175e35d1e9c99631ae2 (descends from spec-inspected 67cda34420587dd3590a7e63cb008e55b0f9acb1)",
+      "license": {
+        "status": "identified",
+        "licenseId": "GPL-3.0-or-later",
+        "evidence": "src-vite/package.json and src-tauri/Cargo.toml license fields; LICENSE is GPL-3.0 verbatim text"
+      },
+      "notice": "LICENSE"
+    },
+    "extracted-engine-crates": {
+      "kind": "extracted-code",
+      "role": "Rust crates extracted from the RapidRAW AGPL source into the isolated engine checkout; rapidraw-edit-model is consumed by Lap via a path dependency.",
+      "sourceRevision": "5e30bcbb246395d391ba2e9662510641ffe68e6b (base); extraction commits 4c8c86e0 (edit-model), 1f8340e3 (decode/geometry), 47de7f55 (offscreen GPU) at engine head 89f775cd",
+      "crates": [
+        {
+          "name": "rapidraw-edit-model",
+          "path": "RapidRAW-engine/crates/rapidraw-edit-model",
+          "derivedFrom": "src/utils/adjustments.ts, src/components/adjustments/*, src-tauri/src/app_settings.rs (upstream rev 5e30bcbb)",
+          "licenseStatus": "unknown",
+          "licenseNote": "Cargo.toml declares publish=false and asserts no license field; crates/rapidraw-edit-model/src/lib.rs:15-16 states 'Distribution/licensing of the combined product is an unresolved prerequisite ... no license field is asserted here.' Derived from AGPL-3.0 source; final licensing is part of the blocked combined-product decision."
+        },
+        {
+          "name": "rapidraw-develop",
+          "path": "RapidRAW-engine/crates/rapidraw-develop",
+          "derivedFrom": "src-tauri/src/raw_processing.rs, image_loader.rs, image_processing.rs, gpu_processing.rs, adjustment_utils.rs, shaders/ (upstream rev 5e30bcbb)",
+          "licenseStatus": "unknown",
+          "licenseNote": "Cargo.toml declares publish=false; no license field is asserted here. Derived from AGPL-3.0 source; final licensing is part of the blocked combined-product decision."
+        }
+      ],
+      "lapConsumption": {
+        "dependency": "rapidraw-edit-model = { path = \"../../RapidRAW-engine/crates/rapidraw-edit-model\" }",
+        "manifest": "src-tauri/Cargo.toml",
+        "consumers": [
+          "src-tauri/src/develop/recipe_repository.rs"
+        ]
+      },
+      "license": {
+        "status": "unknown",
+        "note": "Both extracted crates deliberately carry no license assertion pending the combined-product decision (see crate notes)."
+      }
+    },
+    "wgsl-shaders": {
+      "kind": "code-resource",
+      "role": "WGSL compute/render shaders moved into the extracted GPU pipeline.",
+      "upstreamSourceRevision": "5e30bcbb246395d391ba2e9662510641ffe68e6b",
+      "upstreamLocation": "src-tauri/src/shaders/ (shader.wgsl, blur.wgsl, flare.wgsl, display.wgsl)",
+      "currentLocations": [
+        "RapidRAW-engine/crates/rapidraw-develop/src/gpu/shaders/shader.wgsl",
+        "RapidRAW-engine/crates/rapidraw-develop/src/gpu/shaders/blur.wgsl",
+        "RapidRAW-engine/crates/rapidraw-develop/src/gpu/shaders/flare.wgsl",
+        "RapidRAW-engine/src-tauri/src/shaders/display.wgsl (retained by the RapidRAW host)"
+      ],
+      "sourceRevision": "engine head 89f775cd (extraction commit 47de7f55)",
+      "license": {
+        "status": "identified",
+        "licenseId": "AGPL-3.0",
+        "evidence": "Repository-level LICENSE at upstream rev 5e30bcbb; the files carry no per-file license headers"
+      },
+      "notice": "RapidRAW-engine/LICENSE",
+      "openQuestions": [
+        "Spec requires shaders to be audited separately from the top-level license; no independent copyright statement exists per file."
+      ]
+    },
+    "rawler-fork": {
+      "kind": "dependency",
+      "role": "RAW decode library used by rapidraw-develop (fork of dnglab/dnglab rawler).",
+      "upstream": "https://github.com/CyberTimon/RapidRAW-DngLab.git",
+      "upstreamForkOf": "https://github.com/dnglab/dnglab",
+      "sourceRevision": "3289454e9a65f5c973594687cca35602fa8181e3",
+      "version": "0.7.1",
+      "license": {
+        "status": "identified",
+        "licenseId": "LGPL-2.1",
+        "evidence": "rawler/Cargo.toml license field at rev 3289454 (verified in the cargo git checkout); src-tauri/Cargo.lock pins the same rev"
+      },
+      "notice": "RapidRAW-engine/src-tauri/resources/licenses/LGPL-2.1.txt"
+    },
+    "film-luts": {
+      "kind": "bundled-resource",
+      "role": "Bundled film-simulation LUTs shipped with the engine resources.",
+      "location": "RapidRAW-engine/src-tauri/resources/film_luts/",
+      "files": [
+        "F-Pro 400H.cube",
+        "K-Ektar 100.cube",
+        "K-Gold 200.cube",
+        "K-Portra 400.cube",
+        "K-Vision 250D Cinematic.cube",
+        "K-Vision 500T Cinematic.cube"
+      ],
+      "fileSha256": {
+        "F-Pro 400H.cube": "f326488a590b6151e462c4877e2582f924a2eb9b6ef2170745243fb6721dce67",
+        "K-Ektar 100.cube": "3e2666d73cab0775758abb00e2011672c92017e608f7edc024bad20ad19a7227",
+        "K-Gold 200.cube": "83f728c34a48f22f462a51bb0a9c51b3b1d6cc67084c7d9fe007ef9963fddfb7",
+        "K-Portra 400.cube": "1ca2a11ab0081dc6d9c57ff575a0969d3fb16f88e0fac0ea0bc70903e5776483",
+        "K-Vision 250D Cinematic.cube": "52f53515a0757416b65eb2e6692729eecf1098cf5c19e00982621ea84ee73217",
+        "K-Vision 500T Cinematic.cube": "4108c822bb3369416b47da43d43c22bc24d417d56874bf510b2345450fa05482"
+      },
+      "sourceRevision": "engine resources at 5e30bcbb246395d391ba2e9662510641ffe68e6b; verified byte-identical to the reference RapidRAW checkout on 2026-09-27 (SHA-256 table above)",
+      "license": {
+        "status": "identified",
+        "licenseId": "CC-BY-SA-4.0",
+        "evidence": "SPEKTRAFILM_LICENSE.txt in the same directory: spektrafilm profiles by Andrea Volpato, 'License: CC BY-SA 4.0 | Preamble v1.1'; LUTs are direct encodings of those profiles"
+      },
+      "notice": "RapidRAW-engine/src-tauri/resources/film_luts/SPEKTRAFILM_LICENSE.txt",
+      "notes": [
+        "The license text explicitly states the profiles/LUTs are NOT released under GPLv3; attribution and share-alike obligations apply independently of the code licenses."
+      ]
+    },
+    "lens-data": {
+      "kind": "bundled-resource",
+      "role": "Lensfun calibration database used by lens correction.",
+      "location": "RapidRAW-engine/src-tauri/lensfun_db/",
+      "files": "60 lens XML databases plus lensfun-database.dtd/xsd and timestamp.txt",
+      "sourceRevision": "bundled at upstream rev 5e30bcbb246395d391ba2e9662510641ffe68e6b; timestamp.txt = 1577948414 (2020-01-01 UTC snapshot)",
+      "license": {
+        "status": "unknown",
+        "note": "The lensfun_db directory contains no license file. A bundled LGPL-3.0.txt exists under src-tauri/resources/licenses/, but its mapping to this database snapshot is not verified locally. Lensfun upstream licensing (code vs. data terms) has not been checked from primary sources in this inventory."
+      },
+      "openQuestions": [
+        "Confirm lensfun database license/attribution terms from the upstream project for this snapshot revision."
+      ]
+    },
+    "lap-native-submodules": {
+      "kind": "dependency",
+      "role": "Native media libraries vendored by Lap as git submodules (not extracted from RapidRAW).",
+      "sourceRevision": "submodule pins recorded 2026-09-26 in docs/raw-development/development-manifest.json",
+      "libraries": [
+        {
+          "name": "LibRaw",
+          "revision": "b860248a89d9082b8e0a1e202e516f46af9adb29 (0.22.1)",
+          "licenseStatus": "identified",
+          "licenseId": "LGPL-2.1 OR CDDL-1.0",
+          "evidence": "LICENSE.LGPL and LICENSE.CDDL in the submodule"
+        },
+        {
+          "name": "libde265",
+          "revision": "3cd9fbf15ae30edafa22a29fdd8a89355ad52ad0",
+          "licenseStatus": "identified",
+          "licenseId": "LGPL-3.0",
+          "evidence": "COPYING in the submodule (GNU Lesser General Public License)"
+        },
+        {
+          "name": "libheif",
+          "revision": "62f1b8c76ed4d8305071fdacbe74ef9717bacac5 (v1.21.2)",
+          "licenseStatus": "identified",
+          "licenseId": "LGPL-3.0",
+          "evidence": "COPYING in the submodule (GNU Lesser General Public License)"
+        },
+        {
+          "name": "libjpeg-turbo",
+          "revision": "9217719d3a58633923b096af4c1d50d304768a64 (2.1.4-533-g9217719d)",
+          "licenseStatus": "identified",
+          "licenseId": "BSD-3-Clause AND IJG AND zlib",
+          "evidence": "LICENSE.md and README.ijg in the submodule"
+        }
+      ],
+      "license": {
+        "status": "identified",
+        "licenseId": "per-library (see libraries[])",
+        "evidence": "License files present in each initialized submodule working tree"
+      },
+      "notice": "per-library COPYING/LICENSE files listed in libraries[].evidence"
+    },
+    "optional-ai-models": {
+      "kind": "optional-dependency",
+      "role": "Machine-local ONNX models for AI features (outside the initial extraction scope, spec section 2).",
+      "location": "Lap src-tauri/resources/models/ (gitignored; fetched by scripts/download_models.ps1)",
+      "files": [
+        "tokenizer.json",
+        "text_model.onnx",
+        "vision_model.onnx",
+        "det_500m.onnx",
+        "w600k_mbf.onnx"
+      ],
+      "sourceRevision": "unpinned downloads (2026-09-26 per development-manifest.json toolchain record); sources: huggingface.co openai/clip-vit-base-patch32, Xenova/clip-vit-base-patch32 (quantized), deepghs/insightface buffalo_s",
+      "license": {
+        "status": "unknown",
+        "note": "Model redistribution rights are unverified. Repository code licenses do not cover trained weights; insightface-derived models may carry non-commercial restrictions. No models were inventoried beyond file names."
+      },
+      "openQuestions": [
+        "Determine licenses/redistribution terms for each model file and pin download revisions before any distribution consideration."
+      ]
+    },
+    "optional-ffmpeg-sidecar": {
+      "kind": "optional-dependency",
+      "role": "ffmpeg/ffprobe sidecar binaries for video metadata (machine-local, gitignored).",
+      "location": "Lap src-tauri/resources/ffmpeg/ (fetched by scripts/download_ffmpeg_sidecar.ps1)",
+      "files": [
+        "ffmpeg-x86_64-pc-windows-msvc.exe",
+        "ffprobe-x86_64-pc-windows-msvc.exe"
+      ],
+      "sourceRevision": "julyx10/lap-binaries release tag ffmpeg-8.1 (unpinned binary artifacts)",
+      "license": {
+        "status": "unknown",
+        "note": "The build configuration (GPL vs LGPL enablement, exact upstream version) is not recorded by the download script; binary provenance is not locally verifiable."
+      },
+      "openQuestions": [
+        "Record build configuration and license for the sidecar binaries, or rebuild from source with a pinned configuration."
+      ]
+    },
+    "optional-onnxruntime": {
+      "kind": "optional-dependency",
+      "role": "ONNX Runtime native binaries pulled by the ort crate (download-binaries feature) for AI features outside the initial extraction scope.",
+      "location": "cargo dependency ort =2.0.0-rc.10 in Lap src-tauri/Cargo.toml",
+      "sourceRevision": "ort 2.0.0-rc.10 (Cargo.lock)",
+      "license": {
+        "status": "unknown",
+        "note": "ONNX Runtime is commonly MIT-licensed, but the license of the exact downloaded binary artifacts has not been verified locally; no claim is made."
+      },
+      "openQuestions": [
+        "Verify ort/onnxruntime binary artifact licensing at the pinned version."
+      ]
+    }
+  },
+  "notices": [
+    {
+      "repo": "lap",
+      "path": "LICENSE",
+      "covers": "Lap application (GPL-3.0 verbatim text; manifests declare GPL-3.0-or-later)"
+    },
+    {
+      "repo": "rapidraw-engine",
+      "path": "LICENSE",
+      "covers": "RapidRAW application and engine checkout (AGPL-3.0)"
+    },
+    {
+      "repo": "rapidraw-engine",
+      "path": "src-tauri/resources/licenses/AGPL-3.0.txt",
+      "covers": "bundled RapidRAW code notice"
+    },
+    {
+      "repo": "rapidraw-engine",
+      "path": "src-tauri/resources/licenses/LGPL-2.1.txt",
+      "covers": "rawler (LGPL-2.1) bundled notice"
+    },
+    {
+      "repo": "rapidraw-engine",
+      "path": "src-tauri/resources/licenses/LGPL-3.0.txt",
+      "covers": "bundled LGPL-3.0 notice (mapping to specific components unverified; see lens-data)"
+    },
+    {
+      "repo": "rapidraw-engine",
+      "path": "src-tauri/resources/film_luts/SPEKTRAFILM_LICENSE.txt",
+      "covers": "film LUTs (CC BY-SA 4.0, spektrafilm by Andrea Volpato)"
+    },
+    {
+      "repo": "lap",
+      "path": "src-tauri/third_party/LibRaw/LICENSE.LGPL",
+      "covers": "LibRaw (LGPL-2.1 alternative)"
+    },
+    {
+      "repo": "lap",
+      "path": "src-tauri/third_party/LibRaw/LICENSE.CDDL",
+      "covers": "LibRaw (CDDL-1.0 alternative)"
+    },
+    {
+      "repo": "lap",
+      "path": "src-tauri/third_party/libde265/COPYING",
+      "covers": "libde265 (LGPL-3.0)"
+    },
+    {
+      "repo": "lap",
+      "path": "src-tauri/third_party/libheif/COPYING",
+      "covers": "libheif (LGPL-3.0)"
+    },
+    {
+      "repo": "lap",
+      "path": "src-tauri/third_party/libjpeg-turbo/LICENSE.md",
+      "covers": "libjpeg-turbo (BSD-3-Clause AND IJG AND zlib)"
+    }
+  ],
+  "distributionDecision": {
+    "status": "blocked",
+    "question": "Combined-product licensing for distributing Lap together with RapidRAW-derived engine code (AGPL-3.0) and bundled resources (CC-BY-SA-4.0 LUTs; lens data, model, and binary artifacts with unverified terms).",
+    "decidedBy": null,
+    "decidedAt": null,
+    "scope": null,
+    "evidence": [],
+    "note": "No harness launch, environment signal, or agent assertion constitutes approval. An authorized decision must be recorded in this block with non-null decidedBy/decidedAt/scope and at least one evidence entry; see docs/raw-development/release-gates.md. While any component license remains unknown or any open question is unresolved, the release gate stays blocked regardless of this block."
+  },
+  "openQuestions": [
+    {
+      "id": "combined-product-decision",
+      "question": "Choose and document the distribution/licensing model for the combined Lap + extracted-engine product (spec prerequisite P3).",
+      "blocksRelease": true
+    },
+    {
+      "id": "extracted-crate-license-assertion",
+      "question": "Add explicit license fields/notices to rapidraw-edit-model and rapidraw-develop once the combined-product decision exists.",
+      "blocksRelease": true
+    },
+    {
+      "id": "lensfun-data-license",
+      "question": "Verify lensfun database licensing/attribution for the bundled snapshot (timestamp 1577948414).",
+      "blocksRelease": true
+    },
+    {
+      "id": "shader-license-headers",
+      "question": "Audit WGSL shaders separately as required by the spec; no per-file copyright statements exist.",
+      "blocksRelease": true
+    },
+    {
+      "id": "ai-model-redistribution",
+      "question": "Determine model weights licensing (CLIP/insightface artifacts) and pin revisions.",
+      "blocksRelease": true
+    },
+    {
+      "id": "ffmpeg-sidecar-license",
+      "question": "Record the sidecar binary build configuration and license, or rebuild from pinned sources.",
+      "blocksRelease": true
+    },
+    {
+      "id": "onnxruntime-license-verification",
+      "question": "Verify licensing of ort/onnxruntime binary artifacts at the pinned version.",
+      "blocksRelease": true
+    },
+    {
+      "id": "full-dependency-audit",
+      "question": "The transitive npm and cargo dependency trees are not inventoried here; a distribution-ready notice/audit pass is still required (spec delivery step 6).",
+      "blocksRelease": true
+    }
+  ]
+}
