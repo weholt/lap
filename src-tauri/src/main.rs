@@ -94,6 +94,7 @@ async fn main() {
         )))
         .manage(t_dedup::DedupState::default())
         .manage(t_similar::SimilarState::default())
+        .manage(t_cmds::DevelopAppState::default())
         .setup(|_app| {
             t_video::init_ffmpeg_path(&_app.handle());
             t_config::set_app_identifier(&_app.config().identifier);
@@ -438,6 +439,13 @@ async fn main() {
             t_cmds::backup_databases,
             t_cmds::parse_backup_file,
             t_cmds::restore_databases,
+            // develop sessions (lap-a52 / TASK-302)
+            t_cmds::develop_open_edit_session,
+            t_cmds::develop_render_preview,
+            t_cmds::develop_take_preview_frame,
+            t_cmds::develop_commit_recipe,
+            t_cmds::develop_close_edit_session,
+            t_cmds::develop_get_capabilities,
         ])
         .build(tauri::generate_context!());
 

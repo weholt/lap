@@ -30,7 +30,14 @@ strip = true
 opt-level = 3
 
 [dependencies]
-rapidraw-edit-model = { path = "../../RapidRAW-engine/crates/rapidraw-edit-model" }
+# Engine consumption is pinned to an exact revision of the isolated local
+# engine clone (never a floating branch, never an uncommitted path) per
+# docs/raw-development/engine-lock.json (`consumption.cargoDependency`,
+# TASK-205/lap-517, consumed by lap-a52/TASK-302). Cargo records the exact
+# rev in Cargo.lock; reproduce locally per that lock's `localReproduction`
+# steps. This task also validates `cargo_lock_pins_engine_revision`.
+rapidraw-edit-model = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "e1035c38aa1150ac350faa3661f26144a922ea91" }
+rapidraw-develop = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "e1035c38aa1150ac350faa3661f26144a922ea91" }
 tauri = { version = "2", features = [
     "macos-private-api",
     "protocol-asset",
@@ -84,6 +91,12 @@ jxl-oxide = { version = "0.12.5", features = ["image"] }
 libc = "0.2"
 hnsw_rs = "0.3.4"
 
+[dev-dependencies]
+# Test-only: names `wgpu::Backends::empty()` for the deterministic
+# unsupported-device regression. Same major version the pinned engine uses;
+# never enabled in release builds.
+wgpu = { version = "29", default-features = false }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 percent-encoding = "2.3.1"
 
@@ -94,7 +107,10 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["N
 
 [target.'cfg(target_os = "windows")'.dependencies]
 clipboard-win = "5.4.1"
-windows = { version = "0.61.3", default-features = false, features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
+# Unified on 0.62 with the engine's wgpu-hal stack: gpu-allocator 0.28 accepts
+# windows >=0.53,<=0.62 and must resolve to the SAME version wgpu-hal uses, or
+# its D3D12 allocator types no longer match (lap-a52 build integration).
+windows = { version = "0.62", default-features = false, features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

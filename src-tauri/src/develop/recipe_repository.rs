@@ -366,6 +366,7 @@ fn sync_parent_dir_best_effort(sidecar: &Path) {
 #[cfg(not(unix))]
 fn sync_parent_dir_best_effort(_sidecar: &Path) {}
 
+#[derive(Clone)]
 pub struct RecipeRepository {
     engine_version: String,
 }

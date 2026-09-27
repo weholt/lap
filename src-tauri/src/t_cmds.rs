@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tauri commands for frontend-backend communication.
  * project: Lap
  * author:  julyx10
@@ -1858,8 +1858,8 @@ async fn import_url_inner(
         ));
     }
 
-    // Require a supported image content type — validate via the shared
-    // MIME→extension table so the response form the importer can name.
+    // Require a supported image content type â€” validate via the shared
+    // MIMEâ†’extension table so the response form the importer can name.
     let mime = {
         let ct = response
             .headers()
@@ -2398,7 +2398,7 @@ pub fn edit_file_comment(file_id: i64, comment: &str) -> Result<usize, String> {
 /// Remove unreferenced thumbnail cache files. When `library_id` is provided,
 /// cleans that library's cache; otherwise falls back to the current library.
 /// Runs on a blocking thread because it walks the cache directory and issues
-/// many small `remove_file` calls — heavy IO must not block the main thread
+/// many small `remove_file` calls â€” heavy IO must not block the main thread
 /// (see project convention: async + spawn_blocking for heavy IO commands).
 #[tauri::command]
 pub async fn clean_unused_thumbnail_cache(library_id: Option<String>) -> Result<t_sqlite::ThumbnailCacheCleanupResult, String> {
@@ -3370,4 +3370,207 @@ pub fn restore_databases(
     selections: Vec<t_storage::RestoreSelection>,
 ) -> Result<t_storage::RestoreResult, String> {
     t_storage::restore_databases(&backup_path, &selections)
+}
+
+// ----------------------------------------------------------------------------
+// Develop session commands (lap-a52 / TASK-302)
+//
+// Asset-scoped development over the pinned engine's bounded sessions
+// (docs/raw-development/spec.md, "Recipe and session contract"). Every command
+// carries explicit asset/variant/session/revision identities; previews travel
+// as bounded raw-byte handles, never as large base64 JSON payloads. Unedited
+// assets keep Lap's LibRaw browsing path untouched; this pipeline decodes with
+// the engine's high-precision decoder only.
+// ----------------------------------------------------------------------------
+
+/// Managed develop state. The engine session manager (worker pools, bounded
+/// queues) is constructed lazily on first use so app startup never pays for
+/// it; the GPU context initializes on first render or capability probe.
+#[derive(Default)]
+pub struct DevelopAppState(std::sync::OnceLock<std::sync::Arc<DevelopService>>);
+
+impl DevelopAppState {
+    fn service(&self) -> std::sync::Arc<DevelopService> {
+        std::sync::Arc::clone(
+            self.0.get_or_init(|| {
+                let store = std::sync::Arc::new(
+                    SidecarBackedStore::new(DevelopRecipeRepository::lap_default())
+                        .with_conn_factory(std::sync::Arc::new(|| {
+                            crate::t_sqlite::open_conn().map(|pooled| {
+                                Box::new(pooled)
+                                    as Box<dyn std::ops::Deref<Target = rusqlite::Connection>>
+                            })
+                        })),
+                );
+                std::sync::Arc::new(DevelopService::with_gpu_and_sidecar_store(
+                    DevelopConfig::default(),
+                    std::sync::Arc::new(DevelopGpuPreviewRenderer::new()),
+                    store,
+                ))
+            }),
+        )
+    }
+}
+
+type DevelopRecipeRepository = lap_lib::develop::recipe_repository::RecipeRepository;
+type DevelopGpuPreviewRenderer = lap_lib::develop::sessions::GpuPreviewRenderer;
+type DevelopService = lap_lib::develop::sessions::DevelopService;
+type DevelopConfig = lap_lib::develop::sessions::DevelopConfig;
+type SidecarBackedStore = lap_lib::develop::sessions::SidecarBackedStore;
+
+/// Resolve a catalog asset id to its absolute source path.
+fn develop_asset_source_path(asset_id: i64) -> Result<std::path::PathBuf, String> {
+    if asset_id <= 0 {
+        return Err(format!("invalid asset id {asset_id}"));
+    }
+    let files = AFile::get_files_by_ids(&[asset_id])?;
+    let file = files
+        .into_iter()
+        .next()
+        .ok_or_else(|| format!("asset {asset_id} not found in the catalog"))?;
+    file.file_path
+        .map(std::path::PathBuf::from)
+        .ok_or_else(|| format!("asset {asset_id} has no resolvable source path"))
+}
+
+fn develop_error_string(error: lap_lib::develop::sessions::DevelopError) -> String {
+    error.to_string()
+}
+
+/// Parses the frontend envelope JSON through the shared model's validator so
+/// schema violations fail before touching sessions or disk.
+fn develop_parse_envelope(
+    envelope: serde_json::Value,
+) -> Result<rapidraw_edit_model::RecipeEnvelope, String> {
+    rapidraw_edit_model::migrate::parse_envelope_value(envelope)
+        .map_err(|e| format!("invalid develop envelope: {e}"))
+}
+
+fn develop_quality(quality: &str) -> Result<rapidraw_develop::session::PreviewQuality, String> {
+    match quality.to_ascii_lowercase().as_str() {
+        "interactive" => Ok(rapidraw_develop::session::PreviewQuality::Interactive),
+        "settled" => Ok(rapidraw_develop::session::PreviewQuality::Settled),
+        other => Err(format!(
+            "unknown preview quality '{other}' (expected 'interactive' or 'settled')"
+        )),
+    }
+}
+
+/// Opens an edit session for a catalog asset: resolves the source path,
+/// fingerprints the untouched source bytes, loads the committed sidecar, and
+/// decodes the original with the shared high-precision pipeline.
+#[tauri::command]
+pub async fn develop_open_edit_session(
+    state: tauri::State<'_, DevelopAppState>,
+    asset_id: i64,
+    variant_id: String,
+) -> Result<lap_lib::develop::sessions::OpenedEditSession, String> {
+    let service = state.service();
+    tauri::async_runtime::spawn_blocking(move || {
+        let source_path = develop_asset_source_path(asset_id)?;
+        let source_bytes = fs::read(&source_path)
+            .map_err(|e| format!("failed to read source {}: {e}", source_path.display()))?;
+        let source_fingerprint = rapidraw_edit_model::sha256_hex(&source_bytes);
+        let repo = DevelopRecipeRepository::lap_default();
+        let sidecar = repo.load_opt(&source_path).map_err(|e| e.to_string())?;
+        service
+            .open_session(lap_lib::develop::sessions::AssetEditInput {
+                asset_id: asset_id.to_string(),
+                variant_id,
+                source_path,
+                source_fingerprint,
+                source_bytes,
+                sidecar,
+            })
+            .map_err(develop_error_string)
+    })
+    .await
+    .map_err(|e| format!("develop session open task failed: {e}"))?
+}
+
+/// Renders one preview generation. Coalesced/stale generations resolve as
+/// `cancelled`; completed frames are fetched by handle via
+/// `develop_take_preview_frame` (raw bytes, bounded transport).
+#[tauri::command]
+pub async fn develop_render_preview(
+    state: tauri::State<'_, DevelopAppState>,
+    session_id: u64,
+    generation: u64,
+    envelope: serde_json::Value,
+    quality: Option<String>,
+    max_edge: Option<u32>,
+) -> Result<lap_lib::develop::sessions::PreviewWait, String> {
+    let service = state.service();
+    let envelope = develop_parse_envelope(envelope)?;
+    let quality = develop_quality(quality.as_deref().unwrap_or("settled"))?;
+    let max_edge = max_edge.unwrap_or(1536);
+    tauri::async_runtime::spawn_blocking(move || {
+        service
+            .render_preview(session_id, generation, envelope, quality, max_edge)
+            .map_err(develop_error_string)
+    })
+    .await
+    .map_err(|e| format!("develop preview task failed: {e}"))?
+}
+
+/// Fetches a rendered preview frame's raw RGBA8 pixels by handle. The frame
+/// was rendered at most `develop_render_preview`'s bounded max edge; expired
+/// or unknown handles are explicit errors.
+#[tauri::command]
+pub fn develop_take_preview_frame(
+    state: tauri::State<'_, DevelopAppState>,
+    handle: String,
+) -> Result<tauri::ipc::Response, String> {
+    let service = state.service();
+    let frame = service
+        .take_preview_frame(&handle)
+        .map_err(develop_error_string)?;
+    Ok(tauri::ipc::Response::new(frame.rgba8))
+}
+
+/// Validates and durably persists a recipe with optimistic revision control.
+/// A stale commit reports a conflict; the acknowledged revision is durable.
+#[tauri::command]
+pub async fn develop_commit_recipe(
+    state: tauri::State<'_, DevelopAppState>,
+    session_id: u64,
+    expected_revision: u64,
+    envelope: serde_json::Value,
+) -> Result<lap_lib::develop::sessions::CommitReceiptDto, String> {
+    let service = state.service();
+    let envelope = develop_parse_envelope(envelope)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        service
+            .commit_recipe(session_id, expected_revision, envelope)
+            .map_err(develop_error_string)
+    })
+    .await
+    .map_err(|e| format!("develop commit task failed: {e}"))?
+}
+
+/// Closes a session: previews are cancelled, pending saves settle first, and
+/// buffers plus preview handles are released.
+#[tauri::command]
+pub async fn develop_close_edit_session(
+    state: tauri::State<'_, DevelopAppState>,
+    session_id: u64,
+) -> Result<lap_lib::develop::sessions::ClosedEditSession, String> {
+    let service = state.service();
+    tauri::async_runtime::spawn_blocking(move || {
+        service.close_session(session_id).map_err(develop_error_string)
+    })
+    .await
+    .map_err(|e| format!("develop close task failed: {e}"))?
+}
+
+/// Explicit capability report: offscreen GPU status plus the pinned engine
+/// identity (spec A7/A11). Never claims a device it did not probe.
+#[tauri::command]
+pub async fn develop_get_capabilities(
+    state: tauri::State<'_, DevelopAppState>,
+) -> Result<lap_lib::develop::sessions::CapabilityReport, String> {
+    let service = state.service();
+    tauri::async_runtime::spawn_blocking(move || service.capabilities())
+        .await
+        .map_err(|e| format!("develop capabilities task failed: {e}"))
 }

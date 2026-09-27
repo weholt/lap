@@ -14,6 +14,6 @@ export default defineConfig({
   },
   test: {
     environment: 'happy-dom',
-    include: ['tests/**/*.test.{js,ts}'],
+    include: ['tests/**/*.test.{js,ts}', 'src/composables/*.test.{js,ts}'],
   },
 })
