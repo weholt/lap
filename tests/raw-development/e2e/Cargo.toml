@@ -1,0 +1,35 @@
+[package]
+name = "lap-raw-e2e"
+version = "0.1.0"
+edition = "2024"
+description = "End-to-end A1-A7 small-slice qualification scenarios for the Lap raw-development slice (lap-70c / TASK-306). Drives the real lap_lib develop service, storage and export pipeline against the licensed RAW corpus on the real GPU backend."
+publish = false
+
+[dependencies]
+# The real application library under qualification (develop service, recipe
+# repository, export pipeline, catalog projection migration).
+lap_lib = { package = "Lap", path = "../../../src-tauri" }
+# Same pinned engine revisions the application consumes
+# (docs/raw-development/engine-lock.json consumption.cargoDependency).
+rapidraw-edit-model = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "e1035c38aa1150ac350faa3661f26144a922ea91" }
+rapidraw-develop = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "e1035c38aa1150ac350faa3661f26144a922ea91" }
+# Matching versions from the application graph so the unified build resolves
+# one shared compile of each.
+rusqlite = { version = "0.32.1", features = ["bundled"] }
+image = "0.25.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Test-only: names wgpu::Backends::empty() for the deterministic
+# missing-adapter scenario. Never enabled outside this harness.
+wgpu = { version = "29", default-features = false }
+
+[profile.dev.package."*"]
+# Matches the application's dev profile so debug-built scenarios still run
+# full-resolution RAW decode/render at usable speed.
+opt-level = 3
+
+# Bisection (probe-gate hang): build the application library itself at the
+# same opt-level the unit tests use.
+[profile.dev.package.Lap]
+opt-level = 0
+

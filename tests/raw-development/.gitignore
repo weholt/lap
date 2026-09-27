@@ -1,0 +1,4 @@
+# Machine-local qualification run artifacts (evidence, staged sources,
+# sidecars, rendered artifacts). Evidence referenced by committed reports is
+# summarized in JSON committed alongside the report; raw runs stay local.
+runs/

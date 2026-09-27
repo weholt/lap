@@ -1,0 +1,79 @@
+{
+  "schema": "lap-raw-preview-parity/v1",
+  "captured_utc": "2026-09-27T18:42:16Z",
+  "host_revision": "9abe5e7249e08e9e699e544ddd00492f57a280a2",
+  "engine_revision": "e1035c38aa1150ac350faa3661f26144a922ea91",
+  "gpu": {
+    "adapterName": "NVIDIA GeForce RTX 4060",
+    "available": true,
+    "backend": "Vulkan",
+    "error": null,
+    "maxBufferSize": 4292870144,
+    "maxTextureDimension2d": 32768
+  },
+  "color_transform": "Both paths output the engine's sRGB-encoded 8-bit pixels via OutputTarget::CpuPixels (one defined color transform). Preview = triangle downscale of the linear f32 original before adjustments; export = adjustments at full resolution then triangle downscale. Metrics measure the resampling-order difference only.",
+  "fixture": {
+    "name": "corpus/canon-eos-r6-craw-iso100-nocrop.CR3",
+    "sha256": "4775df76433b1e5844bc7a42b95d93efc8438c0a4cd9681e120e23fe3e3007e8",
+    "bytes": 11205206
+  },
+  "recipe": {
+    "exposure": 1.0,
+    "temperature": 40.0
+  },
+  "preview_max_edge": 1024,
+  "export_max_edge": 1024,
+  "repeats": [
+    {
+      "per_channel_mean_abs": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "per_channel_p99_abs": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "per_channel_max_abs": [
+        0,
+        0,
+        0
+      ],
+      "hist_mean_abs_diff": 0.0,
+      "hist_intersection_min": 0.9999999999999992
+    },
+    {
+      "per_channel_mean_abs": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "per_channel_p99_abs": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "per_channel_max_abs": [
+        0,
+        0,
+        0
+      ],
+      "hist_mean_abs_diff": 0.0,
+      "hist_intersection_min": 0.9999999999999992
+    }
+  ],
+  "repeat_stability": {
+    "mean_abs_max_delta": 0.0
+  },
+  "frozen_tolerances": {
+    "per_channel_mean_abs_max": 0.25,
+    "per_channel_p99_abs_max": 1.0,
+    "per_channel_max_abs_max": 2,
+    "hist_mean_abs_diff_max": 0.0002,
+    "hist_intersection_min_at_least": 0.9949999999999992
+  },
+  "histogram_state_floor": {
+    "adjusted_vs_default_hist_mean_abs_min": 0.0017729126691469151
+  }
+}

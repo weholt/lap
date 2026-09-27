@@ -727,21 +727,6 @@ fn parse_persist_error(session_id: u64, message: &str) -> DevelopError {
 }
 
 // ---------------------------------------------------------------------------
-// Export renderer placeholder (durable export arrives in a later slice)
-// ---------------------------------------------------------------------------
-
-/// Explicit refusal: export must never fake success (spec A7).
-struct StubExportRenderer;
-
-impl ExportRenderer for StubExportRenderer {
-    fn render(&self, _job: &ExportJob) -> Result<rapidraw_develop::ExportFrame, EngineError> {
-        Err(EngineError::Unsupported(
-            "durable export is implemented in a later slice (TASK-304)".to_string(),
-        ))
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
 
@@ -800,7 +785,10 @@ impl DevelopService {
         .with_sidecar(store)
     }
 
-    /// Production constructor: GPU preview renderer, sidecar store.
+    /// Production constructor: GPU preview renderer, sidecar store, and the
+    /// real GPU export renderer (lap-70c): durable derivative export runs
+    /// through the same bounded engine export queue; a stub here would fail
+    /// every `develop_export_developed` call in the application.
     pub fn with_gpu_and_sidecar_store(
         config: DevelopConfig,
         gpu: Arc<GpuPreviewRenderer>,
@@ -810,7 +798,7 @@ impl DevelopService {
         Self::build(
             config,
             preview,
-            Arc::new(StubExportRenderer),
+            Arc::new(super::export::GpuExportRenderer::new()),
             Arc::clone(&store) as Arc<dyn RecipeStore>,
             Some(gpu),
         )
