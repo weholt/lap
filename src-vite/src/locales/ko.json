@@ -1235,7 +1235,12 @@
       "group_raw_jpeg_pairs_hint": "일치하는 RAW 및 JPEG/HEIC 파일을 하나의 항목으로 표시합니다",
       "small_file_filter": "작은 파일 필터",
       "small_file_filter_hint": "너비와 높이가 모두 선택한 크기보다 작은 파일을 숨깁니다",
-      "small_file_filter_options": ["끔", "160 px", "320 px", "640 px"],
+      "small_file_filter_options": [
+        "끔",
+        "160 px",
+        "320 px",
+        "640 px"
+      ],
       "section_sorting": "정렬",
       "folder_sort": "폴더",
       "folder_sort_hint": "앨범 아래에 표시되는 폴더의 정렬 순서입니다",
@@ -1630,6 +1635,119 @@
       "saved": "저장됨",
       "conflict": "충돌",
       "failed": "저장 실패"
+    },
+    "undo": "실행 취소",
+    "redo": "다시 실행",
+    "historyHint": "이 현상 세션에만 적용됩니다 — Lap을 닫거나 사진을 전환하면 기록이 유지되지 않습니다.",
+    "histogram": "히스토그램",
+    "bypassSection": "{section} 섹션 사용",
+    "resetSection": "{section} 섹션 초기화",
+    "sectionAria": "{section} 섹션 펼치기/접기",
+    "sections": {
+      "basic": "라이트",
+      "curves": "커브",
+      "color": "컬러",
+      "details": "디테일",
+      "effects": "효과"
+    },
+    "groups": {
+      "tone": "톤",
+      "color": "컬러",
+      "hsl": "HSL / 컬러 믹서",
+      "colorGrading": "컬러 그레이딩",
+      "calibration": "캘리브레이션",
+      "detail": "디테일",
+      "sharpening": "선명도 및 노이즈",
+      "chromaticAberration": "색수차",
+      "grain": "그레인",
+      "vignette": "비네트",
+      "light": "빛 효과"
+    },
+    "controls": {
+      "brightness": "밝기",
+      "contrast": "대비",
+      "highlights": "하이라이트",
+      "shadows": "섀도",
+      "whites": "화이트",
+      "blacks": "블랙",
+      "vibrance": "자연 채도",
+      "saturation": "채도",
+      "hue": "색조",
+      "balance": "밸런스",
+      "blending": "블렌딩",
+      "clarity": "선명도",
+      "structure": "구조",
+      "dehaze": "안개 제거",
+      "center": "중심",
+      "sharpness": "선명하게",
+      "sharpnessThreshold": "임계값",
+      "lumaNoiseReduction": "휘도 노이즈 감소",
+      "colorNoiseReduction": "색 노이즈 감소",
+      "chromaticAberrationRedCyan": "빨강/청록",
+      "chromaticAberrationBlueYellow": "파랑/노랑",
+      "grainAmount": "양",
+      "grainSize": "크기",
+      "grainRoughness": "거칠기",
+      "vignetteAmount": "양",
+      "vignetteMidpoint": "중간점",
+      "vignetteRoundness": "둥글기",
+      "vignetteFeather": "페더",
+      "glowAmount": "글로우",
+      "halationAmount": "할레이션",
+      "flareAmount": "플레어",
+      "toneMapper": "톤 매퍼"
+    },
+    "toneMapper": {
+      "basic": "기본",
+      "agx": "AgX"
+    },
+    "hslChannels": {
+      "reds": "빨강",
+      "oranges": "주황",
+      "yellows": "노랑",
+      "greens": "초록",
+      "aquas": "청록",
+      "blues": "파랑",
+      "purples": "보라",
+      "magentas": "마젠타"
+    },
+    "hslComponents": {
+      "hue": "색조",
+      "saturation": "채도",
+      "luminance": "휘도"
+    },
+    "gradingZones": {
+      "global": "전체",
+      "shadows": "섀도",
+      "midtones": "중간톤",
+      "highlights": "하이라이트"
+    },
+    "calibration": {
+      "shadowsTint": "섀도 틴트",
+      "hue": "색조",
+      "saturation": "채도"
+    },
+    "curve": {
+      "point": "포인트",
+      "parametric": "파라메트릭",
+      "pointLabel": "포인트 커브",
+      "paramLabel": "파라메트릭 커브",
+      "pointAria": "커브 포인트 {index}/{total}, {channel} 채널",
+      "undoHint": "포인트를 드래그하거나 그래프를 클릭해 추가하고, 포인트를 선택한 뒤 방향키로 이동(Shift는 큰 폭), Delete로 삭제합니다. 실행 취소는 이 세션에만 적용됩니다.",
+      "channels": {
+        "luma": "휘도",
+        "red": "빨강",
+        "green": "초록",
+        "blue": "파랑"
+      },
+      "params": {
+        "whiteLevel": "화이트 레벨",
+        "highlights": "하이라이트",
+        "lights": "밝은 톤",
+        "darks": "어두운 톤",
+        "shadows": "섀도",
+        "blackLevel": "블랙 레벨"
+      }
     }
   }
 }

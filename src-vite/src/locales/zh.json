@@ -1235,7 +1235,12 @@
       "group_raw_jpeg_pairs_hint": "将同名的 RAW 与 JPEG/HEIC 文件合并显示为一个条目",
       "small_file_filter": "小文件过滤",
       "small_file_filter_hint": "仅当宽度和高度均小于所选尺寸时隐藏文件",
-      "small_file_filter_options": ["关闭", "160 px", "320 px", "640 px"],
+      "small_file_filter_options": [
+        "关闭",
+        "160 px",
+        "320 px",
+        "640 px"
+      ],
       "section_sorting": "排序",
       "folder_sort": "文件夹",
       "folder_sort_hint": "相册下显示的文件夹排序方式",
@@ -1630,6 +1635,119 @@
       "saved": "已保存",
       "conflict": "冲突",
       "failed": "保存失败"
+    },
+    "undo": "撤销",
+    "redo": "重做",
+    "historyHint": "仅适用于当前显影会话 — 关闭 Lap 或切换照片后不会保留历史记录。",
+    "histogram": "直方图",
+    "bypassSection": "启用“{section}”分区",
+    "resetSection": "重置“{section}”分区",
+    "sectionAria": "展开或折叠“{section}”分区",
+    "sections": {
+      "basic": "光线",
+      "curves": "曲线",
+      "color": "颜色",
+      "details": "细节",
+      "effects": "效果"
+    },
+    "groups": {
+      "tone": "色调",
+      "color": "颜色",
+      "hsl": "HSL / 颜色混合器",
+      "colorGrading": "颜色分级",
+      "calibration": "校准",
+      "detail": "细节",
+      "sharpening": "锐化与降噪",
+      "chromaticAberration": "色差",
+      "grain": "颗粒",
+      "vignette": "暗角",
+      "light": "光效"
+    },
+    "controls": {
+      "brightness": "亮度",
+      "contrast": "对比度",
+      "highlights": "高光",
+      "shadows": "阴影",
+      "whites": "白色",
+      "blacks": "黑色",
+      "vibrance": "自然饱和度",
+      "saturation": "饱和度",
+      "hue": "色相",
+      "balance": "平衡",
+      "blending": "混合",
+      "clarity": "清晰度",
+      "structure": "结构",
+      "dehaze": "去雾",
+      "center": "中心",
+      "sharpness": "锐化",
+      "sharpnessThreshold": "阈值",
+      "lumaNoiseReduction": "明度降噪",
+      "colorNoiseReduction": "颜色降噪",
+      "chromaticAberrationRedCyan": "红/青",
+      "chromaticAberrationBlueYellow": "蓝/黄",
+      "grainAmount": "数量",
+      "grainSize": "大小",
+      "grainRoughness": "粗糙度",
+      "vignetteAmount": "数量",
+      "vignetteMidpoint": "中点",
+      "vignetteRoundness": "圆度",
+      "vignetteFeather": "羽化",
+      "glowAmount": "光晕",
+      "halationAmount": "光晕溢出",
+      "flareAmount": "眩光",
+      "toneMapper": "色调映射"
+    },
+    "toneMapper": {
+      "basic": "基础",
+      "agx": "AgX"
+    },
+    "hslChannels": {
+      "reds": "红色",
+      "oranges": "橙色",
+      "yellows": "黄色",
+      "greens": "绿色",
+      "aquas": "青色",
+      "blues": "蓝色",
+      "purples": "紫色",
+      "magentas": "洋红"
+    },
+    "hslComponents": {
+      "hue": "色相",
+      "saturation": "饱和度",
+      "luminance": "明度"
+    },
+    "gradingZones": {
+      "global": "全局",
+      "shadows": "阴影",
+      "midtones": "中间调",
+      "highlights": "高光"
+    },
+    "calibration": {
+      "shadowsTint": "阴影色调",
+      "hue": "色相",
+      "saturation": "饱和度"
+    },
+    "curve": {
+      "point": "点",
+      "parametric": "参数化",
+      "pointLabel": "点曲线",
+      "paramLabel": "参数化曲线",
+      "pointAria": "曲线点 {index}/{total}，{channel}通道",
+      "undoHint": "拖动点或在图表中点击以添加点；选中点后使用方向键移动（Shift 为大步长），Delete 删除。撤销仅适用于当前会话。",
+      "channels": {
+        "luma": "明度",
+        "red": "红",
+        "green": "绿",
+        "blue": "蓝"
+      },
+      "params": {
+        "whiteLevel": "白场",
+        "highlights": "高光",
+        "lights": "亮色调",
+        "darks": "暗色调",
+        "shadows": "阴影",
+        "blackLevel": "黑场"
+      }
     }
   }
 }

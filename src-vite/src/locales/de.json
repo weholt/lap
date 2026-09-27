@@ -1235,7 +1235,12 @@
       "group_raw_jpeg_pairs_hint": "Passende RAW- und JPEG/HEIC-Dateien als ein Element anzeigen",
       "small_file_filter": "Filter für kleine Dateien",
       "small_file_filter_hint": "Blendet Dateien aus, wenn Breite und Höhe kleiner als die gewählte Größe sind",
-      "small_file_filter_options": ["Aus", "160 px", "320 px", "640 px"],
+      "small_file_filter_options": [
+        "Aus",
+        "160 px",
+        "320 px",
+        "640 px"
+      ],
       "section_sorting": "Sortierung",
       "folder_sort": "Ordner",
       "folder_sort_hint": "Sortierreihenfolge für unter Alben angezeigte Ordner",
@@ -1630,6 +1635,119 @@
       "saved": "Gespeichert",
       "conflict": "Konflikt",
       "failed": "Speichern fehlgeschlagen"
+    },
+    "undo": "Rückgängig",
+    "redo": "Wiederholen",
+    "historyHint": "Nur für diese Entwicklungssitzung — der Verlauf wird nach dem Schließen von Lap oder dem Wechsel des Fotos nicht aufbewahrt.",
+    "histogram": "Histogramm",
+    "bypassSection": "Bereich {section} aktivieren",
+    "resetSection": "Bereich {section} zurücksetzen",
+    "sectionAria": "Bereich {section} ein- oder ausklappen",
+    "sections": {
+      "basic": "Licht",
+      "curves": "Kurven",
+      "color": "Farbe",
+      "details": "Details",
+      "effects": "Effekte"
+    },
+    "groups": {
+      "tone": "Tonwert",
+      "color": "Farbe",
+      "hsl": "HSL / Farbmischer",
+      "colorGrading": "Farbkorrektur",
+      "calibration": "Kalibrierung",
+      "detail": "Details",
+      "sharpening": "Schärfen und Rauschen",
+      "chromaticAberration": "Farbsäume",
+      "grain": "Korn",
+      "vignette": "Vignette",
+      "light": "Leuchten"
+    },
+    "controls": {
+      "brightness": "Helligkeit",
+      "contrast": "Kontrast",
+      "highlights": "Lichter",
+      "shadows": "Tiefen",
+      "whites": "Weißwerte",
+      "blacks": "Schwarzwerte",
+      "vibrance": "Dynamik",
+      "saturation": "Sättigung",
+      "hue": "Farbton",
+      "balance": "Balance",
+      "blending": "Überblendung",
+      "clarity": "Klarheit",
+      "structure": "Struktur",
+      "dehaze": "Dunst entfernen",
+      "center": "Mitte",
+      "sharpness": "Schärfe",
+      "sharpnessThreshold": "Schwelle",
+      "lumaNoiseReduction": "Luminanzrauschen reduzieren",
+      "colorNoiseReduction": "Farbrauschen reduzieren",
+      "chromaticAberrationRedCyan": "Rot/Cyan",
+      "chromaticAberrationBlueYellow": "Blau/Gelb",
+      "grainAmount": "Stärke",
+      "grainSize": "Größe",
+      "grainRoughness": "Rauheit",
+      "vignetteAmount": "Stärke",
+      "vignetteMidpoint": "Mittelpunkt",
+      "vignetteRoundness": "Rundheit",
+      "vignetteFeather": "Verlauf",
+      "glowAmount": "Leuchten",
+      "halationAmount": "Halation",
+      "flareAmount": "Blendflecken",
+      "toneMapper": "Tonwertmapping"
+    },
+    "toneMapper": {
+      "basic": "Einfach",
+      "agx": "AgX"
+    },
+    "hslChannels": {
+      "reds": "Rottöne",
+      "oranges": "Orangentöne",
+      "yellows": "Gelbtöne",
+      "greens": "Grüntöne",
+      "aquas": "Türkistöne",
+      "blues": "Blautöne",
+      "purples": "Violetttöne",
+      "magentas": "Magentatöne"
+    },
+    "hslComponents": {
+      "hue": "Farbton",
+      "saturation": "Sättigung",
+      "luminance": "Luminanz"
+    },
+    "gradingZones": {
+      "global": "Global",
+      "shadows": "Tiefen",
+      "midtones": "Mitteltöne",
+      "highlights": "Lichter"
+    },
+    "calibration": {
+      "shadowsTint": "Tiefen-Tint",
+      "hue": "Farbton",
+      "saturation": "Sättigung"
+    },
+    "curve": {
+      "point": "Punkt",
+      "parametric": "Parametrisch",
+      "pointLabel": "Punktkurve",
+      "paramLabel": "Parametrische Kurve",
+      "pointAria": "Kurvenpunkt {index} von {total}, Kanal {channel}",
+      "undoHint": "Punkte ziehen oder in den Graphen klicken, um einen hinzuzufügen; Punkt fokussieren und Pfeiltasten nutzen (Umschalt für größere Schritte), Entfernen löscht ihn. Rückgängig gilt nur für diese Sitzung.",
+      "channels": {
+        "luma": "Luminanz",
+        "red": "Rot",
+        "green": "Grün",
+        "blue": "Blau"
+      },
+      "params": {
+        "whiteLevel": "Weißpunkt",
+        "highlights": "Lichter",
+        "lights": "Helle Töne",
+        "darks": "Dunkle Töne",
+        "shadows": "Tiefen",
+        "blackLevel": "Schwarzpunkt"
+      }
     }
   }
 }

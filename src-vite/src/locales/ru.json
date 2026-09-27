@@ -1235,7 +1235,12 @@
       "group_raw_jpeg_pairs_hint": "Показывать одноимённые файлы RAW и JPEG/HEIC как один элемент",
       "small_file_filter": "Фильтр маленьких файлов",
       "small_file_filter_hint": "Скрывать файлы, если ширина и высота меньше выбранного значения",
-      "small_file_filter_options": ["Выключено", "160 px", "320 px", "640 px"],
+      "small_file_filter_options": [
+        "Выключено",
+        "160 px",
+        "320 px",
+        "640 px"
+      ],
       "section_sorting": "Сортировка",
       "folder_sort": "Папки",
       "folder_sort_hint": "Сортировка папок, отображаемых внутри альбомов",
@@ -1630,6 +1635,119 @@
       "saved": "Сохранено",
       "conflict": "Конфликт",
       "failed": "Не удалось сохранить"
+    },
+    "undo": "Отменить",
+    "redo": "Повторить",
+    "historyHint": "Только для текущего сеанса проявки — история не сохраняется после закрытия Lap или смены фотографии.",
+    "histogram": "Гистограмма",
+    "bypassSection": "Включить раздел «{section}»",
+    "resetSection": "Сбросить раздел «{section}»",
+    "sectionAria": "Развернуть или свернуть раздел «{section}»",
+    "sections": {
+      "basic": "Свет",
+      "curves": "Кривые",
+      "color": "Цвет",
+      "details": "Детализация",
+      "effects": "Эффекты"
+    },
+    "groups": {
+      "tone": "Тон",
+      "color": "Цвет",
+      "hsl": "HSL / Смешение цветов",
+      "colorGrading": "Цветокоррекция зон",
+      "calibration": "Калибровка",
+      "detail": "Детализация",
+      "sharpening": "Резкость и шум",
+      "chromaticAberration": "Хроматические аберрации",
+      "grain": "Зерно",
+      "vignette": "Виньетка",
+      "light": "Свечение"
+    },
+    "controls": {
+      "brightness": "Яркость",
+      "contrast": "Контраст",
+      "highlights": "Света",
+      "shadows": "Тени",
+      "whites": "Белый",
+      "blacks": "Чёрный",
+      "vibrance": "Красочность",
+      "saturation": "Насыщенность",
+      "hue": "Оттенок",
+      "balance": "Баланс",
+      "blending": "Смешение",
+      "clarity": "Чёткость",
+      "structure": "Структура",
+      "dehaze": "Удаление дымки",
+      "center": "Центр",
+      "sharpness": "Резкость",
+      "sharpnessThreshold": "Порог",
+      "lumaNoiseReduction": "Шум яркости",
+      "colorNoiseReduction": "Шум цвета",
+      "chromaticAberrationRedCyan": "Красный/голубой",
+      "chromaticAberrationBlueYellow": "Синий/жёлтый",
+      "grainAmount": "Величина",
+      "grainSize": "Размер",
+      "grainRoughness": "Шероховатость",
+      "vignetteAmount": "Величина",
+      "vignetteMidpoint": "Средняя точка",
+      "vignetteRoundness": "Округлость",
+      "vignetteFeather": "Смягчение",
+      "glowAmount": "Свечение",
+      "halationAmount": "Ореол",
+      "flareAmount": "Блик",
+      "toneMapper": "Тональное отображение"
+    },
+    "toneMapper": {
+      "basic": "Базовый",
+      "agx": "AgX"
+    },
+    "hslChannels": {
+      "reds": "Красные",
+      "oranges": "Оранжевые",
+      "yellows": "Жёлтые",
+      "greens": "Зелёные",
+      "aquas": "Голубые",
+      "blues": "Синие",
+      "purples": "Фиолетовые",
+      "magentas": "Пурпурные"
+    },
+    "hslComponents": {
+      "hue": "Оттенок",
+      "saturation": "Насыщенность",
+      "luminance": "Яркость"
+    },
+    "gradingZones": {
+      "global": "Глобально",
+      "shadows": "Тени",
+      "midtones": "Средние тона",
+      "highlights": "Света"
+    },
+    "calibration": {
+      "shadowsTint": "Оттенок теней",
+      "hue": "Оттенок",
+      "saturation": "Насыщенность"
+    },
+    "curve": {
+      "point": "Точечная",
+      "parametric": "Параметрическая",
+      "pointLabel": "Точечная кривая",
+      "paramLabel": "Параметрическая кривая",
+      "pointAria": "Точка кривой {index} из {total}, канал {channel}",
+      "undoHint": "Перетаскивайте точки или щёлкните по графику, чтобы добавить точку; выберите точку и используйте стрелки (Shift — крупный шаг), Delete удаляет. Отмена действует только в этом сеансе.",
+      "channels": {
+        "luma": "Яркость",
+        "red": "Красный",
+        "green": "Зелёный",
+        "blue": "Синий"
+      },
+      "params": {
+        "whiteLevel": "Точка белого",
+        "highlights": "Света",
+        "lights": "Светлые тона",
+        "darks": "Тёмные тона",
+        "shadows": "Тени",
+        "blackLevel": "Точка чёрного"
+      }
     }
   }
 }

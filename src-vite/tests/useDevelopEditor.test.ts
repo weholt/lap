@@ -24,6 +24,7 @@ import {
     useDevelopEditor,
 } from '@/composables/useDevelopEditor';
 import { DEFAULT_RECIPE, RECIPE_SCHEMA_VERSION } from '@/composables/useDevelopSession.types';
+import { buildParametricPoints } from '@/components/develop/controls';
 import { useUIStore } from '@/stores/uiStore';
 
 // Command-dispatched responses: preview renders may fire at any timer tick, so
@@ -265,5 +266,255 @@ describe('useDevelopEditor', () => {
         queueCommand('develop_commit_recipe', receipt(1, 1));
         expect(await editor.retry()).toBe(true);
         expect(uiStore.hasDirtyDevelopState(1)).toBe(false);
+    });
+});
+
+describe('useDevelopEditor transactions, undo/redo and section controls (lap-adc)', () => {
+    beforeEach(() => {
+        invokeMock.mockReset();
+        invokeMock.mockImplementation(async (command: string) => {
+            const queue = commandResponses.get(command);
+            if (!queue) throw new Error(`unexpected develop invoke: ${command}`);
+            const response = queue.shift();
+            if (response instanceof Error) throw response;
+            return response;
+        });
+        commandResponses.clear();
+        setActivePinia(createPinia());
+    });
+
+    afterEach(async () => {
+        commandResponses.clear();
+        await useDevelopEditor().disposeForTests();
+        vi.restoreAllMocks();
+    });
+
+    it('groups a slider drag into a single undo transaction', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+
+        editor.beginEditTransaction('exposure drag');
+        editor.setParam('exposure', 0.3);
+        editor.setParam('exposure', 0.6);
+        editor.setParam('exposure', 1.2);
+        editor.endEditTransaction();
+
+        expect(editor.historySize.value).toBe(1);
+        expect(editor.recipe.value?.exposure).toBe(1.2);
+        expect(editor.canUndo.value).toBe(true);
+
+        expect(editor.undo()).toBe(true);
+        expect(editor.recipe.value?.exposure).toBe(0);
+        expect(editor.canUndo.value).toBe(false);
+        expect(editor.canRedo.value).toBe(true);
+
+        expect(editor.redo()).toBe(true);
+        expect(editor.recipe.value?.exposure).toBe(1.2);
+        expect(editor.canRedo.value).toBe(false);
+    });
+
+    it('keeps one undo step per keyboard/numeric edit without an open drag transaction', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+
+        editor.setParam('contrast', 25);
+        editor.setParam('grainAmount', 40);
+        expect(editor.historySize.value).toBe(2);
+
+        expect(editor.undo()).toBe(true);
+        expect(editor.recipe.value?.contrast).toBe(25);
+        expect(editor.recipe.value?.grainAmount).toBe(0);
+        expect(editor.undo()).toBe(true);
+        expect(editor.recipe.value?.contrast).toBe(0);
+    });
+
+    it('undoing back to the committed recipe marks the session clean again', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+
+        queueCommand('develop_commit_recipe', receipt(1, 1));
+        editor.setParam('exposure', 0.5);
+        expect(await editor.flush()).toBe(true);
+        expect(editor.saveState.value).toBe('saved');
+
+        editor.setParam('exposure', 1.5);
+        expect(editor.dirty.value).toBe(true);
+        expect(editor.undo()).toBe(true);
+        expect(editor.recipe.value?.exposure).toBe(0.5);
+        expect(editor.dirty.value).toBe(false);
+        expect(editor.saveState.value).toBe('idle');
+
+        expect(editor.redo()).toBe(true);
+        expect(editor.recipe.value?.exposure).toBe(1.5);
+        expect(editor.dirty.value).toBe(true);
+        expect(editor.saveState.value).toBe('pending');
+    });
+
+    it('records a section bypass toggle as a single transaction', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+
+        editor.setSectionVisible('effects', false);
+        expect(editor.recipe.value?.sectionVisibility.effects).toBe(false);
+        expect(editor.historySize.value).toBe(1);
+
+        expect(editor.undo()).toBe(true);
+        expect(editor.recipe.value?.sectionVisibility.effects).toBe(true);
+        expect(editor.redo()).toBe(true);
+        expect(editor.recipe.value?.sectionVisibility.effects).toBe(false);
+    });
+
+    it('resets one section in a single transaction and leaves other sections intact', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+
+        editor.setParam('exposure', 1);
+        editor.setParam('grainAmount', 40);
+        editor.resetSection('basic');
+
+        expect(editor.recipe.value?.exposure).toBe(0);
+        expect(editor.recipe.value?.grainAmount).toBe(40);
+        // One transaction: the drag-like sequence above produced two entries,
+        // the section reset adds exactly one more.
+        expect(editor.historySize.value).toBe(3);
+
+        expect(editor.undo()).toBe(true);
+        expect(editor.recipe.value?.exposure).toBe(1);
+        expect(editor.recipe.value?.grainAmount).toBe(40);
+    });
+
+    it('resets the curves section back to identity curves', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+
+        editor.setCurveChannelPoints('luma', [{ x: 0, y: 0 }, { x: 128, y: 60 }, { x: 255, y: 255 }]);
+        editor.resetSection('curves');
+
+        expect(editor.recipe.value?.curves.luma).toEqual(DEFAULT_RECIPE.curves.luma);
+        expect(editor.historySize.value).toBe(2);
+        expect(editor.undo()).toBe(true);
+        expect(editor.recipe.value?.curves.luma).toEqual([
+            { x: 0, y: 0 },
+            { x: 128, y: 60 },
+            { x: 255, y: 255 },
+        ]);
+    });
+
+    it('resets all panel sections as one transaction (union of section resets)', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+
+        editor.setParam('exposure', 1);
+        editor.setParam('temperature', -30);
+        editor.setParam('clarity', 20);
+        editor.setParam('grainAmount', 50);
+        editor.setCurveChannelPoints('luma', [{ x: 0, y: 0 }, { x: 64, y: 40 }, { x: 255, y: 255 }]);
+        editor.resetAll();
+
+        expect(editor.recipe.value).toEqual(DEFAULT_RECIPE);
+        expect(editor.historySize.value).toBe(6);
+        expect(editor.undo()).toBe(true);
+        expect(editor.recipe.value?.grainAmount).toBe(50);
+        expect(editor.recipe.value?.curves.luma).toEqual([
+            { x: 0, y: 0 },
+            { x: 64, y: 40 },
+            { x: 255, y: 255 },
+        ]);
+    });
+
+    it('clears the undo history when another asset is opened (session scope)', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+        editor.setParam('exposure', 1);
+        expect(editor.canUndo.value).toBe(true);
+
+        queueCommand('develop_open_edit_session', openedSession(2));
+        await editor.openAsset({ id: 2 });
+
+        expect(editor.canUndo.value).toBe(false);
+        expect(editor.canRedo.value).toBe(false);
+        expect(editor.historySize.value).toBe(0);
+    });
+
+    it('validates curve points before applying them to the recipe', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+
+        editor.setCurveChannelPoints('luma', [
+            { x: 255, y: 999 },
+            { x: -5, y: -10 },
+            { x: 128, y: 60 },
+            { x: 128, y: 0 },
+        ]);
+
+        const points = editor.recipe.value?.curves.luma ?? [];
+        expect(points[0]).toEqual({ x: 0, y: 0 });
+        expect(points[points.length - 1]).toEqual({ x: 255, y: 255 });
+        for (let i = 1; i < points.length; i++) {
+            expect(points[i].x).toBeGreaterThan(points[i - 1].x);
+        }
+        for (const point of points) {
+            expect(point.x).toBeGreaterThanOrEqual(0);
+            expect(point.x).toBeLessThanOrEqual(255);
+            expect(point.y).toBeGreaterThanOrEqual(0);
+            expect(point.y).toBeLessThanOrEqual(255);
+        }
+    });
+
+    it('switching curve modes swaps curves/pointCurves exactly like the engine contract', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+
+        editor.setCurveChannelPoints('luma', [{ x: 0, y: 0 }, { x: 128, y: 80 }, { x: 255, y: 255 }]);
+        editor.setCurveMode('parametric');
+
+        expect(editor.recipe.value?.curveMode).toBe('parametric');
+        expect(editor.recipe.value?.pointCurves.luma).toEqual([
+            { x: 0, y: 0 },
+            { x: 128, y: 80 },
+            { x: 255, y: 255 },
+        ]);
+        expect(editor.recipe.value?.curves.luma).toEqual(
+            buildParametricPoints(DEFAULT_RECIPE.parametricCurve.luma),
+        );
+
+        editor.setParametricCurveValue('luma', 'darks', 100);
+        const response = Math.tanh(1.2) * 0.35 * Math.sqrt(0.5);
+        const expectedMid = 0.5 + (response + 0) / 2;
+        expect(editor.recipe.value?.curves.luma[3].y).toBeCloseTo(expectedMid * 255, 6);
+        expect(editor.recipe.value?.parametricCurve.luma.darks).toBe(100);
+
+        editor.setCurveMode('point');
+        expect(editor.recipe.value?.curveMode).toBe('point');
+        expect(editor.recipe.value?.curves.luma).toEqual([
+            { x: 0, y: 0 },
+            { x: 128, y: 80 },
+            { x: 255, y: 255 },
+        ]);
+    });
+
+    it('clamps parametric curve values to the model bounds', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+
+        editor.setParametricCurveValue('luma', 'whiteLevel', -150);
+        expect(editor.recipe.value?.parametricCurve.luma.whiteLevel).toBe(-100);
+        editor.setParametricCurveValue('luma', 'blackLevel', 80);
+        expect(editor.recipe.value?.parametricCurve.luma.blackLevel).toBe(80);
+        editor.setParametricCurveValue('luma', 'darks', 500);
+        expect(editor.recipe.value?.parametricCurve.luma.darks).toBe(100);
+    });
+
+    it('does not resurrect undo history after close (no persistence across restarts)', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+        editor.setParam('exposure', 1);
+        expect(editor.canUndo.value).toBe(true);
+
+        queueCommand('develop_close_edit_session', { sessionId: 101, revision: 0 });
+        await editor.close();
+
+        expect(editor.canUndo.value).toBe(false);
+        expect(editor.historySize.value).toBe(0);
     });
 });

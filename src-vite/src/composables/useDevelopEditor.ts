@@ -3,10 +3,26 @@ import { invoke } from '@tauri-apps/api/core';
 
 import { useUIStore } from '@/stores/uiStore';
 import { useDevelopSession, type DevelopPreviewState } from './useDevelopSession';
+import { useDevelopHistory } from './useDevelopHistory';
 import {
+    clampParametricValue,
+    buildParametricPoints,
+    defaultRecipeValue,
+    DEVELOP_CONTROL_GROUPS,
+    fullResetPatch,
+    getRecipeValue,
+    normalizeCurvePoints,
+    sectionResetPatch,
+    setRecipeValue,
+    type CurveMode,
+} from '@/components/develop/controls';
+import {
+    type CurvePoint,
     type ExportFormat,
     type ExportReceipt,
     type Recipe,
+    type SectionId,
+    type ToneMapper,
     DEFAULT_RECIPE,
     RECIPE_PARAM_RANGES,
 } from './useDevelopSession.types';
@@ -94,8 +110,31 @@ export interface DevelopEditor {
     session: { value: unknown };
     openAsset(file: DevelopEditorFileInput): Promise<void>;
     setParam(field: string, value: number): void;
+    setParamLive(field: string, value: number): void;
     resetParam(field: string): void;
     resetAll(): void;
+    /**
+     * Transaction control for coherent multi-step gestures: a slider drag or
+     * curve point drag calls beginEditTransaction on gesture start, records
+     * every intermediate value through the setters, and ends exactly one
+     * history transaction on gesture end.
+     */
+    beginEditTransaction(label: string): void;
+    endEditTransaction(): void;
+    /** Session-only undo/redo (never persisted; reset on asset switch). */
+    undo(): boolean;
+    redo(): boolean;
+    canUndo: { value: boolean };
+    canRedo: { value: boolean };
+    historySize: { value: number };
+    setSectionVisible(section: SectionId, visible: boolean): void;
+    resetSection(section: SectionId): void;
+    setToneMapper(mapper: ToneMapper): void;
+    setCurveChannelPointsLive(channel: string, points: CurvePoint[]): void;
+    setCurveChannelPoints(channel: string, points: CurvePoint[]): void;
+    setCurveMode(mode: CurveMode): void;
+    setParametricCurveValueLive(channel: string, key: string, value: number): void;
+    setParametricCurveValue(channel: string, key: string, value: number): void;
     flush(options?: { autoRetry?: boolean }): Promise<boolean>;
     flushAsset(assetId: number | string): Promise<boolean>;
     retry(): Promise<boolean>;
@@ -121,6 +160,7 @@ export function __resetDevelopEditorForTests(): void {
 function createDevelopEditor(): DevelopEditor {
     const uiStore = useUIStore();
     const session = useDevelopSession();
+    const history = useDevelopHistory();
 
     const activeFileId = ref<number | null>(null);
     const recipe = shallowRef<Recipe | null>(null);
@@ -265,6 +305,9 @@ function createDevelopEditor(): DevelopEditor {
             activeFileId.value = assetId;
             uiStore.setDevelopActive(assetId);
             recipe.value = retained ? retained.recipe : cloneRecipe(opened.envelope.recipe);
+            // Session history restarts per asset: persisted edits never
+            // imply persisted undo history.
+            history.initialize(recipe.value);
             markDirty(Boolean(retained));
             setSaveState(retained ? retained.saveState : 'idle', retained ? retained.lastError : null);
             if (retained && retained.saveState !== 'failed' && retained.saveState !== 'conflict') {
@@ -279,36 +322,14 @@ function createDevelopEditor(): DevelopEditor {
         }
     }
 
-    function setParam(field: string, value: number) {
-        if (!recipe.value) return;
-        const range = RECIPE_PARAM_RANGES[field];
-        let next = Number(value);
-        if (!Number.isFinite(next)) return;
-        if (range) {
-            next = Math.min(range.max, Math.max(range.min, next));
-        }
-        const current = Number((recipe.value as Record<string, unknown>)[field]);
-        if (Number.isFinite(current) && current === next) return;
-        recipe.value = { ...recipe.value, [field]: next };
-        markDirty(true);
-        setSaveState('pending');
-        scheduleCommit();
-        schedulePreview('interactive');
-        schedulePreview('settled');
-    }
-
-    function applyReset(fields: string[]) {
-        if (!recipe.value) return;
-        const next: Record<string, unknown> = { ...recipe.value };
-        let changed = false;
-        for (const field of fields) {
-            if (next[field] !== DEFAULT_RECIPE[field as keyof Recipe]) {
-                next[field] = DEFAULT_RECIPE[field as keyof Recipe];
-                changed = true;
-            }
-        }
-        if (!changed) return;
-        recipe.value = next as Recipe;
+    /**
+     * Replaces the working recipe (undo/redo/reset paths): the cleaned /
+     * pending decision compares against the committed envelope recipe so the
+     * session only stays dirty when it truly differs, and previews/commits
+     * are rescheduled. Never records a history entry by itself.
+     */
+    function afterRecipeReplaced(next: Recipe) {
+        recipe.value = next;
         const matchesCommitted = JSON.stringify(recipe.value) === JSON.stringify(session.session.value && (session.session.value as { envelope: { recipe: Recipe } }).envelope.recipe);
         if (matchesCommitted) {
             if (commitTimer) { clearTimeout(commitTimer); commitTimer = null; }
@@ -323,12 +344,206 @@ function createDevelopEditor(): DevelopEditor {
         schedulePreview('settled');
     }
 
+    /** Opens a transaction for a live gesture unless one is already open. */
+    function ensureTransaction(label: string) {
+        if (history.activeLabel.value === null) {
+            history.beginTransaction(label);
+        }
+    }
+
+    function clampForPath(path: string, value: number): number | null {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return null;
+        const range = RECIPE_PARAM_RANGES[path];
+        if (range) {
+            return Math.min(range.max, Math.max(range.min, numeric));
+        }
+        // Nested descriptors (HSL, grading, calibration) carry the
+        // model-validated bounds; unknown paths are rejected outright.
+        const descriptor = nestedRangeFor(path);
+        if (!descriptor) return null;
+        return Math.min(descriptor.max, Math.max(descriptor.min, numeric));
+    }
+
+    function nestedRangeFor(path: string): { min: number; max: number; step: number } | null {
+        for (const group of DEVELOP_CONTROL_GROUPS) {
+            for (const param of group.params) {
+                if (param.path === path) return param.range;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * One live gesture step (slider drag input, curve point drag move).
+     * Opens an implicit transaction when none is open, but never closes it:
+     * gesture completion closes exactly one transaction via
+     * endEditTransaction.
+     */
+    function setParamLive(field: string, value: number) {
+        if (!recipe.value) return;
+        const clamped = clampForPath(field, value);
+        if (clamped === null) return;
+        const current = getRecipeValue(recipe.value, field);
+        if (current !== undefined && current === clamped) return;
+        const next = JSON.parse(JSON.stringify(recipe.value)) as Recipe;
+        setRecipeValue(next as unknown as Record<string, unknown>, field, clamped);
+        ensureTransaction(`edit ${field}`);
+        history.record(next);
+        afterRecipeReplaced(next);
+    }
+
+    /** A complete single edit (keyboard/numeric): exactly one transaction. */
+    function setParam(field: string, value: number) {
+        const wasOpen = history.activeLabel.value !== null;
+        setParamLive(field, value);
+        if (!wasOpen) {
+            history.endTransaction();
+        }
+    }
+
+    function applyResetPatch(patch: Record<string, unknown>, label: string) {
+        if (!recipe.value) return;
+        const next = JSON.parse(JSON.stringify(recipe.value)) as Recipe;
+        const patchClone = JSON.parse(JSON.stringify(patch)) as Record<string, unknown>;
+        Object.assign(next as unknown as Record<string, unknown>, patchClone);
+        const unchanged = JSON.stringify(next) === JSON.stringify(recipe.value);
+        beginEditTransaction(label);
+        if (!unchanged) {
+            history.record(next);
+            afterRecipeReplaced(next);
+        }
+        endEditTransaction();
+    }
+
     function resetParam(field: string) {
-        applyReset([field]);
+        if (!recipe.value) return;
+        let def: number;
+        try {
+            def = defaultRecipeValue(field);
+        } catch {
+            return;
+        }
+        applyResetPatch({ [field]: def }, `reset ${field}`);
+    }
+
+    function resetSection(section: SectionId) {
+        applyResetPatch(sectionResetPatch(section) as Record<string, unknown>, `reset ${section}`);
     }
 
     function resetAll() {
-        applyReset(Object.keys(RECIPE_PARAM_RANGES));
+        applyResetPatch(fullResetPatch() as Record<string, unknown>, 'reset all');
+    }
+
+    function setSectionVisible(section: SectionId, visible: boolean) {
+        if (!recipe.value) return;
+        if (recipe.value.sectionVisibility[section] === visible) return;
+        const next = JSON.parse(JSON.stringify(recipe.value)) as Recipe;
+        next.sectionVisibility = { ...next.sectionVisibility, [section]: visible };
+        beginEditTransaction(`bypass ${section}`);
+        history.record(next);
+        afterRecipeReplaced(next);
+        endEditTransaction();
+    }
+
+    function setToneMapper(mapper: ToneMapper) {
+        if (!recipe.value) return;
+        if (recipe.value.toneMapper === mapper) return;
+        const next = JSON.parse(JSON.stringify(recipe.value)) as Recipe;
+        next.toneMapper = mapper;
+        beginEditTransaction('tone mapper');
+        history.record(next);
+        afterRecipeReplaced(next);
+        endEditTransaction();
+    }
+
+    function setCurveChannelPointsLive(channel: string, points: CurvePoint[]) {
+        if (!recipe.value) return;
+        const next = JSON.parse(JSON.stringify(recipe.value)) as Recipe;
+        next.curves = { ...next.curves, [channel]: normalizeCurvePoints(points) };
+        ensureTransaction(`curve ${channel}`);
+        history.record(next);
+        afterRecipeReplaced(next);
+    }
+
+    function setCurveChannelPoints(channel: string, points: CurvePoint[]) {
+        setCurveChannelPointsLive(channel, points);
+        endEditTransaction();
+    }
+
+    function setCurveMode(mode: CurveMode) {
+        if (!recipe.value) return;
+        const currentMode: CurveMode = recipe.value.curveMode || 'point';
+        if (currentMode === mode) return;
+        const next = JSON.parse(JSON.stringify(recipe.value)) as Recipe;
+        if (mode === 'parametric') {
+            // Reference semantics: switching to parametric stores the current
+            // point curves, renders the parametric settings, and flags the
+            // mode; switching back restores the stored point curves.
+            next.pointCurves = next.curves;
+            next.curves = {
+                luma: buildParametricPoints(next.parametricCurve.luma),
+                red: buildParametricPoints(next.parametricCurve.red),
+                green: buildParametricPoints(next.parametricCurve.green),
+                blue: buildParametricPoints(next.parametricCurve.blue),
+            };
+        } else {
+            next.curves = next.pointCurves;
+        }
+        next.curveMode = mode;
+        beginEditTransaction('curve mode');
+        history.record(next);
+        afterRecipeReplaced(next);
+        endEditTransaction();
+    }
+
+    function setParametricCurveValueLive(channel: string, key: string, value: number) {
+        if (!recipe.value) return;
+        const clamped = clampParametricValue(key, Number(value));
+        if (!Number.isFinite(clamped)) return;
+        const currentSettings = recipe.value.parametricCurve[channel];
+        if (!currentSettings || currentSettings[key as keyof typeof currentSettings] === clamped) return;
+        const next = JSON.parse(JSON.stringify(recipe.value)) as Recipe;
+        const settings = { ...next.parametricCurve[channel], [key]: clamped };
+        next.parametricCurve = { ...next.parametricCurve, [channel]: settings };
+        // The renderer consumes recipe.curves; keep the active channel's
+        // rendered curve in sync with the parametric settings.
+        next.curves = { ...next.curves, [channel]: buildParametricPoints(settings) };
+        ensureTransaction(`parametric ${channel}`);
+        history.record(next);
+        afterRecipeReplaced(next);
+    }
+
+    function setParametricCurveValue(channel: string, key: string, value: number) {
+        setParametricCurveValueLive(channel, key, value);
+        endEditTransaction();
+    }
+
+    function beginEditTransaction(label: string) {
+        history.beginTransaction(label);
+    }
+
+    function endEditTransaction() {
+        history.endTransaction();
+    }
+
+    function undo(): boolean {
+        if (!recipe.value) return false;
+        // Close any open gesture first so undo never interleaves with it.
+        history.endTransaction();
+        const restored = history.undo();
+        if (!restored) return false;
+        afterRecipeReplaced(restored);
+        return true;
+    }
+
+    function redo(): boolean {
+        if (!recipe.value) return false;
+        history.endTransaction();
+        const restored = history.redo();
+        if (!restored) return false;
+        afterRecipeReplaced(restored);
+        return true;
     }
 
     async function flush(options: { autoRetry?: boolean } = {}): Promise<boolean> {
@@ -405,6 +620,7 @@ function createDevelopEditor(): DevelopEditor {
         activeFileId.value = null;
         uiStore.setDevelopActive(null);
         recipe.value = null;
+        history.clear();
         markDirty(false);
         setSaveState('idle');
         showOriginal.value = false;
@@ -427,6 +643,7 @@ function createDevelopEditor(): DevelopEditor {
         }
         activeFileId.value = null;
         recipe.value = null;
+        history.clear();
         markDirty(false);
         setSaveState('idle');
         showOriginal.value = false;
@@ -452,8 +669,24 @@ function createDevelopEditor(): DevelopEditor {
         session: session.session as unknown as { value: unknown },
         openAsset,
         setParam,
+        setParamLive,
         resetParam,
         resetAll,
+        beginEditTransaction,
+        endEditTransaction,
+        undo,
+        redo,
+        canUndo: history.canUndo,
+        canRedo: history.canRedo,
+        historySize: history.size,
+        setSectionVisible,
+        resetSection,
+        setToneMapper,
+        setCurveChannelPointsLive,
+        setCurveChannelPoints,
+        setCurveMode,
+        setParametricCurveValueLive,
+        setParametricCurveValue,
         flush,
         flushAsset,
         retry,

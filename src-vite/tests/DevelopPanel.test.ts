@@ -18,6 +18,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 import DevelopPanel from '@/components/DevelopPanel.vue';
+import ImageHistogram from '@/components/ImageHistogram.vue';
 import { useDevelopEditor } from '@/composables/useDevelopEditor';
 import {
     DEFAULT_RECIPE,
@@ -28,12 +29,22 @@ import enMessages from '@/locales/en.json';
 import deMessages from '@/locales/de.json';
 import frMessages from '@/locales/fr.json';
 import jaMessages from '@/locales/ja.json';
+import zhMessages from '@/locales/zh.json';
+import esMessages from '@/locales/es.json';
+import koMessages from '@/locales/ko.json';
+import ptMessages from '@/locales/pt.json';
+import ruMessages from '@/locales/ru.json';
 
 const LOCALE_MESSAGES: Record<string, Record<string, unknown>> = {
     en: enMessages as Record<string, unknown>,
     de: deMessages as Record<string, unknown>,
     fr: frMessages as Record<string, unknown>,
     ja: jaMessages as Record<string, unknown>,
+    zh: zhMessages as Record<string, unknown>,
+    es: esMessages as Record<string, unknown>,
+    ko: koMessages as Record<string, unknown>,
+    pt: ptMessages as Record<string, unknown>,
+    ru: ruMessages as Record<string, unknown>,
 };
 
 function makeI18n(locale = 'en') {
@@ -92,16 +103,20 @@ function queueSuccessfulOpen(assetId: number) {
         .mockResolvedValueOnce(new Uint8Array(8 * 8 * 4).buffer);
 }
 
-async function mountPanel(locale = 'en') {
+async function mountPanel(locale = 'en', fileOverride: Record<string, unknown> = {}) {
     queueSuccessfulOpen(7);
     const wrapper = mount(DevelopPanel, {
-        props: { file: { id: 7, name: 'photo.CR2' } },
+        props: { file: { id: 7, name: 'photo.CR2', thumbnail: 'blob:original', ...fileOverride } },
         global: {
             plugins: [makeI18n(locale), setActivePinia(createPinia())],
         },
     });
     await flushPromises();
     return wrapper;
+}
+
+async function expandSection(wrapper: any, section: string) {
+    await wrapper.get(`[data-testid="develop-section-toggle-${section}"]`).trigger('click');
 }
 
 describe('DevelopPanel', () => {
@@ -258,6 +273,326 @@ describe('DevelopPanel', () => {
             }
             for (const key of ['idle', 'pending', 'saving', 'saved', 'conflict', 'failed']) {
                 expect(typeof develop.save[key], `locale ${name} key develop.save.${key}`).toBe('string');
+            }
+        }
+    });
+
+    // -----------------------------------------------------------------------
+    // First-release global controls (lap-adc / TASK-401)
+    // -----------------------------------------------------------------------
+
+    it('renders every first-release section with generated ranges', async () => {
+        const wrapper = await mountPanel();
+
+        // Basic is expanded by default.
+        const contrast = wrapper.get('[data-testid="develop-slider-contrast"]').element as HTMLInputElement;
+        expect(Number(contrast.min)).toBe(RECIPE_PARAM_RANGES.contrast.min);
+        expect(Number(contrast.max)).toBe(RECIPE_PARAM_RANGES.contrast.max);
+        expect(Number(contrast.step)).toBe(RECIPE_PARAM_RANGES.contrast.step);
+
+        for (const section of ['curves', 'color', 'details', 'effects']) {
+            await expandSection(wrapper, section);
+        }
+
+        const checks: Array<[string, keyof typeof RECIPE_PARAM_RANGES]> = [
+            ['exposure', 'exposure'],
+            ['brightness', 'brightness'],
+            ['highlights', 'highlights'],
+            ['shadows', 'shadows'],
+            ['whites', 'whites'],
+            ['blacks', 'blacks'],
+            ['vibrance', 'vibrance'],
+            ['saturation', 'saturation'],
+            ['hue', 'hue'],
+            ['clarity', 'clarity'],
+            ['structure', 'structure'],
+            ['dehaze', 'dehaze'],
+            ['sharpness', 'sharpness'],
+            ['sharpnessThreshold', 'sharpnessThreshold'],
+            ['lumaNoiseReduction', 'lumaNoiseReduction'],
+            ['colorNoiseReduction', 'colorNoiseReduction'],
+            ['chromaticAberrationRedCyan', 'chromaticAberrationRedCyan'],
+            ['chromaticAberrationBlueYellow', 'chromaticAberrationBlueYellow'],
+            ['grainAmount', 'grainAmount'],
+            ['grainSize', 'grainSize'],
+            ['grainRoughness', 'grainRoughness'],
+            ['vignetteAmount', 'vignetteAmount'],
+            ['vignetteMidpoint', 'vignetteMidpoint'],
+            ['vignetteRoundness', 'vignetteRoundness'],
+            ['vignetteFeather', 'vignetteFeather'],
+            ['glowAmount', 'glowAmount'],
+            ['halationAmount', 'halationAmount'],
+            ['flareAmount', 'flareAmount'],
+        ];
+        for (const [param, rangeKey] of checks) {
+            const el = wrapper.get(`[data-testid="develop-slider-${param}"]`).element as HTMLInputElement;
+            const range = RECIPE_PARAM_RANGES[rangeKey];
+            expect(Number(el.min), param).toBe(range.min);
+            expect(Number(el.max), param).toBe(range.max);
+            expect(Number(el.step), param).toBe(range.step);
+        }
+    });
+
+    it('edits detail and effect sliders through the generated ranges with one undo step each', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        for (const section of ['details', 'effects']) {
+            await expandSection(wrapper, section);
+        }
+
+        await wrapper.get('[data-testid="develop-slider-sharpness"]').setValue('30');
+        expect(editor.recipe.value?.sharpness).toBe(30);
+        expect(editor.historySize.value).toBe(1);
+        await wrapper.get('[data-testid="develop-slider-grainAmount"]').setValue('55');
+        expect(editor.recipe.value?.grainAmount).toBe(55);
+        expect(editor.historySize.value).toBe(2);
+
+        await wrapper.get('[data-testid="develop-undo"]').trigger('click');
+        expect(editor.recipe.value?.grainAmount).toBe(0);
+        await wrapper.get('[data-testid="develop-redo"]').trigger('click');
+        expect(editor.recipe.value?.grainAmount).toBe(55);
+    });
+
+    it('commits numeric input for flat and nested controls', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        await expandSection(wrapper, 'effects');
+
+        const flat = wrapper.get('[data-testid="develop-input-grainSize"]');
+        await flat.setValue('80');
+        await flat.trigger('keydown', { key: 'Enter' });
+        expect(editor.recipe.value?.grainSize).toBe(80);
+        expect(editor.historySize.value).toBe(1);
+    });
+
+    it('edits HSL sliders for the selected channel', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        await expandSection(wrapper, 'color');
+
+        await wrapper.get('[data-testid="develop-hsl-channel-blues"]').trigger('click');
+        await wrapper.get('[data-testid="develop-slider-hsl-blues-hue"]').setValue('25');
+        expect(editor.recipe.value?.hsl.blues.hue).toBe(25);
+        expect(editor.historySize.value).toBe(1);
+
+        // Other channels remain untouched at their defaults.
+        expect(editor.recipe.value?.hsl.reds).toEqual(DEFAULT_RECIPE.hsl.reds);
+    });
+
+    it('edits color grading zones, balance and calibration sliders', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        await expandSection(wrapper, 'color');
+
+        await wrapper.get('[data-testid="develop-grading-zone-shadows"]').trigger('click');
+        await wrapper.get('[data-testid="develop-slider-grading-shadows-saturation"]').setValue('30');
+        expect(editor.recipe.value?.colorGrading.shadows.saturation).toBe(30);
+
+        await wrapper.get('[data-testid="develop-slider-grading-balance"]').setValue('-20');
+        expect(editor.recipe.value?.colorGrading.balance).toBe(-20);
+
+        await wrapper.get('[data-testid="develop-slider-calibration-redHue"]').setValue('-10');
+        expect(editor.recipe.value?.colorCalibration.redHue).toBe(-10);
+        expect(editor.historySize.value).toBe(3);
+    });
+
+    it('changes the tone mapper through the localized select', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+
+        const select = wrapper.get('[data-testid="develop-tonemapper"]');
+        expect((select.element as HTMLSelectElement).value).toBe('basic');
+        await select.setValue('agx');
+        expect(editor.recipe.value?.toneMapper).toBe('agx');
+        expect(editor.historySize.value).toBe(1);
+
+        await wrapper.get('[data-testid="develop-undo"]').trigger('click');
+        expect(editor.recipe.value?.toneMapper).toBe('basic');
+    });
+
+    it('toggles a section bypass with one undo step', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        await expandSection(wrapper, 'effects');
+
+        const bypass = wrapper.get('[data-testid="develop-bypass-effects"]');
+        expect(bypass.attributes('aria-label')).toBeTruthy();
+        await bypass.setValue(false);
+        expect(editor.recipe.value?.sectionVisibility.effects).toBe(false);
+        expect(editor.historySize.value).toBe(1);
+
+        await wrapper.get('[data-testid="develop-undo"]').trigger('click');
+        expect(editor.recipe.value?.sectionVisibility.effects).toBe(true);
+    });
+
+    it('resets one section from its header and leaves other sections intact', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        await expandSection(wrapper, 'effects');
+
+        await wrapper.get('[data-testid="develop-slider-contrast"]').setValue('30');
+        await wrapper.get('[data-testid="develop-slider-grainAmount"]').setValue('50');
+        await wrapper.get('[data-testid="develop-section-reset-effects"]').trigger('click');
+
+        expect(editor.recipe.value?.grainAmount).toBe(DEFAULT_RECIPE.grainAmount);
+        expect(editor.recipe.value?.contrast).toBe(30);
+
+        await wrapper.get('[data-testid="develop-undo"]').trigger('click');
+        expect(editor.recipe.value?.grainAmount).toBe(50);
+    });
+
+    it('exposes undo/redo with the session-scope hint and correct disabled states', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+
+        const undo = wrapper.get('[data-testid="develop-undo"]');
+        const redo = wrapper.get('[data-testid="develop-redo"]');
+        expect((undo.element as HTMLButtonElement).disabled).toBe(true);
+        expect((redo.element as HTMLButtonElement).disabled).toBe(true);
+        // The hint must make explicit that history is session-only and never
+        // persists across restarts.
+        expect(undo.attributes('title')).toBe((enMessages.develop as any).historyHint);
+        expect(redo.attributes('title')).toBe((enMessages.develop as any).historyHint);
+
+        await wrapper.get('[data-testid="develop-slider-exposure"]').setValue('1');
+        expect((wrapper.get('[data-testid="develop-undo"]').element as HTMLButtonElement).disabled).toBe(false);
+
+        await wrapper.get('[data-testid="develop-undo"]').trigger('click');
+        expect(editor.recipe.value?.exposure).toBe(0);
+        expect((wrapper.get('[data-testid="develop-undo"]').element as HTMLButtonElement).disabled).toBe(true);
+        expect((wrapper.get('[data-testid="develop-redo"]').element as HTMLButtonElement).disabled).toBe(false);
+
+        await wrapper.get('[data-testid="develop-redo"]').trigger('click');
+        expect(editor.recipe.value?.exposure).toBe(1);
+    });
+
+    it('moves curve points with the keyboard, one transaction per keystroke', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        await expandSection(wrapper, 'curves');
+
+        // Endpoint x coordinates are pinned by the model (first x=0, last
+        // x=255); seed an interior point to exercise keyboard movement.
+        editor.setCurveChannelPoints('luma', [
+            { x: 0, y: 0 },
+            { x: 100, y: 80 },
+            { x: 255, y: 255 },
+        ]);
+        const historyAfterSeed = editor.historySize.value;
+
+        const point = wrapper.get('[data-testid="develop-curve-point-1"]');
+        expect(point.attributes('aria-label')).toBeTruthy();
+        await point.trigger('focus');
+        await point.trigger('keydown', { key: 'ArrowRight' });
+        expect(editor.recipe.value?.curves.luma[1].x).toBe(101);
+        await point.trigger('keydown', { key: 'ArrowRight', shiftKey: true });
+        expect(editor.recipe.value?.curves.luma[1].x).toBe(111);
+        await point.trigger('keydown', { key: 'ArrowUp' });
+        expect(editor.recipe.value?.curves.luma[1].y).toBe(81);
+        expect(editor.historySize.value).toBe(historyAfterSeed + 3);
+
+        await wrapper.get('[data-testid="develop-undo"]').trigger('click');
+        expect(editor.recipe.value?.curves.luma[1].y).toBe(80);
+        expect(editor.recipe.value?.curves.luma[1].x).toBe(111);
+
+        await point.trigger('keydown', { key: 'Delete' });
+        expect(editor.recipe.value?.curves.luma).toEqual([
+            { x: 0, y: 0 },
+            { x: 255, y: 255 },
+        ]);
+    });
+
+    it('switches curve channels and the point/parametric mode', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        await expandSection(wrapper, 'curves');
+
+        await wrapper.get('[data-testid="develop-curve-channel-red"]').trigger('click');
+        expect(wrapper.find('[data-testid="develop-curve-point-0"]').exists()).toBe(true);
+
+        await wrapper.get('[data-testid="develop-curve-mode-parametric"]').trigger('click');
+        expect(editor.recipe.value?.curveMode).toBe('parametric');
+        expect(wrapper.find('[data-testid="develop-curve-param-darks"]').exists()).toBe(true);
+
+        await wrapper.get('[data-testid="develop-curve-param-darks"]').setValue('40');
+        expect(editor.recipe.value?.parametricCurve.red.darks).toBe(40);
+
+        await wrapper.get('[data-testid="develop-curve-mode-point"]').trigger('click');
+        expect(editor.recipe.value?.curveMode).toBe('point');
+    });
+
+    it('feeds the renderer histogram from the displayed preview generation', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+
+        const histogram = wrapper.findComponent(ImageHistogram);
+        expect(histogram.exists()).toBe(true);
+        // The settled preview ticket rendered an 8x8 frame for generation 1.
+        expect(histogram.props('rendererPixels')).toMatchObject({ width: 8, height: 8 });
+        expect(histogram.props('source')).toBe('');
+
+        // While the original comparison is displayed, the renderer histogram
+        // input is replaced by the original thumbnail source.
+        await wrapper.get('[data-testid="develop-view-original"]').trigger('click');
+        expect(editor.showOriginal.value).toBe(true);
+        expect(histogram.props('rendererPixels')).toBeNull();
+        expect(histogram.props('source')).toBe('blob:original');
+    });
+
+    it('localizes the first-release control labels', async () => {
+        const en = await mountPanel('en');
+        const enDevelop = enMessages.develop as Record<string, any>;
+        expect(en.get('[data-testid="develop-label-contrast"]').text()).toBe(enDevelop.controls.contrast);
+        expect(en.get('[data-testid="develop-section-title-basic"]').text()).toBe(enDevelop.sections.basic);
+        await expandSection(en, 'effects');
+        expect(en.get('[data-testid="develop-label-grainAmount"]').text()).toBe(enDevelop.controls.grainAmount);
+        en.unmount();
+
+        const de = await mountPanel('de');
+        const deDevelop = (deMessages as unknown as Record<string, any>).develop;
+        expect(de.get('[data-testid="develop-label-contrast"]').text()).toBe(deDevelop.controls.contrast);
+        expect(de.get('[data-testid="develop-section-title-basic"]').text()).toBe(deDevelop.sections.basic);
+        de.unmount();
+    });
+
+    it('declares the first-release keys in every supported locale', () => {
+        const requiredControlKeys = [
+            'brightness', 'contrast', 'highlights', 'shadows', 'whites', 'blacks',
+            'vibrance', 'saturation', 'hue', 'clarity', 'structure', 'dehaze', 'center',
+            'sharpness', 'sharpnessThreshold', 'lumaNoiseReduction', 'colorNoiseReduction',
+            'chromaticAberrationRedCyan', 'chromaticAberrationBlueYellow',
+            'grainAmount', 'grainSize', 'grainRoughness',
+            'vignetteAmount', 'vignetteMidpoint', 'vignetteRoundness', 'vignetteFeather',
+            'glowAmount', 'halationAmount', 'flareAmount', 'toneMapper',
+        ];
+        for (const [name, messages] of Object.entries(LOCALE_MESSAGES)) {
+            const develop = (messages as Record<string, any>).develop;
+            for (const section of ['basic', 'curves', 'color', 'details', 'effects']) {
+                expect(typeof develop.sections?.[section], `locale ${name} sections.${section}`).toBe('string');
+            }
+            for (const key of requiredControlKeys) {
+                expect(typeof develop.controls?.[key], `locale ${name} controls.${key}`).toBe('string');
+            }
+            for (const channel of ['reds', 'oranges', 'yellows', 'greens', 'aquas', 'blues', 'purples', 'magentas']) {
+                expect(typeof develop.hslChannels?.[channel], `locale ${name} hslChannels.${channel}`).toBe('string');
+            }
+            for (const component of ['hue', 'saturation', 'luminance']) {
+                expect(typeof develop.hslComponents?.[component], `locale ${name} hslComponents.${component}`).toBe('string');
+            }
+            for (const zone of ['global', 'shadows', 'midtones', 'highlights']) {
+                expect(typeof develop.gradingZones?.[zone], `locale ${name} gradingZones.${zone}`).toBe('string');
+            }
+            for (const channel of ['luma', 'red', 'green', 'blue']) {
+                expect(typeof develop.curve?.channels?.[channel], `locale ${name} curve.channels.${channel}`).toBe('string');
+            }
+            for (const key of ['point', 'parametric', 'pointLabel', 'paramLabel', 'pointAria', 'undoHint']) {
+                expect(typeof develop.curve?.[key], `locale ${name} curve.${key}`).toBe('string');
+            }
+            for (const key of ['undo', 'redo', 'historyHint', 'histogram', 'bypassSection', 'resetSection', 'sectionAria']) {
+                expect(typeof develop[key], `locale ${name} develop.${key}`).toBe('string');
+            }
+            for (const key of ['basic', 'agx']) {
+                expect(typeof develop.toneMapper?.[key], `locale ${name} toneMapper.${key}`).toBe('string');
             }
         }
     });

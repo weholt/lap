@@ -1235,7 +1235,12 @@
       "group_raw_jpeg_pairs_hint": "Mostrar archivos RAW y JPEG/HEIC coincidentes como un solo elemento",
       "small_file_filter": "Filtro de archivos pequeños",
       "small_file_filter_hint": "Oculta archivos cuando el ancho y el alto son menores que el tamaño seleccionado",
-      "small_file_filter_options": ["Desactivado", "160 px", "320 px", "640 px"],
+      "small_file_filter_options": [
+        "Desactivado",
+        "160 px",
+        "320 px",
+        "640 px"
+      ],
       "section_sorting": "Orden",
       "folder_sort": "Carpetas",
       "folder_sort_hint": "Orden de clasificación para las carpetas mostradas dentro de los álbumes",
@@ -1630,6 +1635,119 @@
       "saved": "Guardado",
       "conflict": "Conflicto",
       "failed": "Error al guardar"
+    },
+    "undo": "Deshacer",
+    "redo": "Rehacer",
+    "historyHint": "Solo para esta sesión de revelado: el historial no se conserva al cerrar Lap o cambiar de foto.",
+    "histogram": "Histograma",
+    "bypassSection": "Activar la sección {section}",
+    "resetSection": "Restablecer la sección {section}",
+    "sectionAria": "Expandir o contraer la sección {section}",
+    "sections": {
+      "basic": "Luz",
+      "curves": "Curvas",
+      "color": "Color",
+      "details": "Detalle",
+      "effects": "Efectos"
+    },
+    "groups": {
+      "tone": "Tono",
+      "color": "Color",
+      "hsl": "HSL / Mezclador de color",
+      "colorGrading": "Etalonaje",
+      "calibration": "Calibración",
+      "detail": "Detalle",
+      "sharpening": "Enfoque y ruido",
+      "chromaticAberration": "Aberración cromática",
+      "grain": "Grano",
+      "vignette": "Viñeta",
+      "light": "Luz"
+    },
+    "controls": {
+      "brightness": "Brillo",
+      "contrast": "Contraste",
+      "highlights": "Luces",
+      "shadows": "Sombras",
+      "whites": "Blancos",
+      "blacks": "Negros",
+      "vibrance": "Intensidad",
+      "saturation": "Saturación",
+      "hue": "Tono",
+      "balance": "Equilibrio",
+      "blending": "Mezcla",
+      "clarity": "Claridad",
+      "structure": "Estructura",
+      "dehaze": "Quitar bruma",
+      "center": "Centro",
+      "sharpness": "Nitidez",
+      "sharpnessThreshold": "Umbral",
+      "lumaNoiseReduction": "Ruido de luminancia",
+      "colorNoiseReduction": "Ruido de color",
+      "chromaticAberrationRedCyan": "Rojo/cian",
+      "chromaticAberrationBlueYellow": "Azul/amarillo",
+      "grainAmount": "Cantidad",
+      "grainSize": "Tamaño",
+      "grainRoughness": "Rugosidad",
+      "vignetteAmount": "Cantidad",
+      "vignetteMidpoint": "Punto medio",
+      "vignetteRoundness": "Redondez",
+      "vignetteFeather": "Suavizado",
+      "glowAmount": "Resplandor",
+      "halationAmount": "Halación",
+      "flareAmount": "Destello",
+      "toneMapper": "Asignación de tonos"
+    },
+    "toneMapper": {
+      "basic": "Básico",
+      "agx": "AgX"
+    },
+    "hslChannels": {
+      "reds": "Rojos",
+      "oranges": "Naranjas",
+      "yellows": "Amarillos",
+      "greens": "Verdes",
+      "aquas": "Cianes",
+      "blues": "Azules",
+      "purples": "Púrpuras",
+      "magentas": "Magentas"
+    },
+    "hslComponents": {
+      "hue": "Tono",
+      "saturation": "Saturación",
+      "luminance": "Luminancia"
+    },
+    "gradingZones": {
+      "global": "Global",
+      "shadows": "Sombras",
+      "midtones": "Tonos medios",
+      "highlights": "Luces"
+    },
+    "calibration": {
+      "shadowsTint": "Tono de sombras",
+      "hue": "Tono",
+      "saturation": "Saturación"
+    },
+    "curve": {
+      "point": "Puntos",
+      "parametric": "Paramétrica",
+      "pointLabel": "Curva de puntos",
+      "paramLabel": "Curva paramétrica",
+      "pointAria": "Punto de curva {index} de {total}, canal {channel}",
+      "undoHint": "Arrastra los puntos o haz clic en el gráfico para añadir uno; selecciona un punto y usa las flechas (Mayús para pasos mayores), Supr lo elimina. Deshacer solo afecta a esta sesión.",
+      "channels": {
+        "luma": "Luminancia",
+        "red": "Rojo",
+        "green": "Verde",
+        "blue": "Azul"
+      },
+      "params": {
+        "whiteLevel": "Punto blanco",
+        "highlights": "Luces",
+        "lights": "Tonos claros",
+        "darks": "Tonos oscuros",
+        "shadows": "Sombras",
+        "blackLevel": "Punto negro"
+      }
     }
   }
 }

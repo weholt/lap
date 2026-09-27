@@ -1,27 +1,43 @@
 ﻿<script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import {
     useDevelopEditor,
 } from '@/composables/useDevelopEditor';
 import {
-    RECIPE_PARAM_RANGES,
-    type Recipe,
+    type SectionId,
+    type ToneMapper,
 } from '@/composables/useDevelopSession.types';
+import {
+    BASIC_TONE_MAPPER_CONTROL,
+    DEVELOP_CONTROL_GROUPS,
+    DEVELOP_SECTIONS,
+    getRecipeValue,
+    type ControlGroup,
+    type ParamDescriptor,
+} from '@/components/develop/controls';
+import DevelopSliderControl from '@/components/develop/DevelopSliderControl.vue';
+import DevelopSection from '@/components/develop/DevelopSection.vue';
+import DevelopCurveEditor from '@/components/develop/DevelopCurveEditor.vue';
+import ImageHistogram from '@/components/ImageHistogram.vue';
 import TButton from '@/components/TButton.vue';
-import { IconClose, IconRestore } from '@/common/icons';
+import { IconClose } from '@/common/icons';
 
 /**
- * Native Develop panel (lap-0e9 / TASK-303; spec A10).
+ * Native Develop panel (lap-0e9 / TASK-303; global controls lap-adc /
+ * TASK-401; spec A10).
  *
- * Exposure and white-balance controls built directly from the generated
- * engine descriptors (RECIPE_PARAM_RANGES). All edits go through the
- * useDevelopEditor orchestration: debounced recipe commits with
- * saving/saved/conflict/failed status, awaited flush on navigation/close,
- * retained dirty state with explicit retry, per-control and global reset,
- * and an explicit original comparison toggle. This panel never writes
- * pixels to the source file.
+ * All first-release global controls (tone, white balance, color/HSL, curves,
+ * detail, grain/vignette and section bypass) are generated from the engine
+ * descriptors (RECIPE_PARAM_RANGES + model-validated nested bounds). Every
+ * meaningful action forms one undo transaction (session-scoped, never
+ * persisted); edits go through the useDevelopEditor orchestration: debounced
+ * recipe commits with saving/saved/conflict/failed status, awaited flush on
+ * navigation/close, retained dirty state with explicit retry, per-control /
+ * section / global reset, and an explicit original comparison toggle.
+ * The histogram is fed from the displayed preview generation. This panel
+ * never writes pixels to the source file.
  */
 
 const props = defineProps<{
@@ -35,84 +51,144 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const develop = useDevelopEditor();
 
-const CONTROL_FIELDS = ['exposure', 'temperature', 'tint'] as const;
-type ControlField = (typeof CONTROL_FIELDS)[number];
+const expandedSections = ref<Record<SectionId, boolean>>({
+    basic: true,
+    curves: false,
+    color: false,
+    details: false,
+    effects: false,
+});
+const selectedHslChannel = ref<string>('reds');
+const selectedGradingZone = ref<string>('global');
 
-const CONTROL_LABEL_KEYS: Record<ControlField, string> = {
-    exposure: 'develop.exposure',
-    temperature: 'develop.temperature',
-    tint: 'develop.tint',
-};
-
-const controlValues = computed(() => {
-    const recipe = develop.recipe.value;
-    const values: Record<ControlField, number> = { exposure: 0, temperature: 0, tint: 0 };
-    if (!recipe) return values;
-    for (const field of CONTROL_FIELDS) {
-        values[field] = Number(recipe[field as keyof Recipe] ?? 0);
+const groupsBySection = computed<Record<SectionId, ControlGroup[]>>(() => {
+    const map = {
+        basic: [],
+        curves: [],
+        color: [],
+        details: [],
+        effects: [],
+    } as Record<SectionId, ControlGroup[]>;
+    for (const group of DEVELOP_CONTROL_GROUPS) {
+        map[group.section].push(group);
     }
-    return values;
+    return map;
 });
 
-function rangeFor(field: ControlField) {
-    return RECIPE_PARAM_RANGES[field];
+function testidFor(path: string): string {
+    return path
+        .replace(/\./g, '-')
+        .replace(/^colorGrading-/, 'grading-')
+        .replace(/^colorCalibration-/, 'calibration-');
 }
 
-function labelKey(field: ControlField) {
-    return CONTROL_LABEL_KEYS[field];
+function controlValue(path: string): number {
+    const recipe = develop.recipe.value;
+    if (!recipe) return 0;
+    return getRecipeValue(recipe, path) ?? 0;
 }
 
-function formatValue(field: ControlField): string {
-    const range = rangeFor(field);
-    const value = controlValues.value[field];
-    const decimals = range.step < 1 ? 2 : 0;
-    return value.toFixed(decimals);
+function sliderProps(param: ParamDescriptor) {
+    return {
+        labelKey: param.labelKey,
+        min: param.range.min,
+        max: param.range.max,
+        step: param.range.step,
+        value: controlValue(param.path),
+        testid: testidFor(param.path),
+    };
 }
 
-function onSliderInput(field: ControlField, event: Event) {
-    const target = event.target as HTMLInputElement;
-    develop.setParam(field, Number(target.value));
+function onSliderLive(path: string, value: number) {
+    develop.setParamLive(path, value);
 }
 
-function onNumericKeydown(field: ControlField, event: KeyboardEvent) {
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
-    commitNumericInput(field, event.target as HTMLInputElement);
+function onSliderSettle() {
+    develop.endEditTransaction();
 }
 
-function onNumericChange(field: ControlField, event: Event) {
-    commitNumericInput(field, event.target as HTMLInputElement);
+function onSliderCommit(path: string, value: number) {
+    develop.setParam(path, value);
 }
 
-function commitNumericInput(field: ControlField, target: HTMLInputElement) {
-    const raw = target.value.trim();
-    const range = rangeFor(field);
-    if (raw === '') {
-        // Empty input restores the current value without touching the recipe.
-        target.value = String(controlValues.value[field]);
-        return;
-    }
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) {
-        // Reject non-numeric input: keep the current recipe value.
-        target.value = String(controlValues.value[field]);
-        return;
-    }
-    develop.setParam(field, parsed);
-    target.value = String(controlValues.value[field]);
+function onSliderReset(path: string) {
+    develop.resetParam(path);
 }
 
-function resetField(field: ControlField) {
-    develop.resetParam(field);
+function hslChannelParams(channel: string): ParamDescriptor[] {
+    const group = groupsBySection.value.color.find((g) => g.id === 'hsl');
+    return group ? group.params.filter((p) => p.path.startsWith(`hsl.${channel}.`)) : [];
+}
+
+function gradingZoneParams(zone: string): ParamDescriptor[] {
+    const group = groupsBySection.value.color.find((g) => g.id === 'colorGrading');
+    return group ? group.params.filter((p) => p.path.startsWith(`colorGrading.${zone}.`)) : [];
+}
+
+function gradingCommonParams(): ParamDescriptor[] {
+    const group = groupsBySection.value.color.find((g) => g.id === 'colorGrading');
+    return group
+        ? group.params.filter((p) => !/^colorGrading\.(global|shadows|midtones|highlights)\./.test(p.path))
+        : [];
+}
+
+function onToggleExpand(section: SectionId) {
+    expandedSections.value[section] = !expandedSections.value[section];
+}
+
+function onToggleVisible(section: SectionId, visible: boolean) {
+    develop.setSectionVisible(section, visible);
+}
+
+function onResetSection(section: SectionId) {
+    develop.resetSection(section);
+}
+
+function sectionVisible(section: SectionId): boolean {
+    return develop.recipe.value?.sectionVisibility[section] ?? true;
 }
 
 function resetAll() {
     develop.resetAll();
 }
 
+function undo() {
+    develop.undo();
+}
+
+function redo() {
+    develop.redo();
+}
+
 function toggleOriginal() {
     develop.showOriginal.value = !develop.showOriginal.value;
 }
+
+function onToneMapperChange(event: Event) {
+    develop.setToneMapper((event.target as HTMLSelectElement).value as ToneMapper);
+}
+
+/**
+ * The histogram reflects exactly the displayed generation: while the
+ * rendered preview is shown it is fed from the displayed preview frame
+ * (geometry and adjustments are already baked in); while the original
+ * comparison is active the histogram source is the untouched original
+ * thumbnail and no renderer input is passed.
+ */
+const histogramPixels = computed(() => {
+    if (develop.showOriginal.value) return null;
+    const preview = develop.preview.value;
+    if (!preview || !(preview.bytes instanceof ArrayBuffer) || preview.bytes.byteLength === 0) {
+        return null;
+    }
+    return {
+        data: new Uint8ClampedArray(preview.bytes),
+        width: preview.width,
+        height: preview.height,
+    };
+});
+
+const histogramSource = computed(() => (develop.showOriginal.value ? String(props.file?.thumbnail || '') : ''));
 
 const statusLabel = computed(() => {
     const state = develop.saveState.value;
@@ -156,12 +232,30 @@ onBeforeUnmount(() => {
 
 <template>
     <div class="w-full h-full rounded-box bg-base-200 flex flex-col overflow-hidden" data-testid="develop-panel">
-        <!-- Header & Close -->
+        <!-- Header: title, session undo/redo, close -->
         <div class="my-2 px-2 flex items-center w-full shrink-0">
             <div class="flex-1 pl-1">
                 <span class="text-sm font-semibold text-primary/70">{{ $t('develop.title') }}</span>
             </div>
             <div class="flex items-center gap-1">
+                <button
+                    type="button"
+                    class="btn btn-ghost btn-xs text-base-content/60 hover:text-base-content disabled:text-base-content/30"
+                    data-testid="develop-undo"
+                    :disabled="!develop.canUndo.value"
+                    :title="$t('develop.historyHint')"
+                    :aria-label="$t('develop.undo')"
+                    @click.stop="undo"
+                >{{ $t('develop.undo') }}</button>
+                <button
+                    type="button"
+                    class="btn btn-ghost btn-xs text-base-content/60 hover:text-base-content disabled:text-base-content/30"
+                    data-testid="develop-redo"
+                    :disabled="!develop.canRedo.value"
+                    :title="$t('develop.historyHint')"
+                    :aria-label="$t('develop.redo')"
+                    @click.stop="redo"
+                >{{ $t('develop.redo') }}</button>
                 <TButton
                     :icon="IconClose"
                     :tooltip="$t('msgbox.close')"
@@ -178,65 +272,140 @@ onBeforeUnmount(() => {
                 data-testid="develop-open-error"
             >{{ develop.openError.value }}</div>
 
-            <!-- Controls -->
-            <template v-for="field in CONTROL_FIELDS" :key="field">
-                <div
-                    v-if="field === 'temperature'"
-                    class="border-t border-base-content/5 px-1 pt-2 pb-0.5"
-                >
-                    <span class="font-bold uppercase text-[11px] tracking-wide text-base-content/40">
-                        {{ $t('develop.whiteBalance') }}
-                    </span>
+            <!-- Histogram of the displayed generation -->
+            <div class="px-1 pt-1">
+                <div class="text-[10px] uppercase tracking-wide text-base-content/40 mb-0.5">
+                    {{ $t('develop.histogram') }}
                 </div>
-                <div
-                    class="group/control border-t border-base-content/5 px-1 py-2 space-y-1"
-                    :data-testid="`develop-control-${field}`"
-                >
-                    <div class="flex items-center gap-1 text-xs">
-                        <span
-                            class="font-bold uppercase tracking-wide text-base-content/30 mr-auto cursor-pointer select-none"
-                            :data-testid="`develop-label-${field}`"
-                            :title="$t('develop.reset')"
-                            @dblclick.stop="resetField(field)"
-                        >{{ $t(labelKey(field)) }}</span>
-                        <button
-                            type="button"
-                            class="btn btn-ghost btn-xs text-base-content/50 hover:text-base-content"
-                            :data-testid="`develop-reset-${field}`"
-                            :title="$t('develop.reset')"
-                            :aria-label="$t('develop.reset')"
-                            @click.stop="resetField(field)"
-                        >
-                            <IconRestore class="w-3 h-3" />
-                        </button>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <input
-                            type="range"
-                            class="range range-primary range-xs flex-1"
-                            :min="rangeFor(field).min"
-                            :max="rangeFor(field).max"
-                            :step="rangeFor(field).step"
-                            :value="controlValues[field]"
-                            :data-testid="`develop-slider-${field}`"
-                            :aria-label="$t(labelKey(field))"
-                            @input="onSliderInput(field, $event)"
-                        />
-                        <input
-                            type="number"
-                            class="input input-xs input-bordered w-16 text-xs tabular-nums"
-                            :min="rangeFor(field).min"
-                            :max="rangeFor(field).max"
-                            :step="rangeFor(field).step"
-                            :value="formatValue(field)"
-                            :data-testid="`develop-input-${field}`"
-                            :aria-label="$t(labelKey(field))"
-                            @keydown="onNumericKeydown(field, $event)"
-                            @change="onNumericChange(field, $event)"
-                        />
-                    </div>
+                <ImageHistogram
+                    :source="histogramSource"
+                    :renderer-pixels="histogramPixels"
+                />
+            </div>
+
+            <!-- First-release global sections -->
+            <DevelopSection
+                v-for="section in DEVELOP_SECTIONS"
+                :key="section.id"
+                :section-id="section.id"
+                :label-key="section.labelKey"
+                :visible="sectionVisible(section.id)"
+                :expanded="expandedSections[section.id]"
+                @toggle-expand="onToggleExpand(section.id)"
+                @toggle-visible="(value) => onToggleVisible(section.id, value)"
+                @reset="onResetSection(section.id)"
+            >
+                <!-- Curves section: dedicated editor -->
+                <DevelopCurveEditor v-if="section.id === 'curves'" />
+
+                <!-- Scalar sections: control groups -->
+                <div v-else class="space-y-0.5">
+                    <template v-for="group in groupsBySection[section.id]" :key="group.id">
+                        <!-- HSL: channel selector + selected channel's components -->
+                        <div v-if="group.id === 'hsl'" class="px-1 pt-2">
+                            <div class="text-[10px] font-bold uppercase tracking-wide text-base-content/40 mb-1">
+                                {{ $t(group.labelKey) }}
+                            </div>
+                            <div class="flex items-center gap-0.5 mb-1">
+                                <button
+                                    v-for="channel in ['reds','oranges','yellows','greens','aquas','blues','purples','magentas']"
+                                    :key="channel"
+                                    type="button"
+                                    class="btn btn-ghost btn-xs capitalize"
+                                    :class="selectedHslChannel === channel ? 'text-primary' : 'text-base-content/50'"
+                                    :data-testid="`develop-hsl-channel-${channel}`"
+                                    :aria-label="$t('develop.hslChannels.' + channel)"
+                                    :aria-pressed="selectedHslChannel === channel ? 'true' : 'false'"
+                                    @click.stop="selectedHslChannel = channel"
+                                >{{ $t('develop.hslChannels.' + channel) }}</button>
+                            </div>
+                            <DevelopSliderControl
+                                v-for="param in hslChannelParams(selectedHslChannel)"
+                                :key="param.path"
+                                v-bind="sliderProps(param)"
+                                @live="(value) => onSliderLive(param.path, value)"
+                                @settle="onSliderSettle"
+                                @commit="(value) => onSliderCommit(param.path, value)"
+                                @reset="onSliderReset(param.path)"
+                            />
+                        </div>
+
+                        <!-- Color grading: zone selector + selected zone + balance/blending -->
+                        <div v-else-if="group.id === 'colorGrading'" class="px-1 pt-2">
+                            <div class="text-[10px] font-bold uppercase tracking-wide text-base-content/40 mb-1">
+                                {{ $t(group.labelKey) }}
+                            </div>
+                            <div class="flex items-center gap-0.5 mb-1">
+                                <button
+                                    v-for="zone in ['global','shadows','midtones','highlights']"
+                                    :key="zone"
+                                    type="button"
+                                    class="btn btn-ghost btn-xs capitalize"
+                                    :class="selectedGradingZone === zone ? 'text-primary' : 'text-base-content/50'"
+                                    :data-testid="`develop-grading-zone-${zone}`"
+                                    :aria-label="$t('develop.gradingZones.' + zone)"
+                                    :aria-pressed="selectedGradingZone === zone ? 'true' : 'false'"
+                                    @click.stop="selectedGradingZone = zone"
+                                >{{ $t('develop.gradingZones.' + zone) }}</button>
+                            </div>
+                            <DevelopSliderControl
+                                v-for="param in gradingZoneParams(selectedGradingZone)"
+                                :key="param.path"
+                                v-bind="sliderProps(param)"
+                                @live="(value) => onSliderLive(param.path, value)"
+                                @settle="onSliderSettle"
+                                @commit="(value) => onSliderCommit(param.path, value)"
+                                @reset="onSliderReset(param.path)"
+                            />
+                            <DevelopSliderControl
+                                v-for="param in gradingCommonParams()"
+                                :key="param.path"
+                                v-bind="sliderProps(param)"
+                                @live="(value) => onSliderLive(param.path, value)"
+                                @settle="onSliderSettle"
+                                @commit="(value) => onSliderCommit(param.path, value)"
+                                @reset="onSliderReset(param.path)"
+                            />
+                        </div>
+
+                        <!-- Regular slider groups -->
+                        <div v-else>
+                            <div class="px-1 pt-2 text-[10px] font-bold uppercase tracking-wide text-base-content/40">
+                                {{ $t(group.labelKey) }}
+                            </div>
+                            <DevelopSliderControl
+                                v-for="param in group.params"
+                                :key="param.path"
+                                v-bind="sliderProps(param)"
+                                @live="(value) => onSliderLive(param.path, value)"
+                                @settle="onSliderSettle"
+                                @commit="(value) => onSliderCommit(param.path, value)"
+                                @reset="onSliderReset(param.path)"
+                            />
+                        </div>
+
+                        <!-- Tone mapper select closes the basic section -->
+                        <div v-if="section.id === 'basic' && group.id === 'tone'" class="px-1 py-2">
+                            <label class="text-xs font-bold uppercase tracking-wide text-base-content/30 block mb-1">
+                                {{ $t(BASIC_TONE_MAPPER_CONTROL.labelKey) }}
+                            </label>
+                            <select
+                                class="select select-xs w-full"
+                                data-testid="develop-tonemapper"
+                                :aria-label="$t(BASIC_TONE_MAPPER_CONTROL.labelKey)"
+                                :value="develop.recipe.value?.toneMapper || 'basic'"
+                                @change="onToneMapperChange"
+                            >
+                                <option
+                                    v-for="option in BASIC_TONE_MAPPER_CONTROL.options"
+                                    :key="option.value"
+                                    :value="option.value"
+                                >{{ $t(option.labelKey) }}</option>
+                            </select>
+                        </div>
+                    </template>
                 </div>
-            </template>
+            </DevelopSection>
 
             <!-- Reset all -->
             <div class="border-t border-base-content/5 px-1 py-2">
@@ -246,7 +415,6 @@ onBeforeUnmount(() => {
                     data-testid="develop-reset-all"
                     @click.stop="resetAll"
                 >
-                    <IconRestore class="w-3 h-3" />
                     {{ $t('develop.resetAll') }}
                 </button>
             </div>

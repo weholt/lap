@@ -1235,7 +1235,12 @@
       "group_raw_jpeg_pairs_hint": "Afficher les fichiers RAW et JPEG/HEIC correspondants comme un seul élément",
       "small_file_filter": "Filtre des petits fichiers",
       "small_file_filter_hint": "Masque les fichiers lorsque leur largeur et leur hauteur sont inférieures à la taille choisie",
-      "small_file_filter_options": ["Désactivé", "160 px", "320 px", "640 px"],
+      "small_file_filter_options": [
+        "Désactivé",
+        "160 px",
+        "320 px",
+        "640 px"
+      ],
       "section_sorting": "Tri",
       "folder_sort": "Dossiers",
       "folder_sort_hint": "Ordre de tri des dossiers affichés sous les albums",
@@ -1630,6 +1635,119 @@
       "saved": "Enregistré",
       "conflict": "Conflit",
       "failed": "Échec de l'enregistrement"
+    },
+    "undo": "Annuler",
+    "redo": "Rétablir",
+    "historyHint": "Uniquement pour cette session de développement — l'historique n'est pas conservé après la fermeture de Lap ou le changement de photo.",
+    "histogram": "Histogramme",
+    "bypassSection": "Activer la section {section}",
+    "resetSection": "Réinitialiser la section {section}",
+    "sectionAria": "Déplier ou replier la section {section}",
+    "sections": {
+      "basic": "Lumière",
+      "curves": "Courbes",
+      "color": "Couleur",
+      "details": "Détail",
+      "effects": "Effets"
+    },
+    "groups": {
+      "tone": "Tonalité",
+      "color": "Couleur",
+      "hsl": "TSL / Mixeur de couleur",
+      "colorGrading": "Étalonnage",
+      "calibration": "Calibration",
+      "detail": "Détail",
+      "sharpening": "Netteté et bruit",
+      "chromaticAberration": "Franges chromatiques",
+      "grain": "Grain",
+      "vignette": "Vignettage",
+      "light": "Lumière"
+    },
+    "controls": {
+      "brightness": "Luminosité",
+      "contrast": "Contraste",
+      "highlights": "Hautes lumières",
+      "shadows": "Ombres",
+      "whites": "Blancs",
+      "blacks": "Noirs",
+      "vibrance": "Vibrance",
+      "saturation": "Saturation",
+      "hue": "Teinte",
+      "balance": "Équilibre",
+      "blending": "Fusion",
+      "clarity": "Clarté",
+      "structure": "Structure",
+      "dehaze": "Suppression du voile",
+      "center": "Centre",
+      "sharpness": "Netteté",
+      "sharpnessThreshold": "Seuil",
+      "lumaNoiseReduction": "Bruit de luminance",
+      "colorNoiseReduction": "Bruit de couleur",
+      "chromaticAberrationRedCyan": "Rouge/cyan",
+      "chromaticAberrationBlueYellow": "Bleu/jaune",
+      "grainAmount": "Quantité",
+      "grainSize": "Taille",
+      "grainRoughness": "Rugosité",
+      "vignetteAmount": "Quantité",
+      "vignetteMidpoint": "Point médian",
+      "vignetteRoundness": "Arrondi",
+      "vignetteFeather": "Progressivité",
+      "glowAmount": "Lueur",
+      "halationAmount": "Halation",
+      "flareAmount": "Éblouissement",
+      "toneMapper": "Mappage tonal"
+    },
+    "toneMapper": {
+      "basic": "Basique",
+      "agx": "AgX"
+    },
+    "hslChannels": {
+      "reds": "Rouges",
+      "oranges": "Oranges",
+      "yellows": "Jaunes",
+      "greens": "Verts",
+      "aquas": "Cyans",
+      "blues": "Bleus",
+      "purples": "Violets",
+      "magentas": "Magents"
+    },
+    "hslComponents": {
+      "hue": "Teinte",
+      "saturation": "Saturation",
+      "luminance": "Luminance"
+    },
+    "gradingZones": {
+      "global": "Globale",
+      "shadows": "Ombres",
+      "midtones": "Tons moyens",
+      "highlights": "Hautes lumières"
+    },
+    "calibration": {
+      "shadowsTint": "Teinte des ombres",
+      "hue": "Teinte",
+      "saturation": "Saturation"
+    },
+    "curve": {
+      "point": "Points",
+      "parametric": "Paramétrique",
+      "pointLabel": "Courbe par points",
+      "paramLabel": "Courbe paramétrique",
+      "pointAria": "Point de courbe {index} sur {total}, canal {channel}",
+      "undoHint": "Faites glisser les points ou cliquez sur le graphique pour en ajouter ; sélectionnez un point et utilisez les flèches (Maj pour un pas plus grand), Suppr le retire. L'annulation ne concerne que cette session.",
+      "channels": {
+        "luma": "Luminance",
+        "red": "Rouge",
+        "green": "Vert",
+        "blue": "Bleu"
+      },
+      "params": {
+        "whiteLevel": "Point blanc",
+        "highlights": "Hautes lumières",
+        "lights": "Tons clairs",
+        "darks": "Tons foncés",
+        "shadows": "Ombres",
+        "blackLevel": "Point noir"
+      }
     }
   }
 }

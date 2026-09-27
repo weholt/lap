@@ -1235,7 +1235,12 @@
       "group_raw_jpeg_pairs_hint": "Show matching RAW and JPEG/HEIC files as a single item",
       "small_file_filter": "Small file filter",
       "small_file_filter_hint": "Hide files when both width and height are below the selected size",
-      "small_file_filter_options": ["Off", "160 px", "320 px", "640 px"],
+      "small_file_filter_options": [
+        "Off",
+        "160 px",
+        "320 px",
+        "640 px"
+      ],
       "section_sorting": "Sorting",
       "folder_sort": "Folders",
       "folder_sort_hint": "Sort order for folders shown under albums",
@@ -1630,6 +1635,119 @@
       "saved": "Saved",
       "conflict": "Conflict",
       "failed": "Save failed"
+    },
+    "undo": "Undo",
+    "redo": "Redo",
+    "historyHint": "Undo/redo for this develop session only — history is not kept after closing Lap or switching photos.",
+    "histogram": "Histogram",
+    "bypassSection": "Enable {section} section",
+    "resetSection": "Reset {section} section",
+    "sectionAria": "Toggle {section} section",
+    "sections": {
+      "basic": "Light",
+      "curves": "Curves",
+      "color": "Color",
+      "details": "Detail",
+      "effects": "Effects"
+    },
+    "groups": {
+      "tone": "Tone",
+      "color": "Color",
+      "hsl": "HSL / Color Mixer",
+      "colorGrading": "Color Grading",
+      "calibration": "Calibration",
+      "detail": "Detail",
+      "sharpening": "Sharpening & Noise",
+      "chromaticAberration": "Chromatic Aberration",
+      "grain": "Grain",
+      "vignette": "Vignette",
+      "light": "Glow & Flare"
+    },
+    "controls": {
+      "brightness": "Brightness",
+      "contrast": "Contrast",
+      "highlights": "Highlights",
+      "shadows": "Shadows",
+      "whites": "Whites",
+      "blacks": "Blacks",
+      "vibrance": "Vibrance",
+      "saturation": "Saturation",
+      "hue": "Hue",
+      "balance": "Balance",
+      "blending": "Blending",
+      "clarity": "Clarity",
+      "structure": "Structure",
+      "dehaze": "Dehaze",
+      "center": "Center",
+      "sharpness": "Sharpness",
+      "sharpnessThreshold": "Threshold",
+      "lumaNoiseReduction": "Luminance NR",
+      "colorNoiseReduction": "Color NR",
+      "chromaticAberrationRedCyan": "Red/Cyan",
+      "chromaticAberrationBlueYellow": "Blue/Yellow",
+      "grainAmount": "Amount",
+      "grainSize": "Size",
+      "grainRoughness": "Roughness",
+      "vignetteAmount": "Amount",
+      "vignetteMidpoint": "Midpoint",
+      "vignetteRoundness": "Roundness",
+      "vignetteFeather": "Feather",
+      "glowAmount": "Glow",
+      "halationAmount": "Halation",
+      "flareAmount": "Flare",
+      "toneMapper": "Tone Mapper"
+    },
+    "toneMapper": {
+      "basic": "Basic",
+      "agx": "AgX"
+    },
+    "hslChannels": {
+      "reds": "Reds",
+      "oranges": "Oranges",
+      "yellows": "Yellows",
+      "greens": "Greens",
+      "aquas": "Aquas",
+      "blues": "Blues",
+      "purples": "Purples",
+      "magentas": "Magentas"
+    },
+    "hslComponents": {
+      "hue": "Hue",
+      "saturation": "Saturation",
+      "luminance": "Luminance"
+    },
+    "gradingZones": {
+      "global": "Global",
+      "shadows": "Shadows",
+      "midtones": "Midtones",
+      "highlights": "Highlights"
+    },
+    "calibration": {
+      "shadowsTint": "Shadows Tint",
+      "hue": "Hue",
+      "saturation": "Saturation"
+    },
+    "curve": {
+      "point": "Point",
+      "parametric": "Parametric",
+      "pointLabel": "Point curve",
+      "paramLabel": "Parametric curve",
+      "pointAria": "Curve point {index} of {total}, {channel} channel",
+      "undoHint": "Drag points or click the graph to add one; focus a point and use the arrow keys (Shift for larger steps), Delete removes it. Undo applies to this session only.",
+      "channels": {
+        "luma": "Luma",
+        "red": "Red",
+        "green": "Green",
+        "blue": "Blue"
+      },
+      "params": {
+        "whiteLevel": "White Level",
+        "highlights": "Highlights",
+        "lights": "Lights",
+        "darks": "Darks",
+        "shadows": "Shadows",
+        "blackLevel": "Black Level"
+      }
     }
   }
 }
