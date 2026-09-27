@@ -153,6 +153,11 @@ fn get_migrations() -> Vec<Migration> {
             description: "Add tag groups and persistent ordering",
             sql: "",
         },
+        Migration {
+            version: 18,
+            description: "Create develop recipe projection table",
+            sql: "",
+        },
     ]
 }
 
@@ -470,6 +475,8 @@ pub fn check_and_migrate(conn: &Connection) -> Result<(), String> {
                 }
             } else if migration.version == 17 {
                 migrate_tag_groups(conn)?;
+            } else if migration.version == 18 {
+                ensure_develop_projection(conn)?;
             } else if !migration.sql.trim().is_empty() {
                 conn.execute_batch(migration.sql)
                     .map_err(|e| format!("Migration {} failed: {}", migration.version, e))?;
@@ -493,7 +500,7 @@ pub fn check_and_migrate(conn: &Connection) -> Result<(), String> {
 }
 
 // Idempotent and atomic, including when a previous migration run was interrupted.
-pub(crate) fn migrate_tag_groups(conn: &Connection) -> Result<(), String> {
+pub fn migrate_tag_groups(conn: &Connection) -> Result<(), String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     tx.execute_batch("CREATE TABLE IF NOT EXISTS atag_groups (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -525,4 +532,32 @@ pub(crate) fn migrate_tag_groups(conn: &Connection) -> Result<(), String> {
         WHEN NEW.group_id IS NULL BEGIN SELECT RAISE(ABORT, 'Tag group is required'); END;")
         .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())
+}
+
+pub fn ensure_develop_projection(conn: &Connection) -> Result<(), String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Develop projection migration failed starting transaction: {}", e))?;
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS adevelop_recipes (
+            sidecar_path TEXT NOT NULL,
+            variant_id TEXT NOT NULL,
+            file_id INTEGER,
+            revision INTEGER NOT NULL,
+            schema_version INTEGER NOT NULL,
+            source_fingerprint TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            is_edited INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (sidecar_path, variant_id),
+            FOREIGN KEY (file_id) REFERENCES afiles(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_adevelop_recipes_file_id
+            ON adevelop_recipes(file_id);
+        CREATE INDEX IF NOT EXISTS idx_adevelop_recipes_variant
+            ON adevelop_recipes(variant_id);",
+    )
+    .map_err(|e| format!("Develop projection migration failed: {}", e))?;
+    tx.commit()
+        .map_err(|e| format!("Develop projection migration failed committing transaction: {}", e))
 }

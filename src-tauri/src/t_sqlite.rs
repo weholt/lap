@@ -9418,13 +9418,42 @@ pub fn create_db() -> Result<(), String> {
     // Catch page-level corruption that surfaces while the migrations open the db read-write, so
     // the flag is raised and the UI shows the switch-library banner instead of raw errors.
     match create_db_internal() {
-        Ok(()) => Ok(()),
+        Ok(()) => {
+            reconcile_develop_recipes_at_startup();
+            Ok(())
+        }
         Err(err) if is_corruption_error(&err) => {
             eprintln!("create_db: database corruption detected for '{}': {}", path, err);
             mark_db_corrupted(&path);
             Err(DB_CORRUPTED_MSG.to_string())
         }
         Err(err) => Err(err),
+    }
+}
+
+/// Reconcile sidecar-ahead-of-catalog state for the current library's albums
+/// after the database (and migration 18) are ready. Non-fatal: a failed
+/// reconciliation never blocks startup and never touches durable sidecars.
+fn reconcile_develop_recipes_at_startup() {
+    match open_conn() {
+        Ok(conn) => {
+            let repo = lap_lib::develop::RecipeRepository::lap_default();
+            match repo.reconcile_albums_at_startup(&conn) {
+                Ok(summary) => {
+                    if summary.sidecars_seen > 0 || !summary.errors.is_empty() {
+                        println!(
+                            "develop recipe reconciliation: {} sidecars, {} projected, {} removed, {} errors",
+                            summary.sidecars_seen,
+                            summary.projected,
+                            summary.removed_missing,
+                            summary.errors.len()
+                        );
+                    }
+                }
+                Err(e) => eprintln!("develop recipe reconciliation failed (non-fatal): {}", e),
+            }
+        }
+        Err(e) => eprintln!("develop recipe reconciliation skipped (non-fatal): {}", e),
     }
 }
 
@@ -9903,7 +9932,7 @@ fn create_db_internal() -> Result<(), String> {
     .map_err(|e| e.to_string())?;
 
     // Run schema migrations after base tables are ensured.
-    crate::t_migration::check_and_migrate(&conn)?;
+    lap_lib::t_migration::check_and_migrate(&conn)?;
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_afiles_content_identifier ON afiles(content_identifier)",
         [],

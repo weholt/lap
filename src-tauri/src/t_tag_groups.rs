@@ -166,13 +166,13 @@ mod tests {
             CREATE TABLE afile_tags(file_id INTEGER, tag_id INTEGER REFERENCES atags(id), PRIMARY KEY(file_id, tag_id));
             INSERT INTO atags VALUES (10, 'old'), (11, 'second');
             INSERT INTO afile_tags VALUES(100, 10), (100, 11);").unwrap();
-        crate::t_migration::migrate_tag_groups(&conn).unwrap();
+        lap_lib::t_migration::migrate_tag_groups(&conn).unwrap();
         conn
     }
     #[test]
     fn migration_preserves_tags_and_is_repeatable() {
         let conn = database();
-        crate::t_migration::migrate_tag_groups(&conn).unwrap();
+        lap_lib::t_migration::migrate_tag_groups(&conn).unwrap();
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM atags t JOIN atag_groups g ON g.id = t.group_id WHERE g.is_default = 1", [], |r| r.get(0)).unwrap();
         assert_eq!(count, 2);
         assert_eq!(
@@ -253,14 +253,14 @@ mod tests {
     }
 
     #[test]
-    fn version_17_creates_groups_with_persistent_ordering() {
+    fn latest_migration_creates_groups_with_persistent_ordering() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("CREATE TABLE atags(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE); PRAGMA user_version = 16;").unwrap();
-        crate::t_migration::check_and_migrate(&conn).unwrap();
+        lap_lib::t_migration::check_and_migrate(&conn).unwrap();
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
         let a = save_on(&conn, None, "A").unwrap();
         let b = save_on(&conn, None, "B").unwrap();
         let default: i64 = conn
@@ -269,7 +269,7 @@ mod tests {
             })
             .unwrap();
         reorder_on(&conn, &[default, b, a]).unwrap();
-        crate::t_migration::check_and_migrate(&conn).unwrap();
+        lap_lib::t_migration::check_and_migrate(&conn).unwrap();
         let ids = conn
             .prepare("SELECT id FROM atag_groups ORDER BY sort_order")
             .unwrap()

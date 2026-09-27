@@ -30,7 +30,6 @@ mod t_jxl;
 mod t_lens;
 mod t_libraw;
 mod t_menu;
-mod t_migration;
 mod t_tag_groups;
 mod t_motion_photo;
 mod t_pasteboard;
