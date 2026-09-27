@@ -13,6 +13,7 @@ use crate::t_apple_sidecar::{
     delete_apple_aae_sidecars, preflight_rename_plan, resolve_group_primary_target,
     rollback_copied_transfers, rollback_rename_changes, rollback_renamed_sidecars,
 };
+use lap_lib::develop::asset_operations as asset_ops;
 use crate::t_similar;
 use crate::t_sqlite::{
     ACamera, ACollection, ACollectionOrder, ACollectionSelectionCount, AFile, AFileCollection, AFolder, ALens, ALocation, ATag, ATagFileState,
@@ -348,6 +349,95 @@ fn revalidate_db_after_path_change() {
     t_sqlite::clear_conn_pool();
     if let Err(e) = t_sqlite::create_db() {
         eprintln!("db storage dir changed: post-move create_db failed: {}", e);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Develop recipe companions for grouped-asset operations (lap-487).
+//
+// Every grouped-asset mutation below treats `filename.ext.lapedit.json`
+// sidecars as part of the asset group (docs/raw-development/spec.md A8):
+// rename/move keep identity, copy forks identity, trash/restore keep the
+// group together, and the rebuildable catalog projection is maintained
+// best-effort after each successful operation (startup/rescan reconciliation
+// heals anything it missed).
+// ----------------------------------------------------------------------------
+
+/// Plans sidecar companion moves for grouped rename/move members: each
+/// member's sidecar is name-anchored to that member only (a same-basename
+/// RAW/JPEG pair never swaps recipes).
+fn develop_companion_moves(members: &[(PathBuf, PathBuf)]) -> Vec<asset_ops::CompanionMove> {
+    members
+        .iter()
+        .filter_map(|(old, new)| asset_ops::companion_move(old, new))
+        .collect()
+}
+
+/// Rolls a companion journal back and reports steps that could not be
+/// reverted (explicit, never silently dropped).
+fn rollback_develop_journal(journal: asset_ops::OperationJournal, context: &str) {
+    let summary = journal.rollback();
+    if summary.reverted > 0 {
+        eprintln!(
+            "{context}: rolled back {} develop recipe sidecar step(s)",
+            summary.reverted
+        );
+    }
+    for (step, error) in summary.failed {
+        eprintln!("{context}: develop recipe rollback step {step:?} failed: {error}");
+    }
+}
+
+/// Best-effort projection maintenance: the catalog projection is rebuildable,
+/// so a failure here is logged and healed by reconciliation; it never fails
+/// the already-successful file operation.
+fn migrate_develop_projection_logged(old: &Path, new: &Path) {
+    let Ok(conn) = t_sqlite::open_conn() else {
+        return;
+    };
+    if let Err(error) = asset_ops::migrate_companion_projection(&conn, old, new) {
+        eprintln!(
+            "develop projection migration failed for '{}': {error}",
+            old.display()
+        );
+    }
+}
+
+fn delete_develop_projection_logged(sidecars: &[PathBuf]) {
+    if sidecars.is_empty() {
+        return;
+    }
+    let Ok(conn) = t_sqlite::open_conn() else {
+        return;
+    };
+    if let Err(error) = asset_ops::delete_companion_projection(&conn, sidecars) {
+        eprintln!("develop projection cleanup failed after delete: {error}");
+    }
+}
+
+fn migrate_develop_projection_folder_logged(old_prefix: &Path, new_prefix: &Path) {
+    let Ok(conn) = t_sqlite::open_conn() else {
+        return;
+    };
+    if let Err(error) =
+        asset_ops::migrate_companion_projection_folder(&conn, old_prefix, new_prefix)
+    {
+        eprintln!(
+            "develop projection folder migration failed for '{}': {error}",
+            old_prefix.display()
+        );
+    }
+}
+
+fn delete_develop_projection_folder_logged(folder_prefix: &Path) {
+    let Ok(conn) = t_sqlite::open_conn() else {
+        return;
+    };
+    if let Err(error) = asset_ops::delete_companion_projection_folder(&conn, folder_prefix) {
+        eprintln!(
+            "develop projection folder cleanup failed for '{}': {error}",
+            folder_prefix.display()
+        );
     }
 }
 
@@ -747,6 +837,9 @@ pub fn rename_folder(folder_path: &str, new_folder_name: &str) -> Option<String>
                 eprintln!("Error while renaming root folder in DB: {}", e);
                 return None;
             }
+            // Recipe sidecars traveled with the directory; keep the
+            // projection paths aligned (lap-487).
+            migrate_develop_projection_folder_logged(Path::new(folder_path), Path::new(&new_path));
             Some(new_path)
         }
         None => None,
@@ -788,6 +881,9 @@ pub fn move_folder(
             None => format!("Error while moving folder in DB: {}", error),
         });
     }
+    // Recipe sidecars traveled with the directory; keep the projection paths
+    // aligned (lap-487).
+    migrate_develop_projection_folder_logged(Path::new(folder_path), Path::new(&new_path));
     if let Some(old_album_id) = old_album_id {
         AThumb::relocate_for_thumb_keys(&moved_thumb_keys, old_album_id, new_album_id);
     }
@@ -818,6 +914,8 @@ pub fn move_folder_outside_library(
         });
     }
 
+    // The folder left the library together with its recipe sidecars (lap-487).
+    delete_develop_projection_folder_logged(Path::new(folder_path));
     transfer.finalize()
 }
 
@@ -835,6 +933,19 @@ pub fn copy_folder(
         t_utils::FileConflictPolicy::from_str(conflict_policy),
     )?;
     let new_path = transfer.path.clone();
+    // Recipe sidecars were copied verbatim with the directory; each copy gets
+    // a NEW asset identity carrying the same initial recipe (lap-487). A fork
+    // failure rolls the whole folder copy back instead of leaving duplicated
+    // identities behind.
+    if let Err(error) = asset_ops::fork_copied_folder_sidecars(Path::new(&new_path)) {
+        let rollback_error = transfer.rollback_copy().err();
+        return Err(match rollback_error {
+            Some(rollback_error) => format!(
+                "Failed to fork copied develop recipes: {error}; rollback also failed: {rollback_error}"
+            ),
+            None => format!("Failed to fork copied develop recipes: {error}"),
+        });
+    }
     if new_album_id > 0 {
         let db_result = if conflict_policy == "replace" {
             AFolder::replace_copied_folder(new_album_id, &new_path)
@@ -864,8 +975,11 @@ pub fn delete_folder(folder_path: &str) -> Result<usize, String> {
     }
 
     // delete the folder and all children from db
-    AFolder::delete_folder(folder_path)
-        .map_err(|e| format!("Error while deleting folder from DB: {}", e))
+    let deleted = AFolder::delete_folder(folder_path)
+        .map_err(|e| format!("Error while deleting folder from DB: {}", e))?;
+    // Recipe sidecars were trashed with the folder (lap-487).
+    delete_develop_projection_folder_logged(Path::new(folder_path));
+    Ok(deleted)
 }
 
 /// permanently delete a folder (skip trash)
@@ -873,8 +987,10 @@ pub fn delete_folder(folder_path: &str) -> Result<usize, String> {
 pub fn delete_folder_permanently(folder_path: &str) -> Result<usize, String> {
     t_utils::delete_folder_permanently(folder_path)?;
 
-    AFolder::delete_folder(folder_path)
-        .map_err(|e| format!("Error while deleting folder from DB: {}", e))
+    let deleted = AFolder::delete_folder(folder_path)
+        .map_err(|e| format!("Error while deleting folder from DB: {}", e))?;
+    delete_develop_projection_folder_logged(Path::new(folder_path));
+    Ok(deleted)
 }
 
 /// reveal a file or folder in the file explorer (or finder)
@@ -1389,6 +1505,8 @@ pub async fn sync_album_folder_mtimes(
     folder_path: String,
     group_raw_jpeg_pairs: bool,
 ) -> Result<crate::t_utils::FolderMtimeSyncResult, String> {
+    let reconcile_folder_path = folder_path.clone();
+    let reconciled_folder_for_log = folder_path.clone();
     let sync_app_handle = app_handle.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         crate::t_utils::sync_single_folder(
@@ -1401,6 +1519,56 @@ pub async fn sync_album_folder_mtimes(
     })
     .await
     .map_err(|e| format!("folder sync task failed: {}", e))??;
+
+    // External rescan reconciliation (lap-487 / spec A8): re-associate develop
+    // recipes with the catalog after external moves/changes. Non-fatal:
+    // findings (missing media, uncataloged media, ambiguous matches) are
+    // reported through the log so they stay visible.
+    let reconcile = tauri::async_runtime::spawn_blocking(
+        move || -> Result<lap_lib::develop::asset_operations::AssetReconcileSummary, String> {
+            let conn = t_sqlite::open_conn().map_err(|e| e.to_string())?;
+            let repo = lap_lib::develop::RecipeRepository::lap_default();
+            Ok(lap_lib::develop::asset_operations::reconcile_folder(
+                &conn,
+                &repo,
+                Path::new(&reconcile_folder_path),
+            ))
+        },
+    )
+    .await;
+    match reconcile {
+        Ok(Ok(summary)) => {
+            if summary.sidecars_seen > 0
+                || !summary.findings.is_empty()
+                || !summary.errors.is_empty()
+            {
+                println!(
+                    "develop recipe rescan reconciliation for '{}': {} sidecars, {} projected, {} findings, {} errors",
+                    reconciled_folder_for_log,
+                    summary.sidecars_seen,
+                    summary.projected,
+                    summary.findings.len(),
+                    summary.errors.len()
+                );
+            }
+            for (path, finding) in &summary.findings {
+                eprintln!(
+                    "develop recipe rescan finding at {}: {finding:?}",
+                    path.display()
+                );
+            }
+            for (path, error) in &summary.errors {
+                eprintln!("develop recipe rescan error at {}: {error}", path.display());
+            }
+        }
+        Ok(Err(error)) => {
+            eprintln!("develop recipe rescan reconciliation failed: {error}")
+        }
+        Err(error) => {
+            eprintln!("develop recipe rescan reconciliation task failed: {error}")
+        }
+    }
+
     if !result.folder_path_migrations.is_empty() {
         let _ = app_handle.emit(
             "album-folder-paths-migrated",
@@ -1469,6 +1637,18 @@ pub fn rename_file(file_id: i64, file_path: &str, new_name: &str) -> Option<Stri
     }
     let original_db_names = collect_original_rename_db_names(file_id, &sidecar_rename_plan);
 
+    // Develop recipe companions (lap-487): each group member's sidecar is
+    // renamed alongside the member so the recipe keeps its identity.
+    let primary_member_target = Path::new(file_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(new_name);
+    let mut develop_members = vec![(PathBuf::from(file_path), primary_member_target)];
+    for plan in &sidecar_rename_plan {
+        develop_members.push((plan.old_path.clone(), plan.new_path.clone()));
+    }
+    let develop_moves = develop_companion_moves(&develop_members);
+
     let mut renamed_sidecars: Vec<(PathBuf, PathBuf)> = Vec::new();
     for plan in &sidecar_rename_plan {
         if let Err(error) = fs::rename(&plan.old_path, &plan.new_path) {
@@ -1482,6 +1662,13 @@ pub fn rename_file(file_id: i64, file_path: &str, new_name: &str) -> Option<Stri
             return None;
         }
         renamed_sidecars.push((plan.old_path.clone(), plan.new_path.clone()));
+    }
+
+    let mut develop_journal = asset_ops::OperationJournal::new();
+    if let Err(error) = asset_ops::execute_companion_moves(&mut develop_journal, &develop_moves) {
+        eprintln!("Failed to rename develop recipe sidecar: {error}");
+        rollback_renamed_sidecars(renamed_sidecars);
+        return None;
     }
 
     match t_utils::rename_file(file_path, new_name) {
@@ -1502,6 +1689,7 @@ pub fn rename_file(file_id: i64, file_path: &str, new_name: &str) -> Option<Stri
             }
             if let Err(e) = AFile::batch_update_names(&db_updates) {
                 eprintln!("Error while renaming file group in DB: {}", e);
+                rollback_develop_journal(develop_journal, "rename_file");
                 rollback_rename_changes(
                     file_path,
                     Some(&new_file_path),
@@ -1510,9 +1698,14 @@ pub fn rename_file(file_id: i64, file_path: &str, new_name: &str) -> Option<Stri
                 );
                 return None;
             }
+            for companion in &develop_moves {
+                migrate_develop_projection_logged(&companion.from, &companion.to);
+            }
+            let _ = develop_journal.commit();
             Some(new_file_path)
         }
         None => {
+            rollback_develop_journal(develop_journal, "rename_file");
             rollback_renamed_sidecars(renamed_sidecars);
             None
         }
@@ -1553,6 +1746,28 @@ pub fn move_file(
         );
     }
 
+    // Develop recipe companions (lap-487): each member's sidecar follows the
+    // member to the resolved destination.
+    let mut develop_members = vec![(PathBuf::from(file_path), primary_target.clone())];
+    for plan in &sidecar_plans {
+        develop_members.push((plan.old_path.clone(), plan.new_path.clone()));
+    }
+    let develop_moves = develop_companion_moves(&develop_members);
+    let mut develop_journal = asset_ops::OperationJournal::new();
+    if policy == t_utils::FileConflictPolicy::Replace {
+        // A replaced destination's recipes are destroyed with the media they
+        // belong to; staged through the journal so a failed operation
+        // restores them.
+        for companion in &develop_moves {
+            if companion.to.exists()
+                && let Err(error) = develop_journal.remove_file(&companion.to)
+            {
+                rollback_develop_journal(develop_journal, "move_file");
+                return Err(error.to_string());
+            }
+        }
+    }
+
     let mut component_transfers = Vec::new();
     for plan in &sidecar_plans {
         let source_path = plan.old_path.to_string_lossy().into_owned();
@@ -1561,6 +1776,7 @@ pub fn move_file(
                 component_transfers.push((plan.file_id, plan.old_path.clone(), transfer))
             }
             Err(error) => {
+                rollback_develop_journal(develop_journal, "move_file");
                 for (_, original_path, transfer) in component_transfers {
                     let _ = transfer.rollback_move(&original_path);
                 }
@@ -1569,10 +1785,19 @@ pub fn move_file(
         }
     }
 
+    if let Err(error) = asset_ops::execute_companion_moves(&mut develop_journal, &develop_moves) {
+        rollback_develop_journal(develop_journal, "move_file");
+        for (_, original_path, transfer) in component_transfers {
+            let _ = transfer.rollback_move(&original_path);
+        }
+        return Err(error.to_string());
+    }
+
     let transfer = match t_utils::move_file_to_path_with_policy(file_path, &primary_target, policy)
     {
         Ok(transfer) => transfer,
         Err(error) => {
+            rollback_develop_journal(develop_journal, "move_file");
             for (_, original_path, transfer) in component_transfers {
                 let _ = transfer.rollback_move(&original_path);
             }
@@ -1591,6 +1816,7 @@ pub fn move_file(
         new_folder_id,
     ) {
         let rollback_error = transfer.rollback_move(Path::new(file_path)).err();
+        rollback_develop_journal(develop_journal, "move_file");
         for (_, original_path, transfer) in component_transfers {
             let _ = transfer.rollback_move(&original_path);
         }
@@ -1602,6 +1828,11 @@ pub fn move_file(
             None => format!("Error while moving file group in DB: {}", error),
         });
     }
+
+    for companion in &develop_moves {
+        migrate_develop_projection_logged(&companion.from, &companion.to);
+    }
+    let _ = develop_journal.commit();
 
     if let (Some(old_album_id), Some(new_album_id)) = (old_album_id, new_album_id) {
         let _ = AThumb::relocate_for_file(file_id, old_album_id, new_album_id)
@@ -1632,6 +1863,15 @@ pub fn move_file_outside_library(
     let policy = t_utils::FileConflictPolicy::from_str(conflict_policy);
     let (primary_target, sidecar_plans) =
         resolve_group_primary_target(Some(file_id), file_path, new_folder_path, policy)?;
+
+    // Develop recipe companions (lap-487): the sidecars travel with the group
+    // even though the media leaves the catalog.
+    let mut develop_members = vec![(PathBuf::from(file_path), primary_target.clone())];
+    for plan in &sidecar_plans {
+        develop_members.push((plan.old_path.clone(), plan.new_path.clone()));
+    }
+    let develop_moves = develop_companion_moves(&develop_members);
+
     let mut component_transfers = Vec::new();
     for plan in &sidecar_plans {
         let source_path = plan.old_path.to_string_lossy().into_owned();
@@ -1648,10 +1888,20 @@ pub fn move_file_outside_library(
         }
     }
 
+    let mut develop_journal = asset_ops::OperationJournal::new();
+    if let Err(error) = asset_ops::execute_companion_moves(&mut develop_journal, &develop_moves) {
+        rollback_develop_journal(develop_journal, "move_file_outside_library");
+        for (_, original_path, transfer) in component_transfers {
+            let _ = transfer.rollback_move(&original_path);
+        }
+        return Err(error.to_string());
+    }
+
     let transfer = match t_utils::move_file_to_path_with_policy(file_path, &primary_target, policy)
     {
         Ok(transfer) => transfer,
         Err(error) => {
+            rollback_develop_journal(develop_journal, "move_file_outside_library");
             for (_, original_path, transfer) in component_transfers {
                 let _ = transfer.rollback_move(&original_path);
             }
@@ -1668,6 +1918,7 @@ pub fn move_file_outside_library(
 
     if let Err(error) = AFile::batch_delete(&delete_ids) {
         let rollback_error = transfer.rollback_move(Path::new(file_path)).err();
+        rollback_develop_journal(develop_journal, "move_file_outside_library");
         for (_, original_path, transfer) in component_transfers {
             let _ = transfer.rollback_move(&original_path);
         }
@@ -1679,6 +1930,11 @@ pub fn move_file_outside_library(
             None => format!("Error while removing file from DB: {}", error),
         });
     }
+
+    // The recipes left the catalog together with their media (lap-487).
+    let moved_out_sidecars: Vec<PathBuf> = develop_moves.iter().map(|m| m.from.clone()).collect();
+    delete_develop_projection_logged(&moved_out_sidecars);
+    let _ = develop_journal.commit();
 
     for (_, _, transfer) in component_transfers {
         transfer.finalize()?;
@@ -1696,6 +1952,17 @@ pub fn copy_file(
     let policy = t_utils::FileConflictPolicy::from_str(conflict_policy);
     let (primary_target, sidecar_plans) =
         resolve_group_primary_target(None, file_path, new_folder_path, policy)?;
+
+    // Develop recipe companions (lap-487): a copy creates a NEW asset
+    // identity carrying the same initial recipe; the original sidecar is
+    // never touched.
+    let mut develop_members = vec![(PathBuf::from(file_path), primary_target.clone())];
+    for plan in &sidecar_plans {
+        develop_members.push((plan.old_path.clone(), plan.new_path.clone()));
+    }
+    let mut replace_journal = asset_ops::OperationJournal::new();
+    let mut forked_sidecars: Vec<PathBuf> = Vec::new();
+
     let mut sidecar_transfers = Vec::new();
     for plan in &sidecar_plans {
         let source_path = plan.old_path.to_string_lossy().into_owned();
@@ -1708,18 +1975,60 @@ pub fn copy_file(
         }
     }
 
+    for (source_member, copied_member) in &develop_members {
+        if policy == t_utils::FileConflictPolicy::Replace {
+            // A replaced destination's recipes are destroyed with the media
+            // they belong to; staged so a failed copy restores them.
+            let destination_sidecar = asset_ops::sidecar_path_for(copied_member);
+            if destination_sidecar.exists() {
+                if let Err(error) = replace_journal.remove_file(&destination_sidecar) {
+                    rollback_develop_journal(replace_journal, "copy_file");
+                    for path in &forked_sidecars {
+                        let _ = fs::remove_file(path);
+                    }
+                    rollback_copied_transfers(sidecar_transfers);
+                    return Err(error.to_string());
+                }
+            }
+        }
+        match asset_ops::fork_sidecar_for_copy(
+            source_member,
+            copied_member,
+            &asset_ops::new_copy_asset_id(),
+        ) {
+            Ok(Some(forked)) => forked_sidecars.push(forked.sidecar_path),
+            Ok(None) => {}
+            Err(error) => {
+                rollback_develop_journal(replace_journal, "copy_file");
+                for path in &forked_sidecars {
+                    let _ = fs::remove_file(path);
+                }
+                rollback_copied_transfers(sidecar_transfers);
+                return Err(error.to_string());
+            }
+        }
+    }
+
     let transfer = match t_utils::copy_file_to_path_with_policy(file_path, &primary_target, policy)
     {
         Ok(transfer) => transfer,
         Err(error) => {
+            rollback_develop_journal(replace_journal, "copy_file");
+            for path in &forked_sidecars {
+                let _ = fs::remove_file(path);
+            }
             rollback_copied_transfers(sidecar_transfers);
             return Err(error);
         }
     };
+    let _ = replace_journal.commit();
 
     let copied_file_path = match transfer.finalize() {
         Ok(path) => path,
         Err(error) => {
+            for path in &forked_sidecars {
+                let _ = fs::remove_file(path);
+            }
             rollback_copied_transfers(sidecar_transfers);
             return Err(error);
         }
@@ -2238,8 +2547,34 @@ fn delete_file_group(
         delete_errors.push(format!("Failed to delete Apple sidecar: {}", error));
     }
 
+    // Develop recipe companions (lap-487): the sidecar goes to the same
+    // trash so an OS restore brings the group back together. A failure keeps
+    // the sidecar on disk (no data loss) and is reported explicitly; the
+    // fingerprint check at session open prevents any later wrong association.
+    let mut trashed_recipe_sidecars: Vec<PathBuf> = Vec::new();
+    let mut recipe_members: Vec<&str> = vec![file_path];
+    recipe_members.extend(component_files.iter().filter_map(|c| c.file_path.as_deref()));
+    for member in recipe_members {
+        let result = if permanently {
+            asset_ops::delete_companion_permanently(Path::new(member))
+        } else {
+            asset_ops::trash_companion(Path::new(member))
+        };
+        match result {
+            Ok(true) => trashed_recipe_sidecars.push(asset_ops::sidecar_path_for(Path::new(member))),
+            Ok(false) => {}
+            Err(error) => delete_errors.push(format!(
+                "Failed to delete develop recipe sidecar: {}",
+                error
+            )),
+        }
+    }
+
     AFile::batch_delete(&deleted_file_ids)
         .map_err(|e| format!("Error while deleting removed files from DB: {}", e))?;
+
+    // The trashed recipes are no longer part of the catalog (lap-487).
+    delete_develop_projection_logged(&trashed_recipe_sidecars);
 
     let failed_count = usize::from(!delete_errors.is_empty());
     for error in delete_errors {
@@ -2295,6 +2630,9 @@ pub(crate) fn delete_files_grouped(
         primary_path: String,
         components: Vec<(i64, String)>,
         aae_sidecars: Vec<String>,
+        /// Develop recipe sidecar paths to clean from the projection after a
+        /// successful group delete (lap-487).
+        recipe_sidecars: Vec<PathBuf>,
     }
 
     let mut delete_groups = Vec::with_capacity(files.len());
@@ -2326,13 +2664,15 @@ pub(crate) fn delete_files_grouped(
             primary_path: file.file_path.clone(),
             components: component_targets,
             aae_sidecars,
+            recipe_sidecars: Vec::new(),
         });
     }
 
     let mut deleted_file_ids = Vec::new();
     let mut failed_count = 0usize;
     let mut trash_failed_file_ids = Vec::new();
-    for group in &delete_groups {
+    let mut trashed_recipe_sidecars: Vec<PathBuf> = Vec::new();
+    for group in &mut delete_groups {
         let result = if permanently {
             t_utils::delete_file_permanently(&group.primary_path)
         } else {
@@ -2374,13 +2714,38 @@ pub(crate) fn delete_files_grouped(
             }
         }
 
+        // Develop recipe companions (lap-487): every member's sidecar goes to
+        // the same trash so an OS restore brings the group back together.
+        let mut recipe_members: Vec<&str> = vec![&group.primary_path];
+        recipe_members.extend(group.components.iter().map(|(_, path)| path.as_str()));
+        for member in recipe_members {
+            let result = if permanently {
+                asset_ops::delete_companion_permanently(Path::new(member))
+            } else {
+                asset_ops::trash_companion(Path::new(member))
+            };
+            match result {
+                Ok(true) => group
+                    .recipe_sidecars
+                    .push(asset_ops::sidecar_path_for(Path::new(member))),
+                Ok(false) => {}
+                Err(error) => {
+                    group_failed = true;
+                    eprintln!("Failed to delete develop recipe sidecar: {}", error);
+                }
+            }
+        }
+
         if group_failed {
             failed_count += 1;
         }
+        trashed_recipe_sidecars.append(&mut group.recipe_sidecars);
     }
 
     AFile::batch_delete(&deleted_file_ids)
         .map_err(|e| format!("Error while deleting files from DB: {}", e))?;
+    // The trashed recipes are no longer part of the catalog (lap-487).
+    delete_develop_projection_logged(&trashed_recipe_sidecars);
     Ok(BatchDeleteResult {
         failed_count,
         deleted_file_ids,
@@ -3688,6 +4053,15 @@ fn render_developed_thumbnail(
         .map_err(|e| format!("failed to read source {}: {e}", source_path.display()))?;
     let source_fingerprint = rapidraw_edit_model::sha256_hex(&source_bytes);
     let repo = DevelopRecipeRepository::lap_default();
+    // Identity adoption (lap-487): keep developed thumbnails working after
+    // copies, external moves and catalog rebuilds; replaced media is a
+    // visible failure instead of a stale derivative.
+    lap_lib::develop::asset_operations::adopt_catalog_identity_with_fingerprint(
+        &source_path,
+        &file_id.to_string(),
+        &source_fingerprint,
+    )
+    .map_err(|e| e.to_string())?;
     let sidecar = repo
         .load_opt(&source_path)
         .map_err(|e| e.to_string())?
@@ -3854,6 +4228,16 @@ pub async fn develop_open_edit_session(
             .map_err(|e| format!("failed to read source {}: {e}", source_path.display()))?;
         let source_fingerprint = rapidraw_edit_model::sha256_hex(&source_bytes);
         let repo = DevelopRecipeRepository::lap_default();
+        // Identity adoption (lap-487): after copies, external moves or a
+        // catalog rebuild, a sidecar can carry a stale asset identity. It is
+        // re-keyed to the current catalog id ONLY when the source fingerprint
+        // still matches; replacement at the same path is a visible failure.
+        lap_lib::develop::asset_operations::adopt_catalog_identity_with_fingerprint(
+            &source_path,
+            &asset_id.to_string(),
+            &source_fingerprint,
+        )
+        .map_err(|e| e.to_string())?;
         let sidecar = repo.load_opt(&source_path).map_err(|e| e.to_string())?;
         service
             .open_session(lap_lib::develop::sessions::AssetEditInput {
@@ -4120,6 +4504,15 @@ pub async fn develop_export_developed(
             let source_path = develop_asset_source_path(asset_id)?;
             let source_bytes = fs::read(&source_path)
                 .map_err(|e| format!("failed to read source {}: {e}", source_path.display()))?;
+            // Identity adoption (lap-487): exports resolve the committed
+            // sidecar by identity, so a copy/external-move asset is re-keyed
+            // first; replaced media is refused explicitly.
+            lap_lib::develop::asset_operations::adopt_catalog_identity_with_fingerprint(
+                &source_path,
+                &asset_id.to_string(),
+                &rapidraw_edit_model::sha256_hex(&source_bytes),
+            )
+            .map_err(|e| format!("develop recipe identity check failed: {e}"))?;
             lap_lib::develop::export::export_developed(
                 &service,
                 lap_lib::develop::export::AssetExportInput {
