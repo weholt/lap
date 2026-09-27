@@ -929,6 +929,8 @@
       "error": "Dateiauswahl fehlgeschlagen."
     },
     "image_editor": {
+      "developed_notice": "Dieses Foto wird über ein gespeichertes Rezept (Belichtung, Weißabgleich und mehr) im Entwickeln-Bereich bearbeitet. Änderungen werden dort automatisch gespeichert; dieses Fenster kann keine CSS-Filter anwenden. Speichern im gleichen Pfad bestätigt das gespeicherte Rezept, und „Speichern unter“ exportiert ein aus dem Rezept gerendertes Derivat.",
+      "developed_unsupported_format": "Nicht unterstütztes Derivatformat für ein entwickeltes Asset: {format}",
       "title": "Bearbeiten",
       "tab_edit": "Allgemein",
       "tab_adjust": "Anpassen",
@@ -1608,6 +1610,26 @@
         "failed_check": "Fehler beim Suchen nach Updates",
         "failed_install": "Fehler beim Installieren des Updates"
       }
+    }
+  },
+  "develop": {
+    "title": "Entwickeln",
+    "exposure": "Belichtung",
+    "whiteBalance": "Weißabgleich",
+    "temperature": "Temperatur",
+    "tint": "Tönung",
+    "reset": "Zurücksetzen",
+    "resetAll": "Alle zurücksetzen",
+    "viewOriginal": "Original anzeigen",
+    "viewDeveloped": "Entwickeltes anzeigen",
+    "retry": "Wiederholen",
+    "save": {
+      "idle": "Auf dem neuesten Stand",
+      "pending": "Ungespeicherte Änderungen",
+      "saving": "Speichern…",
+      "saved": "Gespeichert",
+      "conflict": "Konflikt",
+      "failed": "Speichern fehlgeschlagen"
     }
   }
 }

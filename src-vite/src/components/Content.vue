@@ -172,6 +172,14 @@
             :selected="isInfoPanelOpen"
             @click="toggleInfoPanel"
           />
+
+          <!-- toggle develop panel -->
+          <TButton
+            :icon="IconCameraAperture"
+            :tooltip="$t('develop.title')"
+            :selected="isDevelopPanelOpen"
+            @click="toggleDevelopPanel"
+          />
         </div>
       </div>
     </div>
@@ -285,7 +293,7 @@
 
           <!-- film strip preview -->
           <div v-if="showFilmstripLayout" ref="previewDiv"
-            class="flex-1 bg-base-200 overflow-hidden"
+            class="flex-1 relative bg-base-200 overflow-hidden"
           >
             <div v-if="selectedItemIndex >= 0 && selectedItemIndex < fileList.length"
               class="w-full h-full flex items-center justify-center"
@@ -314,6 +322,29 @@
                 @view-background-change="setPreviewViewBackground"
                 @slideshow-next="handleSlideshowNext"
               />
+            </div>
+
+            <!-- develop central preview: rendered engine output for the
+                 developed asset currently open in the Develop panel -->
+            <div
+              v-if="isDevelopCentralPreviewVisible"
+              class="absolute inset-0 z-20 flex items-center justify-center"
+              data-testid="develop-central-preview"
+            >
+              <canvas
+                ref="developPreviewCanvasRef"
+                class="max-w-full max-h-full object-contain"
+              ></canvas>
+              <div
+                v-if="developEditor.rendering.value && !developEditor.preview.value"
+                class="absolute inset-0 flex items-center justify-center"
+              >
+                <span class="loading loading-dots text-primary"></span>
+              </div>
+              <div
+                v-if="developEditor.previewError.value"
+                class="absolute bottom-2 left-1/2 -translate-x-1/2 px-2 py-1 rounded-box bg-error/10 text-error text-xs max-w-[90%] break-words"
+              >{{ developEditor.previewError.value }}</div>
             </div>
           </div> <!-- film strip preview -->
         </div> <!-- grid view -->
@@ -484,8 +515,8 @@
           <FileInfo
             v-else-if="rightPanelContent === 'info'"
             ref="fileInfoRef"
-            :fileInfo="fileList[selectedItemIndex]" 
-            @close="checkUnsavedChanges(() => config.rightPanel.show = false)" 
+            :fileInfo="fileList[selectedItemIndex]"
+            @close="checkUnsavedChanges(() => config.rightPanel.show = false)"
             @success="onFileSaved(true, $event)"
             @failed="onFileSaved(false)"
             @toggleFavorite="toggleFavorite"
@@ -499,6 +530,12 @@
             @open-viewer="openSelectedInViewer"
             @navigate-metadata="handleNavigateMetadata"
             @navigate-person="handleNavigatePerson"
+          />
+          <DevelopPanel
+            v-else-if="rightPanelContent === 'develop'"
+            ref="developPanelRef"
+            :file="fileList[selectedItemIndex] ?? null"
+            @close="checkUnsavedChanges(() => config.rightPanel.show = false)"
           />
         </div>
       </div>
@@ -764,6 +801,8 @@ import TaggingDialog from '@/components/TaggingDialog.vue';
 import AddToCollectionDialog from '@/components/AddToCollectionDialog.vue';
 import ExternalAppsDialog from '@/components/ExternalAppsDialog.vue';
 import FileInfo from '@/components/FileInfo.vue';
+import DevelopPanel from '@/components/DevelopPanel.vue';
+import { useDevelopEditor } from '@/composables/useDevelopEditor';
 import Breadcrumb from '@/components/Breadcrumb.vue';
 import DedupPane from '@/components/DedupPane.vue';
 import SelectionPanel from '@/components/SelectionPanel.vue';
@@ -1954,11 +1993,14 @@ const errorMessage = ref('');
 const showUnsavedChangesMsgbox = ref(false);
 const pendingAction = ref<(() => void) | null>(null);
 const fileInfoRef = ref<any>(null);
+const developPanelRef = ref<any>(null);
 const isDedupPanelOpen = computed(() => config.rightPanel.show && config.rightPanel.mode === 'dedup');
 const isInfoPanelOpen = computed(() => config.rightPanel.show && config.rightPanel.mode === 'info');
-const rightPanelContent = computed<'selection' | 'dedup' | 'info' | null>(() => {
+const isDevelopPanelOpen = computed(() => config.rightPanel.show && config.rightPanel.mode === 'develop');
+const rightPanelContent = computed<'selection' | 'dedup' | 'info' | 'develop' | null>(() => {
   if (selectMode.value) return 'selection';
   if (!config.rightPanel.show) return null;
+  if (config.rightPanel.mode === 'develop') return 'develop';
   return config.rightPanel.mode === 'dedup' ? 'dedup' : 'info';
 });
 const RIGHT_PANEL_MIN_WIDTH = 160; // Keep aligned with left panel minimum width.
@@ -2087,7 +2129,24 @@ const hasUnsavedChanges = computed(() => {
   return uiStore.hasActiveChanges(currentFile);
 });
 
-const checkUnsavedChanges = (action: () => void) => {
+const developEditor = useDevelopEditor();
+
+// Unsaved develop edits are awaited (recipe commit) instead of shown as a
+// modal: failures retain the dirty state per asset for retry, and navigation
+// continues once the commit settles (spec A2/A10, "Persistence and
+// compatibility").
+const checkUnsavedChanges = async (action: () => void) => {
+  const currentFile = fileList.value[selectedItemIndex.value];
+  if (currentFile && developEditor.hasDirtyStateFor(currentFile.id)) {
+    try {
+      await developEditor.flush();
+    } catch {
+      // Commit failures are surfaced through the develop save status; the
+      // dirty state is retained for retry either way.
+    }
+    action();
+    return;
+  }
   if (hasUnsavedChanges.value) {
     pendingAction.value = action;
     showUnsavedChangesMsgbox.value = true;
@@ -2095,6 +2154,50 @@ const checkUnsavedChanges = (action: () => void) => {
     action();
   }
 };
+
+const toggleDevelopPanel = () => {
+  checkUnsavedChanges(() => {
+    if (isDevelopPanelOpen.value) {
+      config.rightPanel.show = false;
+      return;
+    }
+    handleSelectMode(false);
+    config.rightPanel.mode = 'develop';
+    config.rightPanel.show = true;
+  });
+};
+
+// Central develop preview: while the Develop panel is open, the filmstrip
+// preview area shows the engine-rendered image instead of the untouched
+// source. "View original" in the panel hides the rendered overlay.
+const developPreviewCanvasRef = ref<HTMLCanvasElement | null>(null);
+const isDevelopCentralPreviewVisible = computed(() => {
+  if (!isDevelopPanelOpen.value || developEditor.showOriginal.value) return false;
+  const currentFile = fileList.value[selectedItemIndex.value];
+  if (!currentFile) return false;
+  return developEditor.activeFileId.value === Number(currentFile.id || 0);
+});
+
+watch(
+  () => developEditor.preview.value,
+  async (frame) => {
+    await nextTick();
+    const canvas = developPreviewCanvasRef.value;
+    if (!canvas || !frame) return;
+    canvas.width = frame.width;
+    canvas.height = frame.height;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      developEditor.previewError.value = 'canvas 2d context unavailable';
+      return;
+    }
+    context.putImageData(
+      new ImageData(new Uint8ClampedArray(frame.bytes), frame.width, frame.height),
+      0,
+      0,
+    );
+  },
+);
 
 // Open the currently selected file in a new image viewer window (from FileInfo preview click).
 function openSelectedInViewer() {
@@ -3948,7 +4051,7 @@ function handleItemAction(payload: { action: string, index: number }) {
   const actionMap = {
     'open': () => openImageViewer(selectedItemIndex.value, true),
     'print': () => void printImage(selectedItemIndex.value),
-    'edit': () => void openImageEditor(selectedItemIndex.value),
+    'edit': () => checkUnsavedChanges(() => void openImageEditor(selectedItemIndex.value)),
     'open-external-app': () => {
       void openInExternalApp();
     },
@@ -4610,7 +4713,7 @@ const handleKeyDown = (e: any) => {
     if (selectMode.value && selectedCount.value === 0) return;
     const file = fileList.value[selectedItemIndex.value];
     if (file && (file.file_type === 1 || file.file_type === 3)) {
-      void openImageEditor(selectedItemIndex.value);
+      checkUnsavedChanges(() => void openImageEditor(selectedItemIndex.value));
     }
   } else if (matchesShortcut('file.trash', event, shortcutPlatform)) {
     if (selectMode.value && selectedCount.value === 0) return;
@@ -5570,6 +5673,9 @@ function restoreInitialSelectionIfNeeded() {
 }
 
 onBeforeUnmount(() => {
+  // Best-effort awaited commit on teardown; the develop editor retains any
+  // state that could not be committed for retry on the next launch.
+  void developEditor.flush().catch(() => {});
   if (scanStreamFlushTimer) {
     clearTimeout(scanStreamFlushTimer);
     scanStreamFlushTimer = null;

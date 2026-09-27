@@ -929,6 +929,8 @@
       "error": "选择文件失败。"
     },
     "image_editor": {
+      "developed_notice": "这张照片在“显影”面板中使用已保存的配方（曝光、白平衡等）进行显影。编辑会在那里自动保存；本窗口无法对其应用 CSS 滤镜。同路径保存会确认已提交的配方，“另存为”则会导出根据配方渲染的衍生图像。",
+      "developed_unsupported_format": "显影资产不支持的衍生格式：{format}",
       "title": "编辑",
       "tab_edit": "通用",
       "tab_adjust": "调整",
@@ -1608,6 +1610,26 @@
         "failed_check": "检查更新失败",
         "failed_install": "安装更新失败"
       }
+    }
+  },
+  "develop": {
+    "title": "显影",
+    "exposure": "曝光",
+    "whiteBalance": "白平衡",
+    "temperature": "色温",
+    "tint": "色调",
+    "reset": "重置",
+    "resetAll": "全部重置",
+    "viewOriginal": "查看原图",
+    "viewDeveloped": "查看显影效果",
+    "retry": "重试",
+    "save": {
+      "idle": "已是最新",
+      "pending": "未保存的更改",
+      "saving": "保存中…",
+      "saved": "已保存",
+      "conflict": "冲突",
+      "failed": "保存失败"
     }
   }
 }

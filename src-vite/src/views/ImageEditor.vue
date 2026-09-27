@@ -394,6 +394,17 @@
           />
         </section>
 
+        <section
+          v-if="isDevelopedAsset"
+          class="rounded-box p-3 space-y-2 border border-warning/20 bg-warning/5 shadow-sm"
+          data-testid="developed-asset-notice"
+        >
+          <div class="text-xs font-semibold text-warning">{{ $t('develop.title') }}</div>
+          <p class="text-xs leading-5 text-base-content/70 break-words">{{ $t('msgbox.image_editor.developed_notice') }}</p>
+          <div v-if="developSaveError" class="text-xs text-error break-words" data-testid="developed-save-error">{{ developSaveError }}</div>
+        </section>
+
+        <template v-if="!isDevelopedAsset">
         <section class="rounded-box p-3 space-y-2 border border-base-content/5 shadow-sm bg-base-300/30">
           <div class="flex items-center justify-between gap-2">
             <span class="text-[11px] font-bold uppercase tracking-[0.22em] text-base-content/30">{{ $t('msgbox.image_editor.presets.title') }}</span>
@@ -480,11 +491,12 @@
                 <div class="flex items-center gap-2 pr-2 min-w-0">
                   <SliderInput v-model="adj.model.value" :min="adj.min" :max="adj.max" :step="adj.step" class="flex-1 min-w-0 w-full" />
                   <span class="text-[10px] font-mono text-base-content/70 w-8 text-right shrink-0">{{ adj.valueDisplay }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+                 </div>
+               </div>
+             </div>
+           </div>
+         </section>
+         </template>
         </template>
       </div>
     </div>
@@ -555,6 +567,12 @@ import { useI18n } from 'vue-i18n';
 import { config } from '@/common/config';
 import { isWin, isLinux, setTheme, SCALE_VALUES, getFolderPath, getFileExtension, shortenFilename, getFullPath, combineFileName, getSelectOptions, getAssetSrc, getPreviewUrl, getThumbUrl, shouldUseBackendPreview } from '@/common/utils';
 import { editImage, checkFileExists, getFileInfo } from '@/common/api';
+import {
+  developExportFormatFor,
+  exportDevelopedDerivative,
+  isDevelopedAssetFile,
+  verifyDevelopedAssetDurable,
+} from '@/composables/useDevelopEditor';
 import { getMaxInscribedRect, clampCenterInRotatedRect, maxResizeT } from '@/common/geometry';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { emit as tauriEmit, listen } from '@tauri-apps/api/event';
@@ -589,7 +607,7 @@ const router = useRouter();
 const fileInfo = ref<any>(null);
 const initialImageSrc = ref('');
 
-const { locale, messages } = useI18n();
+const { locale, messages, t } = useI18n();
 const localeMsg = computed(() => messages.value[locale.value] as any);
 
 const uiStore = useUIStore();
@@ -632,6 +650,9 @@ async function loadFileInfo(fileId: number) {
       file.thumbnail = getThumbUrl(file.id);
       fileInfo.value = file;
       newFileName.value = file.name?.substring(0, file.name.lastIndexOf('.')) || file.name || '';
+      isDevelopedAsset.value = file.file_path
+        ? await isDevelopedAssetFile(file.file_path)
+        : false;
       const src = getPreviewUrl(
         file.id,
         file.file_path,
@@ -649,6 +670,8 @@ async function loadFileInfo(fileId: number) {
 const isProcessing = ref(false);
 const imageReady = ref(false);
 const activeEditorTab = ref<'edit' | 'adjust'>('edit');
+const isDevelopedAsset = ref(false);
+const developSaveError = ref('');
 
 const containerRef = ref<HTMLElement | null>(null);
 const containerRect = ref<DOMRect | null>(null);
@@ -1307,6 +1330,9 @@ watch([brightness, contrast, saturation, hue, blur, selectedFilter], () => {
 watch(
   [brightness, contrast, saturation, hue, blur, selectedFilter, () => resizeOutput.value.width, () => resizeOutput.value.height],
   () => {
+    // Developed assets are never edited through CSS filters; their recipe is
+    // authoritative and is committed from the Develop panel/session instead.
+    if (isDevelopedAsset.value) return;
     if (!fileInfo.value?.file_path) return;
     uiStore.setActiveAdjustments(fileInfo.value.file_path, {
       brightness: brightness.value,
@@ -2214,8 +2240,35 @@ const executeSave = async (overrides: { fileName?: string; destFilePath?: string
   const sourceFileId = Number(fileInfo.value?.id || 0);
   const savedFilePath = overrides.destFilePath || fileInfo.value.file_path;
   const saveAsNew = savedFilePath !== fileInfo.value.file_path;
+  developSaveError.value = '';
   try {
-    success = await editImage(setEditParams(overrides));
+    if (isDevelopedAsset.value) {
+      // Developed assets never take the same-path pixel-write path and never
+      // render through CSS filters: same-path saves acknowledge the durable
+      // recipe; save-as-new exports a derivative from the committed recipe.
+      if (saveAsNew) {
+        const format = developExportFormatFor(overrides.outputFormat || getSelectedOutputFormat());
+        if (!format) {
+          throw new Error(t('msgbox.image_editor.developed_unsupported_format', {
+            format: overrides.outputFormat || getSelectedOutputFormat(),
+          }));
+        }
+        await exportDevelopedDerivative({
+          assetId: sourceFileId,
+          destination: savedFilePath,
+          format,
+          quality: [90, 80, 60][config.imageEditor.quality] || 80,
+        });
+      } else {
+        await verifyDevelopedAssetDurable(sourceFileId);
+      }
+      success = true;
+    } else {
+      success = await editImage(setEditParams(overrides));
+    }
+  } catch (error) {
+    developSaveError.value = String(error);
+    success = false;
   } finally {
     isProcessing.value = false;
     if (success) {

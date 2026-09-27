@@ -929,6 +929,8 @@
       "error": "Fallo al seleccionar archivo."
     },
     "image_editor": {
+      "developed_notice": "Esta foto se revela con una receta guardada (exposición, balance de blancos y más) en el panel Revelar. Los cambios se autoguardan allí; esta ventana no puede aplicarle filtros CSS. Guardar en la misma ruta confirma la receta guardada, y «Guardar como» exporta un derivado renderizado desde la receta.",
+      "developed_unsupported_format": "Formato de derivado no admitido para un elemento revelado: {format}",
       "title": "Editar",
       "tab_edit": "General",
       "tab_adjust": "Ajustar",
@@ -1608,6 +1610,26 @@
         "failed_check": "Error al buscar actualizaciones",
         "failed_install": "Error al instalar la actualización"
       }
+    }
+  },
+  "develop": {
+    "title": "Revelar",
+    "exposure": "Exposición",
+    "whiteBalance": "Balance de blancos",
+    "temperature": "Temperatura",
+    "tint": "Tinte",
+    "reset": "Restablecer",
+    "resetAll": "Restablecer todo",
+    "viewOriginal": "Ver original",
+    "viewDeveloped": "Ver revelado",
+    "retry": "Reintentar",
+    "save": {
+      "idle": "Al día",
+      "pending": "Cambios sin guardar",
+      "saving": "Guardando…",
+      "saved": "Guardado",
+      "conflict": "Conflicto",
+      "failed": "Error al guardar"
     }
   }
 }

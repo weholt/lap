@@ -929,6 +929,8 @@
       "error": "Falha ao selecionar arquivo."
     },
     "image_editor": {
+      "developed_notice": "Esta foto é revelada com uma receita guardada (exposição, balanço de brancos e mais) no painel Revelar. As alterações são guardadas automaticamente aí; esta janela não lhe pode aplicar filtros CSS. Guardar no mesmo caminho confirma a receita guardada e «Guardar como» exporta um derivado renderizado a partir da receita.",
+      "developed_unsupported_format": "Formato de derivado não suportado para um item revelado: {format}",
       "title": "Editar",
       "tab_edit": "Geral",
       "tab_adjust": "Ajustar",
@@ -1608,6 +1610,26 @@
         "failed_check": "Falha ao verificar atualizações",
         "failed_install": "Falha ao instalar atualização"
       }
+    }
+  },
+  "develop": {
+    "title": "Revelar",
+    "exposure": "Exposição",
+    "whiteBalance": "Balanço de brancos",
+    "temperature": "Temperatura",
+    "tint": "Matiz",
+    "reset": "Repor",
+    "resetAll": "Repor tudo",
+    "viewOriginal": "Ver original",
+    "viewDeveloped": "Ver revelado",
+    "retry": "Repetir",
+    "save": {
+      "idle": "Atualizado",
+      "pending": "Alterações não guardadas",
+      "saving": "A guardar…",
+      "saved": "Guardado",
+      "conflict": "Conflito",
+      "failed": "Falha ao guardar"
     }
   }
 }

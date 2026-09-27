@@ -455,6 +455,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useI18n } from 'vue-i18n';
 import { useToast } from '@/common/toast';
 import { useUIStore } from '@/stores/uiStore';
+import { useDevelopEditor } from '@/composables/useDevelopEditor';
 import { config, libConfig } from '@/common/config';
 import { isWebViewVideoPlaybackDisabled, getGStreamerAvailability } from '@/common/video';
 import { getTagsForFile, renameFile, editImage, getAlbum, getFileCollections, getFileInfo, getMotionPhotoVideoPath, revealPath, getFacesForFile, getPersonThumbnail } from '@/common/api';
@@ -773,6 +774,21 @@ function toggleMapPanel() {
 
 const quickSave = async (): Promise<boolean> => {
   if (!props.fileInfo) return false;
+
+  // Developed assets route to an awaited recipe commit; this entry point must
+  // never write pixels to the source path (spec: "Lap integration points").
+  const develop = useDevelopEditor();
+  if (develop.hasDirtyStateFor(props.fileInfo.id)) {
+    const committed = await develop.flushAsset(Number(props.fileInfo.id));
+    if (committed) {
+      emit('success');
+      toast.success(localeMsg.value.tooltip.save_image.success);
+    } else {
+      toast.error(localeMsg.value.tooltip.save_image.failed);
+    }
+    return committed;
+  }
+
   if (uiStore.activeAdjustments.filePath !== props.fileInfo.file_path) return true;
 
   const adj = uiStore.activeAdjustments as any;

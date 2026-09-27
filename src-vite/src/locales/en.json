@@ -929,6 +929,8 @@
       "error": "Failed to select file."
     },
     "image_editor": {
+      "developed_notice": "This photo is developed with a saved recipe (exposure, white balance and more) in the Develop panel. Edits are autosaved there; this window cannot apply CSS-style filters to it. Same-path saves acknowledge the committed recipe, and Save as new exports a derivative rendered from the recipe.",
+      "developed_unsupported_format": "Unsupported derivative format for a developed asset: {format}",
       "title": "Edit",
       "tab_edit": "General",
       "tab_adjust": "Adjust",
@@ -1608,6 +1610,26 @@
         "failed_check": "Failed to check for updates",
         "failed_install": "Failed to install update"
       }
+    }
+  },
+  "develop": {
+    "title": "Develop",
+    "exposure": "Exposure",
+    "whiteBalance": "White Balance",
+    "temperature": "Temperature",
+    "tint": "Tint",
+    "reset": "Reset",
+    "resetAll": "Reset all",
+    "viewOriginal": "View original",
+    "viewDeveloped": "View developed",
+    "retry": "Retry",
+    "save": {
+      "idle": "Up to date",
+      "pending": "Unsaved changes",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "conflict": "Conflict",
+      "failed": "Save failed"
     }
   }
 }

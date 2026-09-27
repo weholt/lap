@@ -929,6 +929,8 @@
       "error": "Échec sélection fichier."
     },
     "image_editor": {
+      "developed_notice": "Cette photo est développée avec une recette enregistrée (exposition, balance des blancs et plus) dans le panneau Développer. Les modifications y sont enregistrées automatiquement ; cette fenêtre ne peut pas lui appliquer de filtres CSS. Enregistrer au même emplacement confirme la recette validée, et « Enregistrer sous » exporte un dérivé rendu à partir de la recette.",
+      "developed_unsupported_format": "Format de dérivé non pris en charge pour un élément développé : {format}",
       "title": "Modifier",
       "tab_edit": "Général",
       "tab_adjust": "Ajuster",
@@ -1608,6 +1610,26 @@
         "failed_check": "Échec de la vérification des mises à jour",
         "failed_install": "Échec de l'installation de la mise à jour"
       }
+    }
+  },
+  "develop": {
+    "title": "Développer",
+    "exposure": "Exposition",
+    "whiteBalance": "Balance des blancs",
+    "temperature": "Température",
+    "tint": "Teinte",
+    "reset": "Réinitialiser",
+    "resetAll": "Tout réinitialiser",
+    "viewOriginal": "Voir l'original",
+    "viewDeveloped": "Voir la version développée",
+    "retry": "Réessayer",
+    "save": {
+      "idle": "À jour",
+      "pending": "Modifications non enregistrées",
+      "saving": "Enregistrement…",
+      "saved": "Enregistré",
+      "conflict": "Conflit",
+      "failed": "Échec de l'enregistrement"
     }
   }
 }

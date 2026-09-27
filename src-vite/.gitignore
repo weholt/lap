@@ -9,6 +9,7 @@ _bak
 node_modules
 dist
 dist-ssr
+.vitest
 *.local
 
 # Editor directories and files

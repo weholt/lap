@@ -20,11 +20,31 @@ export const useUIStore = defineStore('ui', {
       blur: 0,
       filter: null,
       resize: null
+    },
+    // Native develop editing state (lap-0e9 / TASK-303). Runtime timers and
+    // the backend session stay in the useDevelopEditor composable; this state
+    // is the shared, serializable projection other components query.
+    developEditor: {
+      activeAssetId: null,
+      dirty: false,
+      saveState: 'idle', // idle | pending | saving | saved | conflict | failed
+      lastError: null,
+      // assetId -> { recipe, saveState, lastError } for assets left with
+      // uncommitted edits (failed save or pending debounce) so their state is
+      // retained for retry and never leaks into another asset.
+      retained: {}
     }
   }),
   getters: {
     isInputActive: (state) => (name) => {
       return state.inputStack.length > 0 && state.inputStack[state.inputStack.length - 1] === name;
+    },
+    hasDirtyDevelopState: (state) => (assetId) => {
+      const id = Number(assetId);
+      if (!id || !Number.isFinite(id)) return false;
+      const dev = state.developEditor;
+      if (dev.activeAssetId === id && (dev.dirty || dev.saveState === 'pending')) return true;
+      return Boolean(dev.retained[id]);
     },
     getFileVersion: (state) => (filePath) => {
       return state.fileVersions[filePath] || 0;
@@ -98,6 +118,40 @@ export const useUIStore = defineStore('ui', {
         filter: null,
         resize: null
       };
+    },
+    setDevelopActive(assetId) {
+      this.developEditor.activeAssetId = assetId === null ? null : Number(assetId);
+    },
+    setDevelopDirty(dirty) {
+      this.developEditor.dirty = !!dirty;
+    },
+    setDevelopSaveState(saveState, lastError = null) {
+      this.developEditor.saveState = saveState;
+      this.developEditor.lastError = lastError;
+    },
+    retainDevelopState(assetId, entry) {
+      const id = Number(assetId);
+      if (!id || !Number.isFinite(id)) return;
+      this.developEditor.retained[id] = entry;
+    },
+    takeRetainedDevelopState(assetId) {
+      const id = Number(assetId);
+      if (!id || !Number.isFinite(id)) return null;
+      const entry = this.developEditor.retained[id] || null;
+      if (entry) {
+        delete this.developEditor.retained[id];
+      }
+      return entry;
+    },
+    peekRetainedDevelopState(assetId) {
+      const id = Number(assetId);
+      if (!id || !Number.isFinite(id)) return null;
+      return this.developEditor.retained[id] || null;
+    },
+    clearRetainedDevelopState(assetId) {
+      const id = Number(assetId);
+      if (!id || !Number.isFinite(id)) return;
+      delete this.developEditor.retained[id];
     }
   },
 });
