@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "rating": 3,
+  "adjustments": {
+    "aiPatches": [
+      {
+        "id": "patch-1",
+        "isLoading": false,
+        "invert": false,
+        "name": "Sky",
+        "patchData": { "pixels": "base64-placeholder" },
+        "prompt": "dramatic sky",
+        "subMasks": [],
+        "visible": true
+      }
+    ],
+    "exposure": 0.25,
+    "lensBlurEnabled": true,
+    "lensBlurAmount": 55,
+    "lensBlurDepthMap": "C:/Users/editor/depth-maps/photo.depth.png",
+    "lutName": "Kodachrome",
+    "lutPath": "C:/Users/editor/luts/kodachrome.cube",
+    "lutIntensity": 80,
+    "lutSize": 33,
+    "masks": [
+      {
+        "id": "mask-1",
+        "invert": false,
+        "name": "Face light",
+        "opacity": 100,
+        "visible": true,
+        "adjustments": {
+          "blacks": 0,
+          "brightness": 0,
+          "clarity": 0,
+          "colorGrading": {
+            "balance": 0,
+            "blending": 50,
+            "global": { "hue": 0, "saturation": 0, "luminance": 0 },
+            "shadows": { "hue": 0, "saturation": 0, "luminance": 0 },
+            "midtones": { "hue": 0, "saturation": 0, "luminance": 0 },
+            "highlights": { "hue": 0, "saturation": 0, "luminance": 0 }
+          },
+          "colorNoiseReduction": 0,
+          "contrast": 0,
+          "curves": {
+            "luma": [{ "x": 0, "y": 0 }, { "x": 255, "y": 255 }],
+            "red": [{ "x": 0, "y": 0 }, { "x": 255, "y": 255 }],
+            "green": [{ "x": 0, "y": 0 }, { "x": 255, "y": 255 }],
+            "blue": [{ "x": 0, "y": 0 }, { "x": 255, "y": 255 }]
+          },
+          "pointCurves": {
+            "luma": [{ "x": 0, "y": 0 }, { "x": 255, "y": 255 }],
+            "red": [{ "x": 0, "y": 0 }, { "x": 255, "y": 255 }],
+            "green": [{ "x": 0, "y": 0 }, { "x": 255, "y": 255 }],
+            "blue": [{ "x": 0, "y": 0 }, { "x": 255, "y": 255 }]
+          },
+          "parametricCurve": {
+            "luma": { "darks": 0, "shadows": 0, "highlights": 0, "lights": 0, "whiteLevel": 0, "blackLevel": 0, "split1": 25, "split2": 50, "split3": 75 },
+            "red": { "darks": 0, "shadows": 0, "highlights": 0, "lights": 0, "whiteLevel": 0, "blackLevel": 0, "split1": 25, "split2": 50, "split3": 75 },
+            "green": { "darks": 0, "shadows": 0, "highlights": 0, "lights": 0, "whiteLevel": 0, "blackLevel": 0, "split1": 25, "split2": 50, "split3": 75 },
+            "blue": { "darks": 0, "shadows": 0, "highlights": 0, "lights": 0, "whiteLevel": 0, "blackLevel": 0, "split1": 25, "split2": 50, "split3": 75 }
+          },
+          "curveMode": "point",
+          "dehaze": 0,
+          "exposure": 0.3,
+          "flareAmount": 0,
+          "glowAmount": 0,
+          "halationAmount": 0,
+          "highlights": 0,
+          "hsl": {
+            "reds": { "hue": 0, "saturation": 0, "luminance": 0 },
+            "oranges": { "hue": 0, "saturation": 0, "luminance": 0 },
+            "yellows": { "hue": 0, "saturation": 0, "luminance": 0 },
+            "greens": { "hue": 0, "saturation": 0, "luminance": 0 },
+            "aquas": { "hue": 0, "saturation": 0, "luminance": 0 },
+            "blues": { "hue": 0, "saturation": 0, "luminance": 0 },
+            "purples": { "hue": 0, "saturation": 0, "luminance": 0 },
+            "magentas": { "hue": 0, "saturation": 0, "luminance": 0 }
+          },
+          "hue": 0,
+          "lumaNoiseReduction": 0,
+          "saturation": 0,
+          "sectionVisibility": {
+            "basic": true,
+            "curves": true,
+            "color": true,
+            "details": true,
+            "effects": true
+          },
+          "shadows": 0,
+          "sharpness": 0,
+          "sharpnessThreshold": 15,
+          "structure": 0,
+          "temperature": 0,
+          "tint": 0,
+          "vibrance": 0,
+          "whites": 0
+        },
+        "subMasks": [
+          {
+            "id": "sub-1",
+            "invert": false,
+            "mode": "additive",
+            "name": "Face",
+            "opacity": 100,
+            "parameters": { "points": [{ "x": 120, "y": 80 }, { "x": 220, "y": 80 }, { "x": 220, "y": 180 }, { "x": 120, "y": 180 }] },
+            "type": "brush",
+            "visible": true
+          }
+        ]
+      }
+    ]
+  },
+  "tags": null
+}

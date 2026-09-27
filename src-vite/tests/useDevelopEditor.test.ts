@@ -618,4 +618,70 @@ describe('useDevelopEditor transactions, undo/redo and section controls (lap-adc
         expect(editor.recipe.value?.crop).toBeNull();
         expect(editor.recipe.value?.aspectRatio).toBeNull();
     });
+
+    it('applies an imported rrdata recipe with an immediate commit carrying the retained payload', async () => {
+        vi.useFakeTimers();
+        try {
+            const editor = useDevelopEditor();
+            await openAssetA(editor);
+            queueCommand('develop_commit_recipe', receipt(1, 1));
+
+            const imported = structuredClone(DEFAULT_RECIPE);
+            imported.exposure = 0.75;
+            const ok = await editor.applyImportedRecipe(imported, {
+                'legacyMetadata.rating': 3,
+                'legacyAdjustments.futureUnknownSlider': 9,
+            });
+
+            expect(ok).toBe(true);
+            expect(editor.recipe.value?.exposure).toBe(0.75);
+            expect(editor.saveState.value).toBe('saved');
+            expect(editor.dirty.value).toBe(false);
+
+            const commit = lastCommitArgs();
+            expect(commit?.envelope.recipe.exposure).toBe(0.75);
+            expect(commit?.envelope.unsupported['legacyMetadata.rating']).toBe(3);
+            expect(commit?.envelope.unsupported['legacyAdjustments.futureUnknownSlider']).toBe(9);
+
+            // The retained payload lives in the session envelope now: later
+            // ordinary edits keep committing it (diagnostics retention).
+            queueCommand('develop_commit_recipe', receipt(1, 2));
+            editor.setParam('exposure', 0.25);
+            await vi.advanceTimersByTimeAsync(DEVELOP_COMMIT_DEBOUNCE_MS + 50);
+            const later = lastCommitArgs();
+            expect(later?.envelope.recipe.exposure).toBe(0.25);
+            expect(later?.envelope.unsupported['legacyMetadata.rating']).toBe(3);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('retains the pending import patch when the import commit fails and retries with it', async () => {
+        vi.useFakeTimers();
+        try {
+            const editor = useDevelopEditor();
+            await openAssetA(editor);
+            queueCommand('develop_commit_recipe', new Error('disk full'));
+
+            const imported = structuredClone(DEFAULT_RECIPE);
+            imported.exposure = 0.4;
+            const ok = await editor.applyImportedRecipe(imported, {
+                'legacyMetadata.rating': 5,
+            });
+
+            expect(ok).toBe(false);
+            expect(editor.saveState.value).toBe('failed');
+            expect(editor.dirty.value).toBe(true);
+            expect(editor.recipe.value?.exposure).toBe(0.4);
+
+            queueCommand('develop_commit_recipe', receipt(1, 1));
+            const retried = await editor.retry();
+            expect(retried).toBe(true);
+            const commit = lastCommitArgs();
+            expect(commit?.envelope.recipe.exposure).toBe(0.4);
+            expect(commit?.envelope.unsupported['legacyMetadata.rating']).toBe(5);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });

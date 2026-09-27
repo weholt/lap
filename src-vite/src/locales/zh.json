@@ -1638,6 +1638,8 @@
     },
     "undo": "撤销",
     "redo": "重做",
+    "import": "导入",
+    "importHint": "为这张照片导入 RapidRAW 的 .rrdata 配方（显式且经过验证；绝不修改原文件）。",
     "historyHint": "仅适用于当前显影会话 — 关闭 Lap 或切换照片后不会保留历史记录。",
     "histogram": "直方图",
     "bypassSection": "启用“{section}”分区",

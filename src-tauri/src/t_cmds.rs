@@ -4358,6 +4358,60 @@ pub async fn develop_get_capabilities(
         .map_err(|e| format!("develop capabilities task failed: {e}"))
 }
 
+/// Explicit one-way `.rrdata` compatibility reader (lap-5c2 / TASK-404;
+/// managed continuation of lap-002.4; spec "Persistence and compatibility").
+///
+/// Validates the source document and returns the converted envelope plus the
+/// fidelity report (named limitations for unsupported visible effects,
+/// retained original payload keys). This command performs **no writes**: the
+/// original rrdata stays byte-identical, and persisting the converted
+/// envelope is a separate explicit commit (`develop_commit_recipe`) after the
+/// user confirms the reported limitations in the import dialog.
+#[tauri::command]
+pub async fn develop_import_rrdata(
+    rrdata_path: String,
+    asset_id: i64,
+    variant_id: Option<String>,
+    source_fingerprint: String,
+    source_width: u32,
+    source_height: u32,
+) -> Result<lap_lib::develop::rrdata_import::RrdataImportOutcome, String> {
+    if asset_id <= 0 {
+        return Err("develop rrdata import requires a catalog asset id".to_string());
+    }
+    if source_width == 0 || source_height == 0 {
+        return Err(
+            "develop rrdata import requires the decoded original dimensions".to_string(),
+        );
+    }
+    if source_fingerprint.len() != 64 {
+        return Err(
+            "develop rrdata import requires the 64-hex source fingerprint of an opened session"
+                .to_string(),
+        );
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let importer = lap_lib::develop::rrdata_import::RrdataImporter::lap_default();
+        let doc = lap_lib::develop::rrdata_import::read_rrdata(std::path::Path::new(&rrdata_path))
+            .map_err(|e| e.to_string())?;
+        let identity = rapidraw_edit_model::migrate::EnvelopeIdentity {
+            engine_version: importer.engine_version().to_string(),
+            asset_id: asset_id.to_string(),
+            variant_id: variant_id.unwrap_or_else(|| "default".to_string()),
+            source_fingerprint,
+        };
+        importer
+            .import_document(
+                &doc,
+                &identity,
+                (u64::from(source_width), u64::from(source_height)),
+            )
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("develop rrdata import task failed: {e}"))?
+}
+
 // ----------------------------------------------------------------------------
 // Durable derivative export commands (lap-7ae / TASK-304)
 //

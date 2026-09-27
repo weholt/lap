@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "rating": 1,
+  "adjustments": {
+    "exposure": 0.25,
+    "lutName": "Missing profile",
+    "lutPath": "Z:/lap-rrdata-fixture-missing/graded-look.cube",
+    "lutIntensity": 70,
+    "lutSize": 33
+  },
+  "tags": null
+}

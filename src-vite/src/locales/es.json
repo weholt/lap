@@ -1638,6 +1638,8 @@
     },
     "undo": "Deshacer",
     "redo": "Rehacer",
+    "import": "Importar",
+    "importHint": "Importar una receta .rrdata de RapidRAW para esta foto (explícito y validado; el archivo original nunca se modifica).",
     "historyHint": "Solo para esta sesión de revelado: el historial no se conserva al cerrar Lap o cambiar de foto.",
     "histogram": "Histograma",
     "bypassSection": "Activar la sección {section}",

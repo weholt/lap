@@ -1638,6 +1638,8 @@
     },
     "undo": "실행 취소",
     "redo": "다시 실행",
+    "import": "가져오기",
+    "importHint": "이 사진에 RapidRAW .rrdata 레시피를 가져옵니다(명시적이며 검증됨, 원본 파일은 수정되지 않음).",
     "historyHint": "이 현상 세션에만 적용됩니다 — Lap을 닫거나 사진을 전환하면 기록이 유지되지 않습니다.",
     "histogram": "히스토그램",
     "bypassSection": "{section} 섹션 사용",

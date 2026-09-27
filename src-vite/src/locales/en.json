@@ -1638,6 +1638,8 @@
     },
     "undo": "Undo",
     "redo": "Redo",
+    "import": "Import",
+    "importHint": "Import a RapidRAW .rrdata recipe for this photo (explicit and validated; the original file is never modified).",
     "historyHint": "Undo/redo for this develop session only — history is not kept after closing Lap or switching photos.",
     "histogram": "Histogram",
     "bypassSection": "Enable {section} section",

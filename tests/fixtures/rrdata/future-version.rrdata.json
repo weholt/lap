@@ -1,0 +1,9 @@
+{
+  "version": 99,
+  "rating": 0,
+  "adjustments": {
+    "exposure": 0.5,
+    "someFutureControl": { "nested": true }
+  },
+  "tags": ["from-the-future"]
+}

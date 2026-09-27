@@ -1,0 +1,69 @@
+{
+  "schema": "lap-raw-rrdata/v1",
+  "issue": "lap-5c2",
+  "legacyIssue": "lap-002.4",
+  "created": "2026-09-28",
+  "note": "RapidRAW .rrdata producer fixtures for the explicit one-way compatibility reader (docs/raw-development/spec.md, 'Import existing .rrdata through an explicit compatibility reader'). Content matches ImageMetadata as written by RapidRAW at the pinned baseline revision 5e30bcbb246395d391ba2e9662510641ffe68e6b (src-tauri/src/image_processing.rs: version, rating, adjustments, tags, exif; version default 1). These files are inputs only: the reader must never modify them. missing-lut-v1 intentionally references Z:/lap-rrdata-fixture-missing/graded-look.cube, which must not exist on any test machine.",
+  "documents": [
+    {
+      "file": "default-v1.rrdata.json",
+      "sha256": "959a8173e38189c531ecc00160b12c1a81f242703749abb2bb35af2d14675343",
+      "bytes": 4334,
+      "purpose": "Historical source schema v1 with the complete default adjustment set; must import as the semantic default recipe with source (RapidRAW) neutral values such as saturation 0."
+    },
+    {
+      "file": "edited-v1.rrdata.json",
+      "sha256": "3fc6363853dfde4d2962786b257d533e537fcd3fe64239fcf628b7a30aab82f0",
+      "bytes": 4526,
+      "purpose": "Edited v1 document: supported parameter migration, legacy pixel crop (oriented frame, orientationSteps 1), section bypass, UI-only showClipping, one unknown adjustment key preserved, legacy metadata (rating/tags/exif) preserved."
+    },
+    {
+      "file": "partial-v1.rrdata.json",
+      "sha256": "261fa5770067cc3c5a504739e9d04494dc68a90465d4fb88b13871904306b3b7",
+      "bytes": 118,
+      "purpose": "Partial adjustments object (older/incomplete saves): unspecified parameters fall back to source default semantics, not Lap legacy values."
+    },
+    {
+      "file": "unsupported-effects-v1.rrdata.json",
+      "sha256": "f9d0dcce7978b38631caeaaf89fefb797c0f17e437b0d840e41692bc7c676f8c",
+      "bytes": 4258,
+      "purpose": "Visible unsupported effects: enabled lens blur with depth map, LUT reference, one visible mask with a brush sub-mask, and a non-empty aiPatches payload. Import must keep every payload discoverable and report limitations; no silent lossy import."
+    },
+    {
+      "file": "missing-lut-v1.rrdata.json",
+      "sha256": "6b1d7bf7fc51e64fc5e1efbf6c74fdfca96bb73d3ea32bdf5ee0e1824e073340",
+      "bytes": 237,
+      "purpose": "LUT resource absence: lutPath points at a file that does not exist; the import outcome must name the missing resource explicitly."
+    },
+    {
+      "file": "future-version.rrdata.json",
+      "sha256": "979f87eb32d3703c15d3d38a4279a0fd5975cd8622e083ec9e2513cec3ae6699",
+      "bytes": 155,
+      "purpose": "Future source schema (version 99): rejected with the original payload preserved for forward compatibility; never reset or partially imported."
+    },
+    {
+      "file": "corrupt.rrdata.json",
+      "sha256": "eedf988bc0ac289f02eb5aa9636325c932beaad9607070ea0c2ab67c0a7b35ff",
+      "bytes": 68,
+      "purpose": "Truncated JSON: corrupt input must produce an explicit failure, never defaults, and the file must stay untouched."
+    },
+    {
+      "file": "missing-version.rrdata.json",
+      "sha256": "cd229e0e814ce6f549eecc85f10f2d996a0e68d5864216ef126c36b189e2bc8b",
+      "bytes": 78,
+      "purpose": "Document without the required version field (the pinned producer always serializes it): explicit corrupt-document outcome."
+    },
+    {
+      "file": "not-an-object.rrdata.json",
+      "sha256": "f5b5bf7d9445156a374ac6a3aa00f858a67f101a03241111908643dea1642d36",
+      "bytes": 41,
+      "purpose": "Valid JSON that is not an ImageMetadata object: explicit corrupt-document outcome."
+    },
+    {
+      "file": "out-of-bounds-v1.rrdata.json",
+      "sha256": "db7d889541dd80f562b09f9b15b3e986530f9334a64f01d432a4989387016c17",
+      "bytes": 117,
+      "purpose": "Out-of-bounds adjustment values: only validated supported parameters migrate; the import fails explicitly instead of clamping or dropping."
+    }
+  ]
+}

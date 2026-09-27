@@ -6,6 +6,7 @@ import {
     useDevelopEditor,
 } from '@/composables/useDevelopEditor';
 import {
+    type Recipe,
     type SectionId,
     type ToneMapper,
 } from '@/composables/useDevelopSession.types';
@@ -20,6 +21,7 @@ import {
 import DevelopSliderControl from '@/components/develop/DevelopSliderControl.vue';
 import DevelopSection from '@/components/develop/DevelopSection.vue';
 import DevelopCurveEditor from '@/components/develop/DevelopCurveEditor.vue';
+import ImportRecipeDialog from '@/components/develop/ImportRecipeDialog.vue';
 import ImageHistogram from '@/components/ImageHistogram.vue';
 import TButton from '@/components/TButton.vue';
 import { IconClose } from '@/common/icons';
@@ -60,6 +62,7 @@ const expandedSections = ref<Record<SectionId, boolean>>({
 });
 const selectedHslChannel = ref<string>('reds');
 const selectedGradingZone = ref<string>('global');
+const importDialogOpen = ref(false);
 
 const groupsBySection = computed<Record<SectionId, ControlGroup[]>>(() => {
     const map = {
@@ -160,6 +163,17 @@ function redo() {
     develop.redo();
 }
 
+/**
+ * Explicit rrdata import (lap-5c2): the dialog validates and reports first;
+ * applying goes through the editor's immediate durable commit.
+ */
+async function applyImported(
+    recipe: Recipe,
+    unsupported: Record<string, unknown>,
+): Promise<boolean> {
+    return develop.applyImportedRecipe(recipe, unsupported);
+}
+
 function toggleOriginal() {
     develop.showOriginal.value = !develop.showOriginal.value;
 }
@@ -238,6 +252,15 @@ onBeforeUnmount(() => {
                 <span class="text-sm font-semibold text-primary/70">{{ $t('develop.title') }}</span>
             </div>
             <div class="flex items-center gap-1">
+                <button
+                    type="button"
+                    class="btn btn-ghost btn-xs text-base-content/60 hover:text-base-content disabled:text-base-content/30"
+                    data-testid="develop-import"
+                    :title="$t('develop.importHint')"
+                    :aria-label="$t('develop.import')"
+                    :disabled="!develop.session.value"
+                    @click.stop="importDialogOpen = true"
+                >{{ $t('develop.import') }}</button>
                 <button
                     type="button"
                     class="btn btn-ghost btn-xs text-base-content/60 hover:text-base-content disabled:text-base-content/30"
@@ -461,5 +484,14 @@ onBeforeUnmount(() => {
                 data-testid="develop-save-error"
             >{{ develop.lastError.value }}</div>
         </div>
+
+        <!-- Explicit .rrdata compatibility import (lap-5c2) -->
+        <ImportRecipeDialog
+            v-if="importDialogOpen"
+            :session="develop.session.value as any"
+            :apply-imported="applyImported"
+            @applied="importDialogOpen = false"
+            @close="importDialogOpen = false"
+        />
     </div>
 </template>

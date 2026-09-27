@@ -447,6 +447,7 @@ async fn main() {
             t_cmds::develop_commit_recipe,
             t_cmds::develop_close_edit_session,
             t_cmds::develop_get_capabilities,
+            t_cmds::develop_import_rrdata,
             // durable derivative export (lap-7ae / TASK-304)
             t_cmds::develop_export_developed,
             t_cmds::develop_cancel_export,

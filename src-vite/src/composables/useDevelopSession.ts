@@ -140,20 +140,32 @@ export function useDevelopSession() {
      * Validates and durably persists the recipe with optimistic revision
      * control. The session adopts the acknowledged revision only after the
      * backend confirms the durable sidecar write.
+     *
+     * `envelopePatch` merges host-managed envelope fields (e.g. the
+     * `unsupported` payload retained by an rrdata import, lap-5c2) into the
+     * committed envelope; the patch becomes part of the session envelope on
+     * acknowledgment so later commits keep it.
      */
-    async function commitRecipe(recipe: Recipe): Promise<CommitReceipt> {
+    async function commitRecipe(
+        recipe: Recipe,
+        envelopePatch?: Record<string, unknown>,
+    ): Promise<CommitReceipt> {
         const current = session.value;
         if (!current || closed) {
             throw new Error('no open develop session');
         }
-        const envelope: RecipeEnvelopeValue = { ...current.envelope, recipe };
+        const envelope: RecipeEnvelopeValue = {
+            ...current.envelope,
+            ...(envelopePatch ?? {}),
+            recipe,
+        };
         const receipt = await invoke<CommitReceipt>('develop_commit_recipe', {
             sessionId: current.sessionId,
             expectedRevision: current.revision,
             envelope,
         });
         current.revision = receipt.revision;
-        current.envelope = { ...current.envelope, revision: receipt.revision, recipe };
+        current.envelope = { ...current.envelope, ...envelopePatch, revision: receipt.revision, recipe };
         session.value = { ...current };
         return receipt;
     }

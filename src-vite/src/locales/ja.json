@@ -1638,6 +1638,8 @@
     },
     "undo": "元に戻す",
     "redo": "やり直す",
+    "import": "読み込み",
+    "importHint": "この写真にRapidRAWの.rrdataレシピを読み込みます（明示的かつ検証済み。元のファイルは変更されません）。",
     "historyHint": "この現像セッションのみ有効 — Lapの終了や写真の切り替え後も履歴は保持されません。",
     "histogram": "ヒストグラム",
     "bypassSection": "{section}セクションを有効にする",

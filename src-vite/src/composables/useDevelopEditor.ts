@@ -141,6 +141,17 @@ export interface DevelopEditor {
      */
     applyRecipePatch(patch: Partial<Recipe>, label: string): void;
     /**
+     * Applies a validated rrdata import (lap-5c2) as the new working recipe
+     * and commits it immediately: the converted recipe replaces the working
+     * state, the retained original payload (`unsupported`) merges into the
+     * committed envelope via the session's envelope patch, and the durable
+     * receipt decides the save state. Retries keep the pending patch.
+     */
+    applyImportedRecipe(
+        recipe: Recipe,
+        unsupported: Record<string, unknown>,
+    ): Promise<boolean>;
+    /**
      * Live gesture variant: opens the transaction when none is open and
      * never closes it (the gesture completion calls endEditTransaction).
      */
@@ -191,6 +202,12 @@ function createDevelopEditor(): DevelopEditor {
     let interactivePreviewTimer: ReturnType<typeof setTimeout> | null = null;
     let settledPreviewTimer: ReturnType<typeof setTimeout> | null = null;
     let commitInFlight: Promise<boolean> | null = null;
+    /**
+     * Host-managed envelope fields pending the next commit (retained
+     * original payload of an rrdata import). Cleared once a commit
+     * acknowledges them; kept on failure so retry stays faithful.
+     */
+    let pendingEnvelopePatch: Record<string, unknown> | null = null;
 
     function clearTimers() {
         if (commitTimer) { clearTimeout(commitTimer); commitTimer = null; }
@@ -256,7 +273,11 @@ function createDevelopEditor(): DevelopEditor {
         setSaveState('saving');
         commitInFlight = (async () => {
             try {
-                await session.commitRecipe(cloneRecipe(recipe.value as Recipe));
+                await session.commitRecipe(
+                    cloneRecipe(recipe.value as Recipe),
+                    pendingEnvelopePatch ?? undefined,
+                );
+                pendingEnvelopePatch = null;
                 markDirty(false);
                 setSaveState('saved');
                 uiStore.clearRetainedDevelopState(activeFileId.value ?? 0);
@@ -566,6 +587,45 @@ function createDevelopEditor(): DevelopEditor {
         endEditTransaction();
     }
 
+    /**
+     * Applies a validated rrdata import (lap-5c2) and commits it
+     * immediately. The converted recipe becomes the working state and the
+     * import is a new editing baseline (session history restarts, like
+     * opening a different committed state). The retained original payload
+     * (`unsupported`: legacy metadata, unknown adjustments, inline LUT/AI
+     * data) merges into the committed envelope through the session's
+     * envelope patch, so the durable sidecar keeps it for diagnostics and
+     * forward compatibility. A failed commit retains the dirty import for
+     * an explicit retry, patch included.
+     */
+    async function applyImportedRecipe(
+        imported: Recipe,
+        unsupported: Record<string, unknown>,
+    ): Promise<boolean> {
+        const current = session.session.value as {
+            envelope: { unsupported?: Record<string, unknown> };
+        } | null;
+        if (!current) {
+            throw new Error('no open develop session');
+        }
+        pendingEnvelopePatch = {
+            unsupported: {
+                ...(current.envelope.unsupported ?? {}),
+                ...(unsupported ?? {}),
+            },
+        };
+        const next = cloneRecipe(imported);
+        recipe.value = next;
+        history.initialize(next);
+        markDirty(true);
+        setSaveState('pending');
+        const ok = await commitNow();
+        if (ok) {
+            schedulePreview('settled');
+        }
+        return ok;
+    }
+
     function cancelEditTransaction(restored: Recipe) {
         history.cancelTransaction();
         afterRecipeReplaced(restored);
@@ -740,6 +800,7 @@ function createDevelopEditor(): DevelopEditor {
         setParametricCurveValueLive,
         setParametricCurveValue,
         applyRecipePatch,
+        applyImportedRecipe,
         applyRecipePatchLive,
         cancelEditTransaction,
         flush,
