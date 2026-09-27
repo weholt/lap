@@ -90,6 +90,16 @@
           :shortcut="shortcut('view.zoomFit')"
           @click="$emit('update:isZoomFit', !isZoomFit)"
         />
+        <!-- Developed view: prefer the developed derivative with an explicit
+             original toggle (lap-a58) -->
+        <TButton
+          v-if="isDevelopedFile && !isSlideShow"
+          :icon="IconCameraAperture"
+          :disabled="!canInteract"
+          :selected="viewerShowsDeveloped"
+          :tooltip="viewerShowOriginal ? $t('develop.viewDeveloped') : $t('develop.viewOriginal')"
+          @click="toggleViewerOriginal"
+        />
         <template v-if="showExtraIcons">
           <IconSeparator class="t-icon-size-sm text-base-content/30" />
           <TButton
@@ -359,7 +369,7 @@
           :filePath="file?.file_path"
           :fileId="file?.id"
           :fileType="file?.file_type"
-          :fileVersion="file?.modified_at || 0"
+          :fileVersion="mediaFileVersion"
           :imageWidth="file?.width"
           :imageHeight="file?.height"
           :thumbnailSrc="file?.thumbnail || ''"
@@ -379,6 +389,19 @@
           @pointerup.capture="handleOverlayPointerUp"
           @pointercancel.capture="resetOverlayPointer"
         ></Image>
+        <!-- Developed derivative overlay (lap-a58): the develop renderer's
+             pixels replace the untouched source view while the developed
+             preference is active. -->
+        <canvas
+          v-if="viewerShowsDeveloped"
+          ref="developedCanvasRef"
+          class="absolute inset-0 z-30 m-auto max-h-full max-w-full object-contain pointer-events-none"
+        ></canvas>
+        <div
+          v-if="viewerDevelopedError && !viewerShowOriginal"
+          class="absolute bottom-2 left-2 z-40 max-w-[70%] rounded-box bg-base-100/80 px-2 py-1 text-xs text-error break-words"
+          data-testid="viewer-develop-error"
+        >{{ viewerDevelopedError }}</div>
       </div>
 
       <button
@@ -431,14 +454,19 @@
 </template>
 
 <script setup lang="ts">
-import { defineAsyncComponent, ref, computed, watch, onMounted, onBeforeUnmount, type Component, type CSSProperties } from 'vue';
+import { defineAsyncComponent, ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, nextTick, type Component, type CSSProperties } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { listen } from '@tauri-apps/api/event';
 import { config, libConfig } from '@/common/config';
 import { useToast } from '@/common/toast';
 import { isWin, isMac, isLinux, getSlideShowInterval } from '@/common/utils';
 import { getShortcutLabel, ShortcutActionId, ShortcutPlatform, VIEW_BACKGROUND_SHORTCUTS } from '@/common/shortcuts';
 import { getMotionPhotoVideoPath } from '@/common/api';
+import { isDevelopedAssetFile, useDevelopEditor } from '@/composables/useDevelopEditor';
+import { useDevelopSession, type DevelopPreviewState } from '@/composables/useDevelopSession';
+import type { Recipe } from '@/composables/useDevelopSession.types';
+import { IconCameraAperture } from '@/common/icons';
 
 import Image from '@/components/Image.vue';
 import TButton from '@/components/TButton.vue';
@@ -604,6 +632,167 @@ const livePhotoVideoPath = computed(() =>
 );
 const livePhotoViewport = ref<Record<string, number | boolean> | null>(null);
 let motionPhotoVideoRequestSeq = 0;
+
+// ---------------------------------------------------------------------------
+// Developed view (lap-a58): viewers prefer the developed derivative with an
+// explicit original view. Developed pixels come only from the renderer (the
+// shared develop editor's live preview when the same asset is active in this
+// window, otherwise a short-lived bounded session); a renderer failure is
+// surfaced explicitly and the untouched original stays visible.
+// ---------------------------------------------------------------------------
+
+const developEditor = useDevelopEditor();
+const viewerDevelopSession = useDevelopSession();
+
+const developRefreshTick = ref(0);
+const isDevelopedFile = ref(false);
+const viewerShowOriginal = ref(false);
+const viewerDevelopedPixels = shallowRef<DevelopPreviewState | null>(null);
+const viewerDevelopedError = ref<string | null>(null);
+const viewerDevelopedLoading = ref(false);
+const developedCanvasRef = ref<HTMLCanvasElement | null>(null);
+let viewerDevelopRequestId = 0;
+let unlistenDevelopCommitted: (() => void) | null = null;
+
+const developedFileId = computed(() => Number(props.file?.id || 0));
+/** Bumped after each acknowledged commit so Image.vue reloads the preview. */
+const mediaFileVersion = computed(
+  () => Number(props.file?.modified_at || 0) + developRefreshTick.value,
+);
+const inWindowDevelopedPixels = computed(() => {
+  if (developEditor.activeFileId.value !== developedFileId.value) return null;
+  return developEditor.preview.value;
+});
+const viewerShowsDeveloped = computed(
+  () => isDevelopedFile.value && !viewerShowOriginal.value && viewerDevelopedPixels.value !== null,
+);
+
+watch(inWindowDevelopedPixels, (pixels) => {
+  // The develop editor re-renders live while its session is open; follow it.
+  if (pixels && isDevelopedFile.value && !viewerShowOriginal.value) {
+    viewerDevelopedPixels.value = pixels;
+  }
+});
+
+watch(viewerShowsDeveloped, async (visible) => {
+  if (!visible) return;
+  await nextTick();
+  drawDevelopedOverlay();
+});
+
+watch(viewerDevelopedPixels, () => drawDevelopedOverlay());
+
+function drawDevelopedOverlay() {  const canvas = developedCanvasRef.value;
+  const frame = viewerDevelopedPixels.value;
+  if (!canvas || !frame) return;
+  canvas.width = frame.width;
+  canvas.height = frame.height;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    viewerDevelopedError.value = 'canvas 2d context unavailable';
+    return;
+  }
+  context.putImageData(
+    new ImageData(new Uint8ClampedArray(frame.bytes), frame.width, frame.height),
+    0,
+    0,
+  );
+}
+
+async function ensureViewerDevelopedPixels(requestSeq: number) {
+  if (viewerShowOriginal.value) return;
+  const fileId = developedFileId.value;
+  if (!fileId) return;
+
+  // Prefer the in-window develop editor's current preview: it is the same
+  // session/generation the develop panel displays, with no extra session.
+  const editorPixels = inWindowDevelopedPixels.value;
+  if (editorPixels) {
+    viewerDevelopedPixels.value = editorPixels;
+    return;
+  }
+
+  if (viewerDevelopedPixels.value || viewerDevelopedLoading.value) return;
+  viewerDevelopedLoading.value = true;
+  try {
+    const opened = await viewerDevelopSession.openEditSession(fileId, 'default');
+    const frame = await viewerDevelopSession.renderPreview(opened.envelope.recipe as Recipe, { quality: 'settled' });
+    const stale = requestSeq !== viewerDevelopRequestId;
+    await viewerDevelopSession.closeEditSession().catch(() => null);
+    if (stale) return;
+    if (!frame) return;
+    viewerDevelopedPixels.value = frame;
+    viewerDevelopedError.value = null;
+  } catch (error) {
+    await viewerDevelopSession.closeEditSession().catch(() => null);
+    if (requestSeq === viewerDevelopRequestId) {
+      // Explicit failure: the untouched original stays visible.
+      viewerDevelopedError.value = String(error);
+    }
+  } finally {
+    if (requestSeq === viewerDevelopRequestId) {
+      viewerDevelopedLoading.value = false;
+    }
+  }
+}
+
+function toggleViewerOriginal() {
+  viewerShowOriginal.value = !viewerShowOriginal.value;
+  if (!viewerShowOriginal.value) {
+    void ensureViewerDevelopedPixels(viewerDevelopRequestId);
+  }
+}
+
+watch(
+  () => [props.file?.id, props.file?.file_path],
+  async ([fileId, filePath]) => {
+    const requestSeq = ++viewerDevelopRequestId;
+    isDevelopedFile.value = false;
+    viewerDevelopedPixels.value = null;
+    viewerDevelopedError.value = null;
+    viewerShowOriginal.value = false;
+    if (!fileId || !filePath || !props.file || (props.file.file_type !== 1 && props.file.file_type !== 3)) {
+      return;
+    }
+    try {
+      const developed = await isDevelopedAssetFile(String(filePath));
+      if (requestSeq !== viewerDevelopRequestId) return;
+      isDevelopedFile.value = developed;
+    } catch {
+      return;
+    }
+    if (isDevelopedFile.value) {
+      await ensureViewerDevelopedPixels(requestSeq);
+    }
+  },
+  { immediate: true },
+);
+
+onMounted(async () => {
+  try {
+    const unlisten = await listen('develop_committed', (event: unknown) => {
+      const payload = (event as { payload?: Record<string, unknown> })?.payload || {};
+      const committedFileId = Number(payload.fileId || 0);
+      if (!committedFileId || committedFileId !== developedFileId.value) return;
+      // The displayed asset's recipe changed: reload the preview and
+      // re-render the developed view from the newly committed recipe.
+      developRefreshTick.value++;
+      viewerDevelopedPixels.value = null;
+      void ensureViewerDevelopedPixels(++viewerDevelopRequestId);
+    });
+    unlistenDevelopCommitted = unlisten;
+  } catch {
+    // Event API unavailable in this context; the viewer keeps working with
+    // manual refresh.
+  }
+});
+
+onBeforeUnmount(() => {
+  unlistenDevelopCommitted?.();
+  unlistenDevelopCommitted = null;
+  void viewerDevelopSession.closeEditSession().catch(() => null);
+});
+
 
 function startLivePhotoPreview() {
   if (!livePhotoVideoPath.value) return;

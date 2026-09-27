@@ -2409,10 +2409,13 @@ pub async fn clean_unused_thumbnail_cache(library_id: Option<String>) -> Result<
     .map_err(|e| format!("Failed to join clean thumbnail cache task: {}", e))?
 }
 
-/// get a file's thumb image, if not exist, create a new one
+/// get a file's thumb image, if not exist, create a new one.
+/// A current developed derivative for the asset's acknowledged commit takes
+/// precedence (lap-a58: the catalog prefers developed derivatives).
 #[tauri::command]
 pub async fn get_file_thumb(
     app_handle: tauri::AppHandle,
+    state: tauri::State<'_, DevelopAppState>,
     file_id: i64,
     file_path: &str,
     file_type: i64,
@@ -2422,6 +2425,10 @@ pub async fn get_file_thumb(
     force_regenerate: bool,
     thumbnail_seek_percent: Option<u8>,
 ) -> Result<Option<AThumb>, String> {
+    if let Some(developed) = developed_thumbnail_override(state.inner(), file_id, thumbnail_size) {
+        return Ok(Some(developed));
+    }
+
     if let Some(thumb) = AThumb::get_thumb_if_available(
         file_id,
         file_path,
@@ -2456,10 +2463,13 @@ pub async fn get_file_thumb(
     Ok(None)
 }
 
-/// get a file's thumb image by id, if not exist, create a new one in background
+/// get a file's thumb image by id, if not exist, create a new one in background.
+/// A current developed derivative for the asset's acknowledged commit takes
+/// precedence (lap-a58).
 #[tauri::command]
 pub async fn get_file_thumb_by_id(
     app_handle: tauri::AppHandle,
+    state: tauri::State<'_, DevelopAppState>,
     file_id: i64,
     thumbnail_size: u32,
     raw_thumbnail_source: String,
@@ -2474,6 +2484,10 @@ pub async fn get_file_thumb_by_id(
     let Some(file_path) = file.file_path.clone() else {
         return Ok(None);
     };
+
+    if let Some(developed) = developed_thumbnail_override(state.inner(), file_id, thumbnail_size) {
+        return Ok(Some(developed));
+    }
 
     let file_type = file.file_type.unwrap_or(0);
     let orientation = file.e_orientation.unwrap_or(1) as i32;
@@ -2507,10 +2521,12 @@ pub async fn get_file_thumb_by_id(
     Ok(None)
 }
 
-/// get multiple thumbnails in one IPC call; missing thumbnails are generated in background
+/// get multiple thumbnails in one IPC call; missing thumbnails are generated in background.
+/// A current developed derivative takes precedence per file (lap-a58).
 #[tauri::command]
 pub async fn get_file_thumbs(
     app_handle: tauri::AppHandle,
+    state: tauri::State<'_, DevelopAppState>,
     files: Vec<ThumbRequest>,
     thumbnail_size: u32,
     raw_thumbnail_source: String,
@@ -2533,6 +2549,13 @@ pub async fn get_file_thumbs(
     for request in files {
         if request.file_id <= 0 {
             thumbs.push(None);
+            continue;
+        }
+
+        if let Some(developed) =
+            developed_thumbnail_override(state.inner(), request.file_id, thumbnail_size)
+        {
+            thumbs.push(Some(developed));
             continue;
         }
 
@@ -3386,13 +3409,17 @@ pub fn restore_databases(
 /// Managed develop state. The engine session manager (worker pools, bounded
 /// queues) is constructed lazily on first use so app startup never pays for
 /// it; the GPU context initializes on first render or capability probe.
+/// The developed-derivative infrastructure (lap-a58) initializes lazily too.
 #[derive(Default)]
-pub struct DevelopAppState(std::sync::OnceLock<std::sync::Arc<DevelopService>>);
+pub struct DevelopAppState {
+    service: std::sync::OnceLock<std::sync::Arc<DevelopService>>,
+    derivatives: std::sync::OnceLock<std::sync::Arc<DevelopDerivativeParts>>,
+}
 
 impl DevelopAppState {
     fn service(&self) -> std::sync::Arc<DevelopService> {
         std::sync::Arc::clone(
-            self.0.get_or_init(|| {
+            self.service.get_or_init(|| {
                 let store = std::sync::Arc::new(
                     SidecarBackedStore::new(DevelopRecipeRepository::lap_default())
                         .with_conn_factory(std::sync::Arc::new(|| {
@@ -3409,6 +3436,361 @@ impl DevelopAppState {
                 ))
             }),
         )
+    }
+
+    /// The developed-derivative infrastructure (lap-a58): acknowledged-commit
+    /// bus, bounded on-disk derivative store and the shared render gate.
+    pub(crate) fn derivatives(&self) -> std::sync::Arc<DevelopDerivativeParts> {
+        std::sync::Arc::clone(self.derivatives.get_or_init(|| {
+            let bus = std::sync::Arc::new(lap_lib::develop::cache::DevelopCommitBus::new());
+            // The store is a rebuildable cache: if the library-scoped cache
+            // directory is unavailable, degrade to a process-local temporary
+            // directory (logged) rather than losing developed thumbnails.
+            let root = crate::t_config::get_app_cache_dir()
+                .map(|dir| dir.join("developed-derivatives"))
+                .unwrap_or_else(|_| {
+                    std::env::temp_dir().join("lap-developed-derivatives")
+                });
+            let store = match lap_lib::develop::cache::DevelopedDerivativeStore::open(
+                root,
+                std::sync::Arc::clone(&bus),
+            ) {
+                Ok(store) => std::sync::Arc::new(store),
+                Err(error) => {
+                    eprintln!(
+                        "developed-derivative cache unavailable, falling back to a temporary directory: {error}"
+                    );
+                    std::sync::Arc::new(
+                        lap_lib::develop::cache::DevelopedDerivativeStore::open(
+                            std::env::temp_dir().join(format!(
+                                "lap-developed-derivatives-{}",
+                                std::process::id()
+                            )),
+                            std::sync::Arc::clone(&bus),
+                        )
+                        .expect("temporary developed-derivative cache directory"),
+                    )
+                }
+            };
+            std::sync::Arc::new(DevelopDerivativeParts {
+                bus,
+                store,
+                gate: std::sync::Arc::new(lap_lib::develop::cache::RenderGate::new(
+                    DERIVATIVE_REFRESH_PERMITS,
+                )),
+                refresh_in_flight: Mutex::new(HashSet::new()),
+            })
+        }))
+    }
+}
+
+/// Shared bounded permits for developed-derivative refresh jobs so background
+/// thumbnail work respects the same resource limits as interactive sessions
+/// and exports (never starves them, never decodes unbounded).
+const DERIVATIVE_REFRESH_PERMITS: usize = 2;
+
+/// Longest edge of a thumbnail-tier developed derivative. Bounded decode +
+/// render; the served bytes scale down to the requested grid size.
+const DERIVATIVE_THUMBNAIL_EDGE: u32 = 1024;
+
+/// Lazily-initialized developed-derivative parts shared by the commit hook,
+/// the thumbnail preference lookup and the background refresh jobs.
+pub struct DevelopDerivativeParts {
+    bus: std::sync::Arc<lap_lib::develop::cache::DevelopCommitBus>,
+    store: std::sync::Arc<lap_lib::develop::cache::DevelopedDerivativeStore>,
+    gate: std::sync::Arc<lap_lib::develop::cache::RenderGate>,
+    refresh_in_flight: Mutex<HashSet<i64>>,
+}
+
+type DevelopStamp = lap_lib::develop::cache::DerivativeStamp;
+
+/// Serves the current developed derivative thumbnail for an asset when one
+/// exists for its currently acknowledged commit (lap-a58: the catalog prefers
+/// developed derivatives). The returned [`AThumb`] is synthetic and
+/// read-only: it is never persisted to `athumbs`, whose rows remain the
+/// undeveloped cache authority.
+fn developed_thumbnail_override(
+    state: &DevelopAppState,
+    file_id: i64,
+    thumbnail_size: u32,
+) -> Option<AThumb> {
+    let parts = state.derivatives();
+    let asset_id = file_id.to_string();
+    let stamp = parts.bus.stamp(&asset_id)?;
+    let bytes = parts.store.lookup_bytes(&asset_id, &stamp)?;
+    use base64::{Engine, engine::general_purpose};
+    Some(AThumb {
+        id: None,
+        file_id,
+        error_code: 0,
+        thumb_data: None,
+        thumb_key: None,
+        thumb_mtime: None,
+        thumb_size: Some(thumbnail_size as i64),
+        updated_at: None,
+        thumb_data_base64: Some(general_purpose::STANDARD.encode(bytes)),
+    })
+}
+
+/// Acknowledged-commit side effects (lap-a58): register the durable stamp,
+/// invalidate the affected catalog thumbnail, notify open viewers and the
+/// catalog, and schedule the bounded developed-thumbnail refresh.
+/// Best-effort invalidation failures are logged, never failed silently.
+fn acknowledge_commit_side_effects(
+    app_handle: &AppHandle,
+    service: std::sync::Arc<DevelopService>,
+    state: &DevelopAppState,
+    asset_id: &str,
+    variant_id: &str,
+    source_fingerprint: &str,
+    receipt: &lap_lib::develop::sessions::CommitReceiptDto,
+) {
+    let parts = state.derivatives();
+    let stamp = DevelopStamp {
+        revision: receipt.revision,
+        content_hash: receipt.content_hash.clone().unwrap_or_default(),
+        source_fingerprint: source_fingerprint.to_string(),
+    };
+    parts.bus.acknowledge(asset_id, stamp);
+
+    let Ok(file_id) = asset_id.parse::<i64>() else {
+        return;
+    };
+    if file_id <= 0 {
+        return;
+    }
+
+    // Invalidate the cached (undeveloped) thumbnail row and cache file so the
+    // next request regenerates with the developed preference.
+    let thumbnail_invalidated = match AThumb::delete(file_id) {
+        Ok(_) => true,
+        Err(error) => {
+            eprintln!(
+                "develop commit: thumbnail invalidation failed for file {file_id}: {error}"
+            );
+            false
+        }
+    };
+
+    let album_id = AFile::get_file_info(file_id)
+        .ok()
+        .flatten()
+        .and_then(|file| file.album_id)
+        .unwrap_or(0);
+
+    // Explicit viewer notification: open viewers refresh the displayed
+    // derivative (MediaViewer listens for this event).
+    let _ = app_handle.emit(
+        "develop_committed",
+        serde_json::json!({
+            "fileId": file_id,
+            "assetId": asset_id,
+            "variantId": variant_id,
+            "revision": receipt.revision,
+            "contentHash": receipt.content_hash,
+            "thumbnailInvalidated": thumbnail_invalidated,
+        }),
+    );
+
+    // Reuse the existing catalog refresh contract so every open grid/central
+    // view repaints the invalidated thumbnails (same payload shape the
+    // indexing worker emits).
+    if album_id > 0 {
+        let _ = app_handle.emit(
+            "thumbnail_ready",
+            serde_json::json!({
+                "album_id": album_id,
+                "file_ids": [file_id],
+                "invalidate": true,
+            }),
+        );
+    }
+
+    schedule_developed_thumbnail_refresh(
+        app_handle.clone(),
+        service,
+        std::sync::Arc::clone(&parts),
+        file_id,
+        album_id,
+    );
+}
+
+/// Schedules the bounded developed-thumbnail refresh: at most one job per
+/// asset, each holding one shared render permit. When the job settles, the
+/// catalog and viewers are notified through the existing `thumbnail_ready`
+/// invalidation contract plus `develop_derivative_ready`.
+fn schedule_developed_thumbnail_refresh(
+    app_handle: AppHandle,
+    service: std::sync::Arc<DevelopService>,
+    parts: std::sync::Arc<DevelopDerivativeParts>,
+    file_id: i64,
+    album_id: i64,
+) {
+    {
+        let mut in_flight = parts
+            .refresh_in_flight
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !in_flight.insert(file_id) {
+            return;
+        }
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = render_developed_thumbnail(&service, &parts, file_id);
+        parts
+            .refresh_in_flight
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&file_id);
+        match result {
+            Ok(true) => {
+                if album_id > 0 {
+                    let _ = app_handle.emit(
+                        "thumbnail_ready",
+                        serde_json::json!({
+                            "album_id": album_id,
+                            "file_ids": [file_id],
+                            "invalidate": true,
+                        }),
+                    );
+                }
+                let _ = app_handle.emit(
+                    "develop_derivative_ready",
+                    serde_json::json!({ "fileId": file_id }),
+                );
+            }
+            // Superseded by a newer commit or the gate was busy: nothing to
+            // announce; the next commit or catalog refresh retries.
+            Ok(false) => {}
+            Err(error) => {
+                eprintln!("developed thumbnail refresh failed for file {file_id}: {error}")
+            }
+        }
+    });
+}
+
+/// Renders the committed recipe at thumbnail tier through a short-lived
+/// bounded session and settles it into the derivative store. Returns
+/// `Ok(true)` when a current derivative was stored, `Ok(false)` when the job
+/// was superseded (newer commit) or the gate was busy, and an explicit error
+/// for missing media, GPU failures or IO problems (never a fake success).
+fn render_developed_thumbnail(
+    service: &DevelopService,
+    parts: &DevelopDerivativeParts,
+    file_id: i64,
+) -> Result<bool, String> {
+    let Some(_permit) = parts.gate.try_acquire() else {
+        return Ok(false);
+    };
+
+    let source_path = develop_asset_source_path(file_id)?;
+    let source_bytes = fs::read(&source_path)
+        .map_err(|e| format!("failed to read source {}: {e}", source_path.display()))?;
+    let source_fingerprint = rapidraw_edit_model::sha256_hex(&source_bytes);
+    let repo = DevelopRecipeRepository::lap_default();
+    let sidecar = repo
+        .load_opt(&source_path)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no committed recipe sidecar for {}", source_path.display()))?;
+    if sidecar.revision == 0 {
+        return Ok(false);
+    }
+
+    let asset_id = file_id.to_string();
+    let stamp = DevelopStamp {
+        revision: sidecar.revision,
+        content_hash: sidecar
+            .content_hash()
+            .map_err(|e| format!("committed recipe hash failed: {e}"))?,
+        source_fingerprint: source_fingerprint.clone(),
+    };
+    // The acknowledged stamp must still match the durable sidecar, or the
+    // job is stale before it starts. On a fresh process (empty bus) the
+    // durable sidecar seeds the baseline.
+    parts.bus.seed_if_absent(&asset_id, stamp.clone());
+    if parts.bus.stamp(&asset_id).as_ref() != Some(&stamp) {
+        return Ok(false);
+    }
+
+    let opened = service
+        .open_session(lap_lib::develop::sessions::AssetEditInput {
+            asset_id: asset_id.clone(),
+            variant_id: sidecar.variant_id.clone(),
+            source_path: source_path.clone(),
+            source_fingerprint,
+            source_bytes,
+            sidecar: Some(sidecar.clone()),
+        })
+        .map_err(develop_error_string)?;
+
+    // Engine-aligned envelope: sidecar revision + 1 (see develop/sessions.rs).
+    let mut envelope = sidecar.clone();
+    match sidecar.revision.checked_add(1) {
+        Some(engine_revision) => envelope.revision = engine_revision,
+        None => {
+            let _ = service.close_session(opened.session_id);
+            return Err("sidecar revision overflow".to_string());
+        }
+    }
+
+    let outcome = service.render_preview(
+        opened.session_id,
+        1,
+        envelope,
+        rapidraw_develop::session::PreviewQuality::Settled,
+        DERIVATIVE_THUMBNAIL_EDGE,
+    );
+    let preview = match outcome {
+        Ok(preview) => preview,
+        Err(error) => {
+            let _ = service.close_session(opened.session_id);
+            return Err(develop_error_string(error));
+        }
+    };
+    let frame = match preview {
+        lap_lib::develop::sessions::PreviewWait::Completed { ticket } => {
+            service.take_preview_frame(&ticket.handle)
+        }
+        lap_lib::develop::sessions::PreviewWait::Cancelled => {
+            let _ = service.close_session(opened.session_id);
+            return Ok(false);
+        }
+        lap_lib::develop::sessions::PreviewWait::Failed { code, message } => {
+            let _ = service.close_session(opened.session_id);
+            return Err(format!("developed thumbnail render failed ({code}): {message}"));
+        }
+    };
+    let _ = service.close_session(opened.session_id);
+    let frame = frame.map_err(develop_error_string)?;
+
+    let mut jpeg_bytes = Vec::new();
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_bytes, 90);
+    let rgba = image::RgbaImage::from_raw(frame.width, frame.height, frame.rgba8.clone())
+        .ok_or_else(|| "rendered preview does not match its dimensions".to_string())?;
+    image::DynamicImage::ImageRgba8(rgba)
+        .write_with_encoder(encoder)
+        .map_err(|e| format!("developed thumbnail encoding failed: {e}"))?;
+
+    let identity = lap_lib::develop::cache::DerivativeIdentity::from_envelope(
+        &sidecar,
+        frame.width,
+        frame.height,
+        lap_lib::develop::cache::QualityTier::Thumbnail,
+    )
+    .map_err(|e| e.to_string())?;
+
+    match parts.store.settle(lap_lib::develop::cache::SettleJob {
+        asset_id,
+        stamp,
+        identity,
+        source_path,
+        bytes: jpeg_bytes,
+    }) {
+        Ok(association) => Ok(association.has_blob),
+        // A newer acknowledged commit superseded this delayed job (spec A4):
+        // not an error, nothing is stored.
+        Err(lap_lib::develop::cache::DerivativeCacheError::StaleContribution { .. }) => Ok(false),
+        Err(error) => Err(error.to_string()),
     }
 }
 
@@ -3530,22 +3912,39 @@ pub fn develop_take_preview_frame(
 
 /// Validates and durably persists a recipe with optimistic revision control.
 /// A stale commit reports a conflict; the acknowledged revision is durable.
+/// After acknowledgment the affected derivatives are invalidated and viewers
+/// are notified (lap-a58).
 #[tauri::command]
 pub async fn develop_commit_recipe(
     state: tauri::State<'_, DevelopAppState>,
+    app_handle: tauri::AppHandle,
     session_id: u64,
     expected_revision: u64,
     envelope: serde_json::Value,
 ) -> Result<lap_lib::develop::sessions::CommitReceiptDto, String> {
     let service = state.service();
     let envelope = develop_parse_envelope(envelope)?;
-    tauri::async_runtime::spawn_blocking(move || {
+    let asset_id = envelope.asset_id.clone();
+    let variant_id = envelope.variant_id.clone();
+    let source_fingerprint = envelope.source_fingerprint.clone();
+    let receipt = tauri::async_runtime::spawn_blocking(move || {
         service
             .commit_recipe(session_id, expected_revision, envelope)
             .map_err(develop_error_string)
     })
     .await
-    .map_err(|e| format!("develop commit task failed: {e}"))?
+    .map_err(|e| format!("develop commit task failed: {e}"))??;
+
+    acknowledge_commit_side_effects(
+        &app_handle,
+        state.service(),
+        state.inner(),
+        &asset_id,
+        &variant_id,
+        &source_fingerprint,
+        &receipt,
+    );
+    Ok(receipt)
 }
 
 /// Closes a session: previews are cancelled, pending saves settle first, and

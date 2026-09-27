@@ -109,6 +109,25 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  /**
+   * Renderer analytics for an already-rendered state (lap-a58): per-channel
+   * 256-bin counts produced by the develop renderer. When present, the
+   * histogram is built directly from these bins; the simulated CSS-filter
+   * calculation never runs, so adjustments are never applied a second time.
+   */
+  rendererBins: {
+    type: Object as () => RendererHistogram | null,
+    default: null,
+  },
+  /**
+   * Already-rendered RGBA8 pixels (e.g. the settled develop preview frame).
+   * The histogram is computed from these pixels as-is: geometry and
+   * adjustments are already part of them and are never re-applied here.
+   */
+  rendererPixels: {
+    type: Object as () => RendererPixels | null,
+    default: null,
+  },
 });
 
 type AdjustmentValues = {
@@ -118,6 +137,19 @@ type AdjustmentValues = {
   hue: number;
   blur: number;
   filter: string;
+};
+
+type RendererHistogram = {
+  luma: number[];
+  red?: number[];
+  green?: number[];
+  blue?: number[];
+};
+
+type RendererPixels = {
+  data: ArrayLike<number>;
+  width: number;
+  height: number;
 };
 
 const HISTOGRAM_BIN_COUNT = 256;
@@ -186,6 +218,76 @@ function resolvedAdjustments(): AdjustmentValues {
     ...naturalAdjustments,
     ...(props.adjustments || {}),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Renderer input (lap-a58): renderer analytics or already-rendered pixels.
+// While a renderer input is active, the histogram reflects exactly the
+// rendered state; the simulated filter path below never runs.
+// ---------------------------------------------------------------------------
+
+const isRenderedInput = computed(() => Boolean(props.rendererBins || props.rendererPixels));
+
+/** Copies of the target bins (diagnostics/tests). */
+function currentBins() {
+  return {
+    luma: Float32Array.from(histogramData),
+    red: Float32Array.from(histogramDataR),
+    green: Float32Array.from(histogramDataG),
+    blue: Float32Array.from(histogramDataB),
+  };
+}
+
+function normalizedRendererChannel(
+  channel: number[] | undefined,
+  output: Float32Array,
+) {
+  if (!channel || channel.length !== HISTOGRAM_BIN_COUNT) {
+    output.fill(0);
+    return;
+  }
+  writeNormalizedHistogram(Float32Array.from(channel), output);
+}
+
+function applyRendererBins(bins: RendererHistogram) {
+  normalizedRendererChannel(bins.luma, histogramData);
+  normalizedRendererChannel(bins.red, histogramDataR);
+  normalizedRendererChannel(bins.green, histogramDataG);
+  normalizedRendererChannel(bins.blue, histogramDataB);
+  startHistogramAnimation();
+}
+
+function applyRendererPixels(pixels: RendererPixels) {
+  const expected = pixels.width * pixels.height * 4;
+  const data = pixels.data instanceof Uint8ClampedArray ? pixels.data : new Uint8ClampedArray(pixels.data);
+  if (pixels.width <= 0 || pixels.height <= 0 || data.length < expected) {
+    clearHistogram();
+    return;
+  }
+  updateHistogramTargets(data);
+  startHistogramAnimation();
+}
+
+/**
+ * Applies the newest renderer input. The load guard drops a delayed/stale
+ * frame: when a newer renderer input arrived while this update was in
+ * flight, the older one must never overwrite it (spec A4 semantics).
+ */
+async function updateHistogramFromRenderer() {
+  const loadId = ++histogramLoadId;
+  releaseHistogramSourceObjectUrl();
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  if (loadId !== histogramLoadId) return;
+
+  if (props.rendererPixels) {
+    applyRendererPixels(props.rendererPixels);
+    return;
+  }
+  if (props.rendererBins) {
+    applyRendererBins(props.rendererBins);
+    return;
+  }
+  clearHistogram();
 }
 
 function clearHistogram() {
@@ -477,7 +579,9 @@ function buildHistogramData(img: HTMLImageElement) {
 
   try {
     const imageData = ctx.getImageData(0, 0, size, size);
-    if (props.applyAdjustments) {
+    // Rendered input already contains the applied adjustments; applying the
+    // simulated filter again would double them (lap-a58).
+    if (props.applyAdjustments && !isRenderedInput.value) {
       applyHistogramAdjustments(imageData.data, size, size);
     }
     updateHistogramTargets(imageData.data);
@@ -871,10 +975,19 @@ function formatLegendValue(value: number) {
   return `${Math.round((value / HISTOGRAM_HEIGHT) * 100)}%`;
 }
 
-watch(() => props.source, updateHistogram, { immediate: true });
+watch(
+  () => props.source,
+  (source) => {
+    // Renderer input takes precedence over a plain image source (lap-a58).
+    if (isRenderedInput.value) return;
+    void updateHistogram(source);
+  },
+  { immediate: true }
+);
 watch(
   () => [props.crop, props.rotate, props.flipHorizontal, props.flipVertical],
   () => {
+    if (isRenderedInput.value) return;
     autoPresetValues = null;
     scheduleHistogramRecompute();
   },
@@ -883,9 +996,26 @@ watch(
 watch(
   () => props.adjustments,
   () => {
-    if (props.applyAdjustments) scheduleHistogramRecompute();
+    // Renderer input is authoritative: simulated adjustments are never
+    // recomputed from prop churn while it is active (lap-a58).
+    if (props.applyAdjustments && !isRenderedInput.value) scheduleHistogramRecompute();
   },
   { deep: true }
+);
+watch(
+  () => [props.rendererBins, props.rendererPixels],
+  ([nextBins, nextPixels], previous) => {
+    // Apply while a renderer input is present and clear when it is removed;
+    // legacy source-only usage never enters this path.
+    const prevBins = previous ? previous[0] : null;
+    const prevPixels = previous ? previous[1] : null;
+    const hadRendererInput = Boolean(prevBins || prevPixels);
+    const hasRendererInput = Boolean(nextBins || nextPixels);
+    if (hasRendererInput || hadRendererInput) {
+      void updateHistogramFromRenderer();
+    }
+  },
+  { immediate: true }
 );
 
 onBeforeUnmount(() => {
@@ -895,5 +1025,6 @@ onBeforeUnmount(() => {
 
 defineExpose({
   getAutoPresetValues,
+  currentBins,
 });
 </script>
