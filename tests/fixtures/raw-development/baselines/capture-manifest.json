@@ -3,15 +3,15 @@
     "issue":  "lap-7f5.2",
     "captured":  "2026-09-27",
     "engine":  {
-                   "commit":  "1e072132364ea0ae0ceb7ffd17fe2c14eab903c7",
+                   "commit":  "47de7f55e1b71a5291a3fb2d5c6a335f17c755d5",
                    "renderBaselineCommit":  "5e30bcbb246395d391ba2e9662510641ffe68e6b",
                    "renderSourceSha256":  {
                                               "src-tauri/src/raw_processing.rs":  "e6192a18978a9e75b3991c810a1b24c84b4f227ba32a1f5432072c6786ef52d1",
-                                              "src-tauri/src/image_processing.rs":  "4f1ad091e1639edb3cccce7a3d882c7555d00451a9e30677ea7fa4cb616def22",
-                                              "src-tauri/src/gpu_processing.rs":  "6ac779f38f690fbd95d3be144f11f533fa31aaf60c94b5c0adc01cf0235ea153",
+                                              "src-tauri/src/image_processing.rs":  "9e1152c6ada00961842aaba442e840e6bebef34a83d2ebbca676253f33d95fba",
+                                              "src-tauri/src/gpu_processing.rs":  "1b10fa77bca878d638bc45e80b845768fdf3f4385c1c6e790aabc6f8d75c7726",
                                               "src-tauri/src/export_processing.rs":  "6146c40a06c13d7dd2d773cd385c258a2cd6940792557de8d082938a8a5789e6",
                                               "src-tauri/src/adjustment_utils.rs":  "23cb2bceaddc1f8d6546fed996f19ef897e0d9c26e2e39dfd2c5f3f01e8b8523",
-                                              "src-tauri/src/image_loader.rs":  "6ad729902db88854b1329da5b8dabf9e25769ee79d4e65f280337ee516799eda"
+                                              "src-tauri/src/image_loader.rs":  "d884fdc20f4b2c5de7bb6dcdc1d5f7e57a7d6c3200b9b657a3c4402e36c7e037"
                                           },
                    "headlessEntry":  "RapidRAW.exe export \u003cfixture\u003e --output \u003cpng\u003e --format png --adjustments \u003cpreset\u003e",
                    "gpu":  {

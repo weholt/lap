@@ -11,19 +11,28 @@
 #     any drift. Baselines are never regenerated implicitly: overwriting the
 #     frozen manifest always requires the explicit -Update flag.
 #
+# -AllowSourceDrift permits running a comparison after the render-relevant
+# engine sources legitimately changed (e.g. a reviewed extraction). It waives
+# ONLY the engine-source hash equality; every output checksum, dimension and
+# failure expectation must still match the frozen baseline. It never allows a
+# silent -Update: freezing a new manifest still requires -Update, and the
+# resulting manifest diff must be reviewed (output hashes must be unchanged
+# for a pure extraction).
+#
 # Every capture run repeats each case (-Repeat, default 2) to characterize
 # run-to-run nondeterminism before tolerances are frozen. Nondeterministic
 # checksums abort the capture: tolerances must then be derived from pixel
 # diffs deliberately, never guessed.
 #
 # Usage:
-#   powershell -ExecutionPolicy Bypass -File scripts\raw-development\capture-baselines.ps1 [-Update] [-Repeat 2] [-EngineRoot C:\Users\Thomas\Desktop\RapidRAW-engine] [-CaseFilter <regex>]
+#   powershell -ExecutionPolicy Bypass -File scripts\raw-development\capture-baselines.ps1 [-Update] [-Repeat 2] [-EngineRoot C:\Users\Thomas\Desktop\RapidRAW-engine] [-CaseFilter <regex>] [-AllowSourceDrift]
 
 param(
     [switch]$Update,
     [int]$Repeat = 2,
     [string]$EngineRoot = "C:\Users\Thomas\Desktop\RapidRAW-engine",
-    [string]$CaseFilter = ""
+    [string]$CaseFilter = "",
+    [switch]$AllowSourceDrift
 )
 
 $ErrorActionPreference = "Stop"
@@ -119,8 +128,14 @@ if (-not (Test-Path -LiteralPath $ExePath)) {
 }
 $engineCommit = (& git -C $EngineRoot rev-parse HEAD).Trim()
 $changed = @(& git -C $EngineRoot diff --name-only $RenderBaselineCommit -- $RenderSources)
+$sourceDriftAllowed = $false
 if ($changed.Count -gt 0) {
-    throw "Render-relevant engine sources changed since ${RenderBaselineCommit}: $($changed -join ', '). The pre-extraction baseline must be captured against the pinned renderer."
+    if (-not $AllowSourceDrift) {
+        throw "Render-relevant engine sources changed since ${RenderBaselineCommit}: $($changed -join ', '). The pre-extraction baseline must be captured against the pinned renderer."
+    }
+    $sourceDriftAllowed = $true
+    Write-Host "WARNING: render-relevant engine sources changed since ${RenderBaselineCommit} (allowed by -AllowSourceDrift):" -ForegroundColor Yellow
+    $changed | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
 }
 $renderSourceHashes = [ordered]@{}
 foreach ($src in $RenderSources) {
@@ -363,7 +378,11 @@ if ((Test-Path -LiteralPath $BaselinePath) -and -not $Update.IsPresent) {
     if ($frozen.engine.renderBaselineCommit -ne $RenderBaselineCommit) { $failures += "engine render baseline commit drifted" }
     foreach ($src in $RenderSources) {
         if ($frozen.engine.renderSourceSha256.$src -ne $renderSourceHashes[$src]) {
-            $failures += "engine source changed: $src"
+            if ($sourceDriftAllowed) {
+                Write-Host "SOURCE DRIFT (allowed): $src"
+            } else {
+                $failures += "engine source changed: $src"
+            }
         }
     }
     foreach ($key in $RenderSettingsKeys) {
