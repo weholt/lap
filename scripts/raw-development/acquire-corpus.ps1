@@ -75,6 +75,34 @@ function Get-Sha256([string]$File) {
     finally { $sha.Dispose() }
 }
 
+# BOM-free UTF-8 writer: Set-Content -Encoding UTF8 in Windows PowerShell 5.1
+# prepends a BOM, which JSON.parse (vitest) and serde_json (engine gates)
+# reject. All manifests under tests/fixtures must stay BOM-free; this is the
+# same writer capture-baselines.ps1 uses.
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+function Write-Utf8NoBom([string]$Path, [string]$Text) {
+    [System.IO.File]::WriteAllText($Path, $Text, $Utf8NoBom)
+}
+
+# Engine-verified decoded dimensions (enriched by capture-baselines.ps1) must
+# survive re-verification re-runs of this script: carry them over whenever a
+# fixture is byte-identical (same sha256) to the previously recorded entry.
+$manifestPath = Join-Path $CorpusRoot "corpus-manifest.json"
+$previousByPath = @{}
+if (Test-Path -LiteralPath $manifestPath) {
+    $previous = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach ($entry in @($previous.files)) {
+        if ($null -ne $entry.decodedDimensions) {
+            $previousByPath[$entry.path] = @{ sha256 = $entry.sha256; decodedDimensions = $entry.decodedDimensions }
+        }
+    }
+}
+function Get-CarriedDimensions([string]$Path, [string]$Sha256) {
+    $prior = $previousByPath[$Path]
+    if ($prior -and $prior.sha256 -eq $Sha256) { return $prior.decodedDimensions }
+    return $null
+}
+
 New-Item -ItemType Directory -Force (Join-Path $CorpusRoot "corpus") | Out-Null
 New-Item -ItemType Directory -Force (Join-Path $CorpusRoot "baselines") | Out-Null
 New-Item -ItemType Directory -Force (Join-Path $CorpusRoot "presets") | Out-Null
@@ -170,7 +198,7 @@ $manifestFiles = @()
 foreach ($f in $Files) {
     $target = Join-Path $CorpusRoot ("corpus\" + $f.Path)
     $item = Get-Item -LiteralPath $target
-    $manifestFiles += [ordered]@{
+    $entry = [ordered]@{
         path        = "corpus/$($f.Path)"
         bytes       = $item.Length
         sha256      = (Get-Sha256 $target)
@@ -185,9 +213,12 @@ foreach ($f in $Files) {
         categories  = $f.Categories
         notes       = $f.Notes
     }
+    $carried = Get-CarriedDimensions $entry.path $entry.sha256
+    if ($null -ne $carried) { $entry["decodedDimensions"] = $carried }
+    $manifestFiles += $entry
 }
 
-$manifestFiles += [ordered]@{
+$derivedEntry = [ordered]@{
     path        = "corpus/dng-linear-orientation6.DNG"
     bytes       = $derivation.output.bytes
     sha256      = $derivation.output.sha256
@@ -203,6 +234,9 @@ $manifestFiles += [ordered]@{
     categories  = @("orientation", "linear-dng", "derived")
     notes       = "Orientation=6 fixture: exercises the engine's rawler orientation application path; expect transposed output dimensions"
 }
+$derivedCarried = Get-CarriedDimensions $derivedEntry.path $derivedEntry.sha256
+if ($null -ne $derivedCarried) { $derivedEntry["decodedDimensions"] = $derivedCarried }
+$manifestFiles += $derivedEntry
 
 $manifest = [ordered]@{
     schema      = "lap-raw-corpus/v1"
@@ -218,7 +252,6 @@ $manifest = [ordered]@{
     files       = $manifestFiles
 }
 
-$manifestPath = Join-Path $CorpusRoot "corpus-manifest.json"
-$manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+Write-Utf8NoBom $manifestPath ($manifest | ConvertTo-Json -Depth 6)
 Write-Host "Corpus verified and manifest written: $manifestPath ($($manifestFiles.Count) fixtures)"
 Write-Host "NOTE: synthetic fixtures are generated separately by generate-synthetic-fixtures.mjs; run it next."

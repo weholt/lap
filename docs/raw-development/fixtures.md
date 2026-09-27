@@ -49,7 +49,10 @@ dimensions.
 - No private photo library data is committed. Acquisition used a pinned file
   list with sha256 verification against the RawDB API records and a hard byte
   budget (83,305,796 of 209,715,200 bytes used).
-- Re-acquire reproducibly with `scripts/raw-development/acquire-corpus.ps1`.
+- Re-acquire reproducibly with `scripts/raw-development/acquire-corpus.ps1`
+  (`-SkipDownload` re-verifies local bytes only). Re-runs rewrite the corpus
+  manifest BOM-free and carry over engine-verified `decodedDimensions` for
+  byte-identical fixtures, so re-verification never breaks the JSON gates.
 
 ## Synthetic suite
 
