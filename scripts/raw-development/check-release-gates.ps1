@@ -1,12 +1,15 @@
-# Fail-closed release gate wrapper (lap-d7f / TASK-103).
+# Fail-closed release gate wrapper (lap-d7f / TASK-103; readiness gates added
+# by lap-da3 / TASK-603).
 #
 # Runs scripts/raw-development/check-release-gates.mjs with node and propagates
 # its exit code:
 #   0 = released (all gates passed including a recorded, evidenced
 #       combined-product distribution decision)
 #   1 = blocked (EXPECTED while the distribution hold stands: missing
-#       approval/evidence, incomplete provenance, or unresolved unknowns)
-#   2 = failed (provenance inventory unreadable/malformed)
+#       approval/evidence, incomplete provenance, unresolved unknowns, or
+#       incomplete A1-A12/P1-P7 readiness evidence)
+#   2 = failed (provenance inventory or readiness assessment
+#       unreadable/malformed)
 #
 # A non-zero exit is the correct result today and must not be worked around;
 # see docs/raw-development/release-gates.md for how an authorized decision is

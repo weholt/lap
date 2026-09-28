@@ -1,0 +1,570 @@
+{
+  "schema": "lap-raw-readiness/v1",
+  "generated": "2026-09-28",
+  "issue": "lap-da3",
+  "legacyIssue": "lap-404.3",
+  "planKey": "TASK-603",
+  "purpose": "Final readiness assessment of the Lap RAW-development extraction against every spec.md acceptance criterion (A1-A12) and prerequisite (P1-P7). This is a finite local assessment: it does not authorize distribution, publication, push, or main-branch merge. Classifications are passed, failed, blocked, or untested; missing platform, fixture, or interactive evidence is never recorded as passed. Release status BLOCKED is an assessment result and remains an unresolved product requirement, not a waiver.",
+  "governingSpec": {
+    "path": "docs/raw-development/spec.md",
+    "sha256": "49680993969aa54b0265c7671eaa3b172043425bbeb33e69f1855c8293c9284c",
+    "verifyCommand": "certutil -hashfile docs/raw-development/spec.md SHA256"
+  },
+  "revisions": {
+    "lap": {
+      "branch": "pebbles-harness/raw-development",
+      "parentRevision": "9615d36e40f1637ec6453e45700903675ac744e4",
+      "note": "Assessment evidence was collected against 9615d36e; the commit carrying this file is its direct child on the same branch. No publication, push, or main-branch merge occurred."
+    },
+    "engine": {
+      "repository": "C:/Users/Thomas/Desktop/RapidRAW-engine",
+      "branch": "feature/lap-engine-extraction",
+      "consumedRevision": "de4fdbd76723c76145b477a2b8874226512475f1",
+      "checkoutHead": "73ed5e87789e795aed699dbf1f6c0879a8e5b407",
+      "checkoutHeadMatchesPin": false,
+      "headDelta": "git diff --stat de4fdbd7..73ed5e87 = .pebbles/events.jsonl only (6 added tracker-event lines); all engine sources, manifests, and resources are identical to the consumed pin.",
+      "verification": "Pin identical across docs/raw-development/engine-lock.json, src-tauri/src/develop/sessions.rs ENGINE_GIT_REVISION, src-tauri/Cargo.lock (rev=de4fdbd7...), and src-tauri/Cargo.toml."
+    },
+    "renderBaselineCommit": "5e30bcbb246395d391ba2e9662510641ffe68e6b",
+    "resourceSchemaVerification": {
+      "verified": "2026-09-28 by lap-da3 (TASK-603)",
+      "method": "SHA-256 over committed content at the pin via cmd-level 'git show <rev>:<path>' (PowerShell redirection mangles bytes and was not used), cross-checked against the cargo-resolved checkout under a fresh CARGO_HOME (C:/Users/Thomas/.cg2) that Lap-style consumers actually build from.",
+      "matching": [
+        "crates/rapidraw-develop/src/gpu/shaders/shader.wgsl = e16f22930ef60b5a3e3035bdcb70c7d2e6b68a0e1ceb50128c40a404cdb2b9f9",
+        "crates/rapidraw-develop/src/gpu/shaders/blur.wgsl = d6761cf5c136f9f1575578aa5e532e35ce0a5624553fd53dbdc46e95eba1e580",
+        "crates/rapidraw-develop/src/gpu/shaders/flare.wgsl = f5ce1f83e4e954a7c0cf0f59951f3401ca2937def6f032d8f7666642ddf91ad8",
+        "Cargo.toml (workspace) = 9286e9a031cb97803a79423f8da14dfd379d190291640f09d2b4042ae7563343",
+        "Cargo.lock (workspace) = de67b0ef2b840a7eab238fda12acb154683f6dac2b77efba37073c6bab149ded",
+        "crates/rapidraw-edit-model/Cargo.toml = b55880963cb303d6008991a3bc838dd98bd937491fa34688945250ce9ed30e39",
+        "crates/rapidraw-develop/Cargo.toml = 152c93e7ab9b54248e73b217c618a663eddd3cf69f8fd980cb80202bc4222b35"
+      ],
+      "corrected": [
+        {
+          "path": "crates/rapidraw-edit-model/gen/recipe.ts",
+          "actualSha256": "7c1cb13cb8046beb024f8f66084110636eda77d80424211b9bc81befcaf6035b",
+          "previouslyRecorded": "979e18db893b4302102b2912cef64d638b7bcfce4ff222ec9a116b2a85ad2318",
+          "note": "lap-da3 finding: the lap-d52 (TASK-502) engine-lock entry did not match the committed content at the pin in either LF or CRLF form. The value was corrected in engine-lock.json by this assessment; the corrected value was re-verified twice and against the cargo-resolved checkout bytes consumed by a fresh build."
+        },
+        {
+          "path": "crates/rapidraw-edit-model/gen/default-recipe.json",
+          "actualSha256": "bceb1e7a76ecda64a0a1398ee1c70b818896ba36154a63779dd659259e8be9af",
+          "previouslyRecorded": "e3033f7d45ea465d68c5ee30c5be25fcc514839231847d15b92d84d0dadc56ab",
+          "note": "Same lap-da3 finding and correction as gen/recipe.ts."
+        }
+      ]
+    },
+    "receipts": [
+      {
+        "key": "TASK-103",
+        "sha256": "8126171ef5309ccf594b2bfacce9f373a0911cda7b2246975205a7c62bd3e3b5",
+        "verified": true,
+        "note": "Automatic receipt re-hashed 2026-09-28 with certutil; matches the accepted producer receipt."
+      },
+      {
+        "key": "TASK-602",
+        "sha256": "7cccd8c28402cf9b29bb92b0466866b1c49e3f87122473e99083775abab09752",
+        "verified": true,
+        "note": "Automatic receipt re-hashed 2026-09-28 with certutil; matches the accepted producer receipt."
+      }
+    ]
+  },
+  "acceptance": {
+    "A1": {
+      "title": "Source immutability and backend source/alias export rejection",
+      "classification": "passed",
+      "evidence": [
+        {
+          "kind": "e2e-scenario",
+          "reference": "tests/raw-development/e2e scenario a1-source-immutability",
+          "note": "SHA-256 identical before/after open, GPU preview, commit, close/reopen, reset, and full-resolution 5472x3648 export of the real Bayer CR3; typed DestinationProtected rejections for source, sidecar, and previous-sidecar destinations."
+        },
+        {
+          "kind": "test-suite",
+          "reference": "src-tauri/src/develop/export.rs (source-protection tests)",
+          "note": "Lexical/canonical/case/hardlink alias rejection; protected set covers source RAW plus .lapedit.json/.prev; no artifact on failure. lap-7ae GREEN."
+        },
+        {
+          "kind": "document",
+          "reference": "docs/raw-development/rollback.md",
+          "note": "Migration scenario asserts source SHA-256 immutability at every step."
+        },
+        {
+          "kind": "document",
+          "reference": "docs/raw-development/slice-qualification.md"
+        }
+      ],
+      "notes": "Executed on real fixtures on the real GPU (RTX 4060). Reproduce: lap-raw-e2e.exe a1-source-immutability (see tests/raw-development/e2e)."
+    },
+    "A2": {
+      "title": "Per-asset recipe/geometry isolation across immediate switching and restart",
+      "classification": "passed",
+      "evidence": [
+        {
+          "kind": "e2e-scenario",
+          "reference": "tests/raw-development/e2e scenario a2-ab-navigation",
+          "note": "A (real CR3) and B (gradient) commit independently; interleaved GPU previews stay asset-scoped; after close/reopen each sidecar restores only its own recipe; previews remain distinct."
+        },
+        {
+          "kind": "test-suite",
+          "reference": "src-vite/tests/useDevelopEditor.test.ts",
+          "note": "Switch-before-debounce flush with A/B isolation; awaited close flush; failure retains dirty state (lap-adc GREEN)."
+        },
+        {
+          "kind": "test-suite",
+          "reference": "src-tauri/tests/develop_persistence/",
+          "note": "Acknowledged-recipe restore, revision CAS, projection reconciliation."
+        }
+      ],
+      "notes": "Acknowledged recipe and geometry are restored; A's settings never appear on B."
+    },
+    "A3": {
+      "title": "Save-boundary fault/crash tolerance, corruption and read-only visibility",
+      "classification": "passed",
+      "evidence": [
+        {
+          "kind": "e2e-scenario",
+          "reference": "tests/raw-development/e2e scenario a3-process-termination",
+          "note": "Child process hard-killed with taskkill /F after ACK 3: durable sidecar stays valid (canonical hash verified), previous revision recoverable, startup reconciliation projects exactly the durable revision, no torn temp artifacts."
+        },
+        {
+          "kind": "test-suite",
+          "reference": "src-tauri/tests/develop_persistence/",
+          "note": "Fault injection (Error and AbortProcess) at every save boundary (temp write, flush, replace, ack, projection); read-only destination produces explicit ReadOnlyDestination before any write; real child-process crash tests. lap-ab8 GREEN."
+        },
+        {
+          "kind": "test-suite",
+          "reference": "src-tauri/tests/develop_persistence/corrupt_and_readonly.rs",
+          "note": "Corrupt and future-schema sidecars rejected visibly (CorruptSidecar/UnsupportedSchema) with payloads preserved, never reset (lap-63f migration evidence)."
+        },
+        {
+          "kind": "tracker",
+          "reference": "lap-63f GREEN comment 2026-09-28",
+          "note": "Startup reconcile now removes orphaned .lapedit*-family .tmp siblings (RED->GREEN behavior regression)."
+        }
+      ],
+      "notes": "A failed save retains the dirty session for retry; catalog lag reconciles at startup; a failed catalog projection never destroys the recipe."
+    },
+    "A4": {
+      "title": "Two-window revision conflicts and stale preview/analytics rejection",
+      "classification": "passed",
+      "evidence": [
+        {
+          "kind": "e2e-scenario",
+          "reference": "tests/raw-development/e2e scenario a4-conflict-stale",
+          "note": "Two production services commit from revision 1: one wins, the other receives typed RevisionConflict; re-submitting generation 5 is typed StaleGeneration; a gated delayed reply resolves Cancelled and never replaces the newer generation."
+        },
+        {
+          "kind": "test-suite",
+          "reference": "RapidRAW-engine crates/rapidraw-develop session_tests",
+          "note": "Per-session coalescing with generation counters; obsolete completions dropped as previews_dropped_stale (rapidraw-a38 evidence, lap-928)."
+        },
+        {
+          "kind": "test-suite",
+          "reference": "src-tauri/src/develop/cache.rs settle gates",
+          "note": "StaleContribution rejection: a delayed job rendered for an older commit can never overwrite newer state (lap-a58)."
+        }
+      ],
+      "notes": "Canceling preview work never cancels an acknowledged save (save-aware close asserted in session_tests)."
+    },
+    "A5": {
+      "title": "Full-dimension development source and full-resolution export beyond 4096 px",
+      "classification": "passed",
+      "evidence": [
+        {
+          "kind": "e2e-scenario",
+          "reference": "tests/raw-development/e2e scenario a5-fullres-export",
+          "note": "Real Bayer CR3 (5472x3648) exports at exactly the original decoded dimensions; explicit max_edge resize is downscale-only; fresh-service re-export of the same committed revision is byte-identical; orientation fixture decodes transposed 5464x8192."
+        },
+        {
+          "kind": "document",
+          "reference": "crates/rapidraw-develop/src/decode.rs decode_original",
+          "note": "Full-dimension linear decode; embedded, downscaled, or 8-bit previews are never returned."
+        },
+        {
+          "kind": "command",
+          "reference": "task603-engine-consumer decode of dng-linear-orientation6.DNG at pin de4fdbd7",
+          "note": "5464x8192, linear_raw=true, exit 0 (fresh-cache consumer build, 2026-09-28)."
+        }
+      ],
+      "notes": "Committed settings reproduce after restart (byte-identical re-export)."
+    },
+    "A6": {
+      "title": "Pinned-fixture adjustment parity, frozen tolerances, preview/export/histogram correspondence",
+      "classification": "passed",
+      "evidence": [
+        {
+          "kind": "gpu-fixture-parity",
+          "reference": "tests/fixtures/raw-development/baselines/capture-manifest.json",
+          "note": "34/34 headless export cases byte-identical to the frozen pre-extraction baseline (render baseline 5e30bcbb), re-frozen at the consumed pin de4fdbd7 by lap-63f with output checksums unchanged; engine sources individually sha256-pinned; GPU ('on GPU in') asserted per render case (RTX 4060, Dx12)."
+        },
+        {
+          "kind": "gpu-fixture-parity",
+          "reference": "tests/raw-development/preview-export-parity.json",
+          "note": "Settled GPU preview vs downsampled export under one color transform: byte-identical repeats (mean/p99/max 0, histogram intersection 1.0); frozen near-exact tolerances; adjusted-state histogram provably differs from default state. Re-frozen at de4fdbd7 (lap-63f)."
+        },
+        {
+          "kind": "command",
+          "reference": "powershell -ExecutionPolicy Bypass -File scripts/raw-development/capture-baselines.ps1",
+          "note": "Frozen exact-checksum tolerance (0) from characterized determinism; compare mode exits 1 on any drift. lap-d13/lap-70c evidence."
+        },
+        {
+          "kind": "document",
+          "reference": "docs/raw-development/fixtures.md",
+          "note": "CC0 real corpus: Bayer, X-Trans, linear DNG, orientation-6, highlight stress, >4096 px; per-adjustment and combination cases."
+        }
+      ],
+      "notes": "Scope: single host/adapter (NVIDIA GeForce RTX 4060; Dx12 headless capture path, Vulkan offscreen e2e path). Extending frozen tolerances to further backends/platforms is release work tracked under P5/blocker B2; no cross-platform parity is claimed."
+    },
+    "A7": {
+      "title": "Explicit unsupported/failed results for GPU and resource failure modes",
+      "classification": "blocked",
+      "evidence": [
+        {
+          "kind": "e2e-scenario",
+          "reference": "tests/raw-development/e2e scenario a7-gpu-failures",
+          "note": "Missing adapter (empty backend set) -> typed probe failure and typed render/export errors with no artifact written; recipe referencing a missing LUT resource fails explicitly for preview and durable export; broken/undecodable sources produce typed Decode errors; texture limit recorded and engine-side TextureTooLarge guards oversized requests."
+        },
+        {
+          "kind": "command",
+          "reference": "tests/raw-development/platform workload gpu-failure-modes (lap-c0e)",
+          "note": "Missing adapter -> typed unsupported through the production service; oversized texture 32769x8 vs limit 32768 -> typed TextureTooLarge."
+        },
+        {
+          "kind": "document",
+          "reference": "docs/raw-development/performance.md (honest limitations)",
+          "note": "Device loss and OOM were NOT injected; typed engine variants (DeviceLost, OutOfMemory) exist and are mapped in the host, but real driver-fault qualification remains open release work."
+        }
+      ],
+      "notes": "Blocked specifically on driver-level device-loss/OOM injection evidence (blocker B5). An unadjusted image is never reported as a successful adjusted export (base-image fallback removed during extraction, lap-e5e)."
+    },
+    "A8": {
+      "title": "File operations and catalog lifecycle preserve or re-associate edits",
+      "classification": "passed",
+      "evidence": [
+        {
+          "kind": "test-suite",
+          "reference": "src-tauri/tests/develop_assets/",
+          "note": "23+ cases: rename/move retain identity, copy forks identity, journaled rollback on partial failure, same-basename RAW/JPEG pair binding to the selected RAW member, fingerprint-gated replacement detection (SourceReplaced), trash companions, external-rescan reconcile with Exact/Ambiguous/Missing resolution, Unicode paths, missing media. lap-487 RED->GREEN."
+        },
+        {
+          "kind": "test-suite",
+          "reference": "src-tauri/tests/develop_assets/variants_cases.rs",
+          "note": "Catalog rebuild restores variant projection rows and removes stale ones; reset/delete preserve sibling sidecars and shared resource refs (lap-952)."
+        },
+        {
+          "kind": "test-suite",
+          "reference": "src-tauri/src/develop/recipe_repository.rs reconcile_folder/reconcile_albums_at_startup",
+          "note": "Sidecar-ahead-of-catalog projection; corrupt/unsupported sidecars reported visibly without touching data (lap-ab8)."
+        }
+      ],
+      "notes": "Recorded limitations (lap-487): OS recycle-bin restore itself is external; tests simulate restore by re-placing the group and prove re-association. Reconcile is name/catalog-anchored with fingerprint revalidation at session-open/export/thumbnail, not whole-library byte hashing. No UI-level file-operation e2e exists."
+    },
+    "A9": {
+      "title": "Reset, undo/redo, bypass, geometry, preset hover/cancel, selective copy; hovering never saves; imported limitations stay visible",
+      "classification": "passed",
+      "evidence": [
+        {
+          "kind": "test-suite",
+          "reference": "src-vite/tests/useDevelopHistory.test.ts + developMasks.controller.test.ts",
+          "note": "Session-scoped undo/redo with a 50-entry bound; one history transaction per gesture; cancel-restore semantics (lap-78d)."
+        },
+        {
+          "kind": "test-suite",
+          "reference": "src-vite/tests/develop/PresetsPanel.test.ts",
+          "note": "Fake-timer hover preview/cancel/apply semantics: hovering never persists; apply is one transaction (lap-62b)."
+        },
+        {
+          "kind": "test-suite",
+          "reference": "src-vite/tests/useDevelopClipboard.test.ts",
+          "note": "Selective per-section copy/paste with no geometry and no shared identity; fake-import rejections (lap-62b)."
+        },
+        {
+          "kind": "test-suite",
+          "reference": "src-tauri/tests/develop_assets/ + develop_rrdata_import + engine geometry/lens tests",
+          "note": "Crop/orientation in oriented coordinates with mask anchoring (lap-6bc, lap-78d); reset via develop_reset_variant and panel reset (lap-adc, lap-952); sectionVisibility persisted as bypass state (schema.md); unsupported imported effects produce named limitations and block faithful claims (lap-5c2)."
+        }
+      ],
+      "notes": "Interactive ergonomics of these behaviors in the running GUI are part of A10 and remain blocked there; automated evidence here is component/service level."
+    },
+    "A10": {
+      "title": "Develop controls in Lap's main right panel with interactive verification",
+      "classification": "blocked",
+      "evidence": [
+        {
+          "kind": "document",
+          "reference": "docs/raw-development/interactive-verification.md",
+          "note": "Reproducible K1-K9 checklist; every interactive row is 'pending'. Spec A10 explicitly requires interactive verification."
+        },
+        {
+          "kind": "test-suite",
+          "reference": "src-vite/tests (DevelopPanel.test.ts and suite; 25 files / 231 tests at lap-63f)",
+          "note": "Automated proxies actually executed: panel mounts, keyboard/numeric input, 9-locale labels, save status/retry, original comparison, histogram source switching, information/selection/duplicate modes untouched (diff-inspected)."
+        },
+        {
+          "kind": "command",
+          "reference": "powershell -ExecutionPolicy Bypass -File scripts/raw-development/launch-app-slice.ps1",
+          "note": "Real Lap.exe launched, window visible (Win32), 15 s stability, graceful exit 0 (lap-63f). Proves lifecycle only, not interactive editing."
+        },
+        {
+          "kind": "document",
+          "reference": "docs/raw-development/slice-qualification.md (stage 6)",
+          "note": "App-launch evidence proves process/window/lifecycle only; unattended slider interaction in the running GUI is not claimed."
+        }
+      ],
+      "notes": "Blocked until a human executes K1-K9 and records observations/screenshots (blocker B4). Automated proxies reduce but do not remove the gap; no agent output claims otherwise."
+    },
+    "A11": {
+      "title": "AI-free fresh core-engine build; both hosts on the same tested engine revision",
+      "classification": "passed",
+      "evidence": [
+        {
+          "kind": "command",
+          "reference": "task603-engine-consumer (CARGO_HOME=C:/Users/Thomas/.cg2, fresh) cargo build --release at rev de4fdbd7",
+          "note": "2026-09-28: exit 0 in 2m56s from a completely fresh dependency cache; no AI runtime, no model downloads, no credentials, no RapidRAW application window. Decodes: 64x48 synthetic gradient (linear_raw=true), orientation-6 DNG 5464x8192 (linear_raw=true, Rotate90), Bayer CR3 5472x3648 (linear_raw=false) - all exit 0."
+        },
+        {
+          "kind": "document",
+          "reference": "docs/raw-development/engine-lock.json (verification.standaloneConsumer)",
+          "note": "Earlier clean-cache consumer proof at rev e1035c38 (build 1m34s; same three fixture classes); cargo-resolved checkout byte-compared to committed content (10/10 files)."
+        },
+        {
+          "kind": "hash-verification",
+          "reference": "docs/raw-development/readiness.json revisions.resourceSchemaVerification",
+          "note": "Pin de4fdbd7 identical across engine-lock.json, sessions.rs ENGINE_GIT_REVISION, Cargo.lock, Cargo.toml; engine checkout HEAD differs only by tracker-event lines; resource/schema hashes verified at the pin on 2026-09-28."
+        },
+        {
+          "kind": "command",
+          "reference": "cargo tree -p rapidraw-develop (lap-e5e/rapidraw-e3d4 evidence)",
+          "note": "No tauri/winit/ort/tokenizers/reqwest in the engine crate dependency graph."
+        }
+      ],
+      "notes": "Lap consumes the pinned revision via git dependency recorded in Cargo.lock; the RapidRAW host builds the same crates from the same checkout. cargo.io/git dependency fetches during build are package dependencies, not AI models or credentials."
+    },
+    "A12": {
+      "title": "Reference-hardware performance and budgets",
+      "classification": "failed",
+      "evidence": [
+        {
+          "kind": "platform-measurement",
+          "reference": "docs/raw-development/performance.md",
+          "note": "windows-thomas-rtx4060 (Ryzen 7 5700X, RTX 4060, Vulkan): warm slider 1536 px p50 3876 ms / p95 3925.6 ms vs the provisional 150 ms target - MISSED ~26x; cold decode p95 2305.6 ms; settled preview p95 ~3912 ms; durable export p95 4644 ms; thumbnails 0.136/s under indexing load; navigation memory bounded (+1.5 MiB steady state)."
+        },
+        {
+          "kind": "platform-gate",
+          "reference": "tests/raw-development/platform/platform-manifest.json + scripts/raw-development/benchmark.mjs gate",
+          "note": "Fail-closed platform gate: target redefinition rejected; failed workloads rejected; absent execution rejected; verdict windows-thomas-rtx4060: blocked (target missed), linux-reference: untested, macos-reference: untested."
+        },
+        {
+          "kind": "measurement",
+          "reference": "tests/raw-development/platform/runs/platform-results-windows-thomas-rtx4060.json (machine-local, gitignored)",
+          "note": "Raw sample arrays, recomputed percentiles, RAM/VRAM series; copy inside the lap-c0e run directory."
+        }
+      ],
+      "notes": "FAILED on the measured host: the provisional warm-preview budget is missed (dominant cost: host-side full-resolution CPU downscale per preview generation, ~3535 ms of ~3925 ms; engine GPU warm re-render is ~18-20 ms). Final budgets beyond the provisional 150 ms target are not yet agreed and must be agreed after the first measured slice per spec - they are not invented here (blocker B3). Linux/macOS are explicitly untested (blocker B2)."
+    }
+  },
+  "prerequisites": {
+    "P1": {
+      "title": "Both application interfaces inspected",
+      "classification": "passed",
+      "evidence": [
+        {
+          "kind": "document",
+          "reference": "docs/raw-development/spec.md (sections 1-3)",
+          "note": "Source map with pinned revisions: RapidRAW 5e30bcbb246395d391ba2e9662510641ffe68e6b and Lap 67cda34420587dd3590a7e63cb008e55b0f9acb1."
+        },
+        {
+          "kind": "hash-verification",
+          "reference": "docs/raw-development/development-manifest.json",
+          "note": "Spec digest verified (SHA-256 49680993..., re-verified 2026-09-28 by lap-da3)."
+        }
+      ],
+      "notes": ""
+    },
+    "P2": {
+      "title": "Target branch reconciled with the inspected main revision",
+      "classification": "passed",
+      "evidence": [
+        {
+          "kind": "document",
+          "reference": "docs/raw-development/development-manifest.json (repositories.lap)",
+          "note": "Working branch pebbles-harness/raw-development descends directly from the spec-inspected Lap revision 67cda344 (one import commit ahead, baseline a2d0e01c). The separate pre-existing local checkout was not used and was never modified."
+        }
+      ],
+      "notes": ""
+    },
+    "P3": {
+      "title": "License/provenance decision covering code and bundled resources",
+      "classification": "blocked",
+      "evidence": [
+        {
+          "kind": "document",
+          "reference": "docs/raw-development/provenance.json (distributionDecision, openQuestions)",
+          "note": "distributionDecision.status=blocked with decidedBy/decidedAt/scope null and no evidence entries; 8 release-blocking open questions (combined-product model, extracted-crate license fields, lensfun data license, shader audit, AI model weights, ffmpeg sidecar, ONNX Runtime artifacts, full dependency audit)."
+        },
+        {
+          "kind": "command",
+          "reference": "node scripts/raw-development/check-release-gates.mjs",
+          "note": "Fail-closed gate exits 1 (blocked) on the real evidence set; verified again on 2026-09-28 by lap-da3."
+        }
+      ],
+      "notes": "No agent, harness launch, or environment signal constitutes approval (release-gates.md). Blocker B1."
+    },
+    "P4": {
+      "title": "Redistributable RAW fixtures across required categories",
+      "classification": "passed",
+      "evidence": [
+        {
+          "kind": "document",
+          "reference": "docs/raw-development/fixtures.md",
+          "note": "CC0-1.0 corpus from rawdb.dnglab.org with per-file sourceUrl/license/sha256: Bayer (Canon R6 CRAW), X-Trans (Fuji X-T5), linear DNG (JPEG-XL tiles), orientation-6 derivative, highlight stress (ISO 204800), multiple >4096 px fixtures; deterministic synthetic numerical/failure suite; pinned pre-extraction baselines."
+        },
+        {
+          "kind": "command",
+          "reference": "powershell -ExecutionPolicy Bypass -File scripts/raw-development/acquire-corpus.ps1 -SkipDownload",
+          "note": "Re-verifies local bytes against pinned manifests without re-download."
+        }
+      ],
+      "notes": "All categories required by the spec are covered; fixture rights are CC0. Fixtures were exercised by the parity, e2e, and platform evidence above."
+    },
+    "P5": {
+      "title": "Reference machines and GPU/backend coverage on Windows, Linux, macOS",
+      "classification": "blocked",
+      "evidence": [
+        {
+          "kind": "platform-measurement",
+          "reference": "docs/raw-development/performance.md",
+          "note": "Windows reference machine executed and measured (Vulkan offscreen; Dx12 headless capture). Linux and macOS reference machines do not exist in this environment and are explicitly UNTESTED (status unavailable in the platform manifest)."
+        },
+        {
+          "kind": "document",
+          "reference": ".github/workflows/raw-development.yml",
+          "note": "CI workflow is a dispatch-only DEFINITION, never executed; definitions alone are not platform evidence."
+        }
+      ],
+      "notes": "Blocker B2. No cross-platform qualification is claimed from this machine or from CI definitions."
+    },
+    "P6": {
+      "title": "Writable adjacent sidecars accepted, or managed storage specified",
+      "classification": "passed",
+      "evidence": [
+        {
+          "kind": "document",
+          "reference": "docs/raw-development/development-manifest.json (designDecisions.persistence)",
+          "note": "Writable adjacent filename.ext.lapedit.json is authoritative for the first release; SQLite stores only a rebuildable projection; no second recipe authority."
+        },
+        {
+          "kind": "test-suite",
+          "reference": "src-tauri/src/develop/recipe_repository.rs + tests/develop_persistence/corrupt_and_readonly.rs",
+          "note": "Read-only destination produces explicit ReadOnlyDestination before any write, with the session retained for retry or a writable copy; atomic temp+flush+replace with retained previous revision."
+        }
+      ],
+      "notes": "Design decision recorded at TASK-101 and implemented by lap-ab8/lap-952."
+    },
+    "P7": {
+      "title": "Rust/dependency requirements and packaging reconciled",
+      "classification": "blocked",
+      "evidence": [
+        {
+          "kind": "document",
+          "reference": "docs/raw-development/baseline.md + development-manifest.json (designDecisions.p7BuildIntegration, machineLocalDependencies)",
+          "note": "Both hosts build with rustup 1.98.0 x86_64-pc-windows-msvc, default features only; submodule pins, VS2022 cmake PATH repair, ffmpeg/model sidecar downloads, and the engine .cargo/config.toml guard are documented and were exercised by every recorded gate run."
+        },
+        {
+          "kind": "document",
+          "reference": "docs/raw-development/readiness.md (blocker B6)",
+          "note": "Packaging/bundling (tauri bundle) has never been exercised and non-Windows build integration is unverified; no packaging artifacts exist."
+        }
+      ],
+      "notes": "Blocker B6. Development-build integration is evidenced on Windows only; packaging is part of release work."
+    }
+  },
+  "tasks": [
+    { "key": "TASK-101", "status": "executed", "managedIssue": "lap-7f5.1", "legacyIssue": "lap-7f5.1" },
+    { "key": "TASK-102", "status": "executed", "managedIssue": "lap-d13", "legacyIssue": "lap-7f5.2" },
+    { "key": "TASK-103", "status": "executed", "managedIssue": "lap-d7f", "legacyIssue": "lap-7f5.3" },
+    { "key": "TASK-201", "status": "executed", "managedIssue": "lap-3e2", "legacyIssue": "lap-a35.1" },
+    { "key": "TASK-202", "status": "executed", "managedIssue": "lap-589", "legacyIssue": "lap-a35.2" },
+    { "key": "TASK-203", "status": "executed", "managedIssue": "lap-e5e", "legacyIssue": "lap-a35.3" },
+    { "key": "TASK-204", "status": "executed", "managedIssue": "lap-928", "legacyIssue": "lap-a35.4" },
+    { "key": "TASK-205", "status": "executed", "managedIssue": "lap-517", "legacyIssue": "lap-a35.5" },
+    { "key": "TASK-301", "status": "executed", "managedIssue": "lap-ab8", "legacyIssue": "lap-f19.1" },
+    { "key": "TASK-302", "status": "executed", "managedIssue": "lap-a52", "legacyIssue": "lap-f19.2" },
+    { "key": "TASK-303", "status": "executed", "managedIssue": "lap-0e9", "legacyIssue": "lap-f19.3" },
+    { "key": "TASK-304", "status": "executed", "managedIssue": "lap-7ae", "legacyIssue": "lap-f19.4" },
+    { "key": "TASK-305", "status": "executed", "managedIssue": "lap-a58", "legacyIssue": "lap-f19.5" },
+    { "key": "TASK-306", "status": "executed", "managedIssue": "lap-70c", "legacyIssue": "lap-f19.6" },
+    { "key": "TASK-401", "status": "executed", "managedIssue": "lap-adc", "legacyIssue": "lap-002.1" },
+    { "key": "TASK-402", "status": "executed", "managedIssue": "lap-6bc", "legacyIssue": "lap-002.2" },
+    { "key": "TASK-403", "status": "executed", "managedIssue": "lap-487", "legacyIssue": "lap-002.3" },
+    { "key": "TASK-404", "status": "executed", "managedIssue": "lap-5c2", "legacyIssue": "lap-002.4" },
+    { "key": "TASK-405", "status": "executed", "managedIssue": "lap-62b", "legacyIssue": "lap-002.5" },
+    { "key": "TASK-501", "status": "executed", "managedIssue": "lap-78d", "legacyIssue": "lap-ec7.1" },
+    { "key": "TASK-502", "status": "executed", "managedIssue": "lap-d52", "legacyIssue": "lap-ec7.2" },
+    { "key": "TASK-503", "status": "executed", "managedIssue": "lap-952", "legacyIssue": "lap-ec7.3" },
+    { "key": "TASK-601", "status": "executed", "managedIssue": "lap-c0e", "legacyIssue": "lap-404.1" },
+    { "key": "TASK-602", "status": "executed", "managedIssue": "lap-63f", "legacyIssue": "lap-404.2" },
+    { "key": "TASK-603", "status": "executed", "managedIssue": "lap-da3", "legacyIssue": "lap-404.3" }
+  ],
+  "legacyIssueStatusNote": "Legacy imported issues (lap-7f5, lap-a35.*, lap-f19.*, lap-002.*, lap-ec7.*, lap-404.*) remain intentionally open as preserved tracker history; managed-continuation issues hold the executed evidence and are closed. Tracker drain is not treated as product qualification anywhere in this assessment: classifications come from the linked evidence only.",
+  "blockers": [
+    {
+      "id": "B1",
+      "title": "Combined-product distribution decision unresolved (spec P3)",
+      "detail": "AGPL-3.0 RapidRAW-derived engine code plus GPL-3.0-or-later Lap, CC-BY-SA-4.0 film LUTs, and resources with unverified terms; distributionDecision is blocked with no deciding authority.",
+      "requiredResolution": "A human licensing authority resolves the model and completes distributionDecision in docs/raw-development/provenance.json (status approved with decidedBy, decidedAt, scope, evidence entries); extracted-crate license fields added; see docs/raw-development/release-gates.md. The gate must then exit 0."
+    },
+    {
+      "id": "B2",
+      "title": "Absent Linux/macOS platform coverage (spec P5; A6 tolerance scope)",
+      "detail": "All runtime evidence is single-host (windows-thomas-rtx4060). linux-reference and macos-reference are recorded unavailable and untested; CI definitions were never executed.",
+      "requiredResolution": "Provision the declared reference machines, run scripts/raw-development/benchmark.ps1 on each, extend frozen A6 tolerances per backend/precision, and record results in the platform manifest; the fail-closed platform gate must then reflect executed, passing runs on every declared machine."
+    },
+    {
+      "id": "B3",
+      "title": "Provisional warm-preview budget missed and final budgets unagreed (spec A12)",
+      "detail": "Warm 1536 px preview p95 3925.6 ms vs the provisional 150 ms target (attributed to host-side full-resolution CPU downscale per preview generation); other budgets (settled/export/thumbnail/navigation) are not agreed.",
+      "requiredResolution": "Implement and measure a host-side preview-base caching/downscaling strategy; re-run the benchmark harness; agree final budgets per spec after the measured slice and record them without redefining the provisional threshold."
+    },
+    {
+      "id": "B4",
+      "title": "Spec A10 interactive verification not executed",
+      "detail": "Checklist K1-K9 in docs/raw-development/interactive-verification.md is entirely pending; automated proxies and launch lifecycle evidence exist but do not substitute for a human at the application.",
+      "requiredResolution": "A human executes K1-K9 with the built application, records observations/screenshots under tests/raw-development/runs/a10-interactive/, and the readiness A10 entry is re-classified on that evidence."
+    },
+    {
+      "id": "B5",
+      "title": "Driver-level device loss / OOM qualification missing (spec A7)",
+      "detail": "Missing adapter, oversized textures, and missing resources are covered by executed typed-failure tests; DeviceLost/OutOfMemory typed paths exist but were never exercised by driver-fault injection.",
+      "requiredResolution": "Execute driver-level fault qualification (e.g. driver uninstall/reset under load, forced low-memory conditions) on a reference machine and record typed outcomes."
+    },
+    {
+      "id": "B6",
+      "title": "Packaging and non-Windows build integration unexercised (spec P7)",
+      "detail": "No tauri bundle/packaging build has been run; Linux/macOS toolchain integration is unverified; no installer artifacts exist.",
+      "requiredResolution": "Run the packaging builds per platform, record dependency/provenance inventories of the produced artifacts, and reconcile the results with provenance.json."
+    },
+    {
+      "id": "B7",
+      "title": "Component licensing unknowns gating the unknowns-resolved gate (spec P3/A11 scope)",
+      "detail": "lensfun database snapshot license, per-file WGSL shader copyright audit, AI model weight licenses/revision pins, ffmpeg sidecar build configuration, ONNX Runtime artifact license, extracted-crate license fields, and the full transitive npm/cargo dependency audit are unresolved openQuestions.",
+      "requiredResolution": "Resolve each openQuestion in provenance.json with primary-source evidence; the unknowns-resolved gate passes only with zero open questions and fully identified component licenses."
+    }
+  ],
+  "releaseDecision": {
+    "status": "blocked",
+    "decidedAt": null,
+    "decidingAuthority": null,
+    "publicationDisabled": true,
+    "reasons": [
+      "P3 combined-product distribution decision unresolved (blocker B1); provenance distributionDecision.status is blocked.",
+      "P5 Linux/macOS platform coverage absent and untested (blocker B2).",
+      "A12 provisional warm-preview budget missed; final budgets unagreed (blocker B3).",
+      "A10 human interactive verification not executed (blocker B4).",
+      "A7 device-loss/OOM driver-fault evidence missing (blocker B5).",
+      "P7 packaging/non-Windows integration unexercised (blocker B6).",
+      "Seven provenance openQuestions keep the unknowns-resolved gate failed (blocker B7)."
+    ],
+    "note": "Blocked is the expected, honest assessment result. It preserves required release work and must never be read as approval, a waiver, or a passing release check. No release, publication, push, or main-branch merge occurs or is authorized by this document."
+  }
+}

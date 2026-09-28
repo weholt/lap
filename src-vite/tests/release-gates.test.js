@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import {
+  ACCEPTANCE_IDS,
+  PREREQUISITE_IDS,
   REQUIRED_COMPONENT_IDS,
   evaluateReleaseGates,
 } from '../../scripts/raw-development/check-release-gates.mjs'
@@ -30,15 +32,35 @@ function loadProvenance(root = repoRoot) {
   return JSON.parse(readFileSync(path.join(root, PROVENANCE_RELATIVE), 'utf8'))
 }
 
+// Files outside docs/raw-development that the engine-pin consistency gate
+// (lap-da3) reads; copied into fixtures so the pin check evaluates content.
+const PIN_CONSISTENCY_FILES = [
+  'src-tauri/src/develop/sessions.rs',
+  'src-tauri/Cargo.lock',
+]
+
+const READINESS_RELATIVE = 'docs/raw-development/readiness.json'
+
 // Build an isolated copy of the provenance file so mutations in tests never
 // touch the repository's real (blocked) inventory.
-function withProvenanceFixture(mutate) {
+function withProvenanceFixture(mutate, readinessMutate) {
   const dir = mkdtempSync(path.join(tmpdir(), 'lap-release-gates-'))
   const docsDir = path.join(dir, 'docs/raw-development')
   try {
     cpSync(path.join(repoRoot, 'docs/raw-development'), docsDir, {
       recursive: true,
     })
+    for (const relative of PIN_CONSISTENCY_FILES) {
+      const target = path.join(dir, relative)
+      mkdirSync(path.dirname(target), { recursive: true })
+      cpSync(path.join(repoRoot, relative), target)
+    }
+    if (readinessMutate) {
+      const readinessPath = path.join(dir, READINESS_RELATIVE)
+      const readiness = JSON.parse(readFileSync(readinessPath, 'utf8'))
+      readinessMutate(readiness)
+      writeFileSync(readinessPath, JSON.stringify(readiness, null, 2) + '\n')
+    }
     const provenance = loadProvenance(dir)
     mutate(provenance)
     writeProvenance(dir, provenance)
@@ -221,32 +243,67 @@ describe('distribution hold (fail-closed release gate)', () => {
   })
 
   it('releases only a fully-identified synthetic fixture with an evidenced decision', () => {
-    const verdict = withProvenanceFixture((provenance) => {
-      for (const component of Object.values(provenance.components)) {
-        if (component.license.status !== 'identified') {
-          component.license = {
-            status: 'identified',
-            licenseId: 'FIXTURE-IDENTIFIED',
-            evidence: 'synthetic unit-test fixture',
+    const verdict = withProvenanceFixture(
+      (provenance) => {
+        for (const component of Object.values(provenance.components)) {
+          if (component.license.status !== 'identified') {
+            component.license = {
+              status: 'identified',
+              licenseId: 'FIXTURE-IDENTIFIED',
+              evidence: 'synthetic unit-test fixture',
+            }
           }
+          component.openQuestions = []
         }
-        component.openQuestions = []
-      }
-      const crates =
-        provenance.components['extracted-engine-crates'].crates || []
-      for (const crate of crates) {
-        crate.licenseStatus = 'identified'
-        crate.licenseNote = 'synthetic unit-test fixture'
-      }
-      provenance.openQuestions = []
-      provenance.distributionDecision = {
-        status: 'approved',
-        decidedBy: 'TEST-FIXTURE-ONLY (not a real decision)',
-        decidedAt: '2026-09-27T00:00:00Z',
-        scope: 'fixture scope only',
-        evidence: [{ kind: 'fixture', reference: 'unit-test' }],
-      }
-    })
+        const crates =
+          provenance.components['extracted-engine-crates'].crates || []
+        for (const crate of crates) {
+          crate.licenseStatus = 'identified'
+          crate.licenseNote = 'synthetic unit-test fixture'
+        }
+        provenance.openQuestions = []
+        provenance.distributionDecision = {
+          status: 'approved',
+          decidedBy: 'TEST-FIXTURE-ONLY (not a real decision)',
+          decidedAt: '2026-09-27T00:00:00Z',
+          scope: 'fixture scope only',
+          evidence: [{ kind: 'fixture', reference: 'unit-test' }],
+        }
+      },
+      // lap-da3: the release decision must also be backed by a fully-evidenced
+      // readiness assessment; the gate rejects "ready" without it.
+      (readiness) => {
+        const fixtureEvidence = {
+          kind: 'document',
+          reference: 'docs/raw-development/spec.md',
+        }
+        for (const id of [...ACCEPTANCE_IDS, ...PREREQUISITE_IDS]) {
+          const section = id.startsWith('A')
+            ? readiness.acceptance
+            : readiness.prerequisites
+          section[id].classification = 'passed'
+          section[id].evidence = [{ ...fixtureEvidence }]
+        }
+        readiness.acceptance.A6.evidence.push({
+          kind: 'gpu-fixture-parity',
+          reference: 'tests/fixtures/raw-development/baselines/capture-manifest.json',
+        })
+        readiness.acceptance.A10.evidence.push({
+          kind: 'interactive-verification',
+          reference: 'docs/raw-development/interactive-verification.md',
+        })
+        readiness.acceptance.A12.evidence.push({
+          kind: 'platform-measurement',
+          reference: 'tests/raw-development/platform/platform-manifest.json',
+        })
+        readiness.blockers = []
+        readiness.releaseDecision = {
+          status: 'ready',
+          reasons: [],
+          publicationDisabled: false,
+        }
+      },
+    )
     expect(verdict.status).toBe('released')
     expect(verdict.exitCode).toBe(0)
     expect(verdict.approved).toBe(true)

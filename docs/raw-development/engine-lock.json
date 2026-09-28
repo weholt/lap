@@ -60,16 +60,17 @@
         "path": "crates/rapidraw-develop/src/gpu/shaders/flare.wgsl",
         "sha256": "f5ce1f83e4e954a7c0cf0f59951f3401ca2937def6f032d8f7666642ddf91ad8"
       },
-      {
-        "path": "crates/rapidraw-edit-model/gen/recipe.ts",
-        "sha256": "979e18db893b4302102b2912cef64d638b7bcfce4ff222ec9a116b2a85ad2318"
-      },
-      {
-        "path": "crates/rapidraw-edit-model/gen/default-recipe.json",
-        "sha256": "e3033f7d45ea465d68c5ee30c5be25fcc514839231847d15b92d84d0dadc56ab"
-      }
+    {
+      "path": "crates/rapidraw-edit-model/gen/recipe.ts",
+      "sha256": "7c1cb13cb8046beb024f8f66084110636eda77d80424211b9bc81befcaf6035b"
+    },
+    {
+      "path": "crates/rapidraw-edit-model/gen/default-recipe.json",
+      "sha256": "bceb1e7a76ecda64a0a1398ee1c70b818896ba36154a63779dd659259e8be9af"
+    }
     ],
-    "hashBasis": "SHA256 over the committed content at the pinned revision (git show <rev>:<path>, LF line endings). Working-tree copies of this local checkout may differ by autocrlf line endings only; consumers check out the committed bytes."
+    "hashBasis": "SHA256 over the committed content at the pinned revision (git show <rev>:<path>, LF line endings). Working-tree copies of this local checkout may differ by autocrlf line endings only; consumers check out the committed bytes.",
+    "hashCorrection": "2026-09-28 lap-da3 (TASK-603): the two gen-file hashes recorded by lap-d52 did not match the committed content at the pin (neither LF nor CRLF form); they were re-derived with cmd-level git show + certutil and cross-checked byte-identical against the cargo-resolved checkout under a fresh CARGO_HOME. All other entries re-verified unchanged."
   },
   "consumption": {
     "method": "Git dependency pinned by an exact revision from the local isolated clone. Never a floating branch, never an uncommitted path, no publication and no shared remote.",
