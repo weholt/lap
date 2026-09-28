@@ -9452,6 +9452,28 @@ fn reconcile_develop_recipes_at_startup() {
                 }
                 Err(e) => eprintln!("develop recipe reconciliation failed (non-fatal): {}", e),
             }
+            // Virtual-copy sidecars (lap-952) project through their own
+            // reconciler; same non-fatal contract as the primary reconcile.
+            let variants = lap_lib::develop::variants::reconcile_albums_at_startup(&conn);
+            if variants.sidecars_seen > 0
+                || variants.removed_missing > 0
+                || !variants.errors.is_empty()
+            {
+                println!(
+                    "develop virtual-copy reconciliation: {} sidecars, {} projected, {} removed, {} errors",
+                    variants.sidecars_seen,
+                    variants.projected,
+                    variants.removed_missing,
+                    variants.errors.len()
+                );
+                for (path, error) in &variants.errors {
+                    eprintln!(
+                        "develop virtual-copy reconcile issue at {}: {}",
+                        path.display(),
+                        error
+                    );
+                }
+            }
         }
         Err(e) => eprintln!("develop recipe reconciliation skipped (non-fatal): {}", e),
     }

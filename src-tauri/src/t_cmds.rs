@@ -1589,6 +1589,47 @@ pub async fn sync_album_folder_mtimes(
         }
     }
 
+    // Virtual-copy sidecars (lap-952) reconcile alongside the primary ones.
+    let variant_reconcile_folder = reconciled_folder_for_log.clone();
+    let variant_reconcile = tauri::async_runtime::spawn_blocking(
+        move || -> lap_lib::develop::variants::VariantsReconcileSummary {
+            let conn = t_sqlite::open_conn();
+            match conn {
+                Ok(conn) => {
+                    let repo = lap_lib::develop::RecipeRepository::lap_default();
+                    lap_lib::develop::variants::reconcile_folder(
+                        &conn,
+                        &repo,
+                        Path::new(&variant_reconcile_folder),
+                    )
+                }
+                Err(e) => {
+                    eprintln!("develop virtual-copy reconciliation skipped: {e}");
+                    lap_lib::develop::variants::VariantsReconcileSummary::default()
+                }
+            }
+        },
+    )
+    .await;
+    if let Ok(summary) = variant_reconcile {
+        if summary.sidecars_seen > 0 || summary.removed_missing > 0 || !summary.errors.is_empty() {
+            println!(
+                "develop virtual-copy rescan reconciliation for '{}': {} sidecars, {} projected, {} removed, {} errors",
+                reconciled_folder_for_log,
+                summary.sidecars_seen,
+                summary.projected,
+                summary.removed_missing,
+                summary.errors.len()
+            );
+        }
+        for (path, error) in &summary.errors {
+            eprintln!(
+                "develop virtual-copy rescan error at {}: {error}",
+                path.display()
+            );
+        }
+    }
+
     if !result.folder_path_migrations.is_empty() {
         let _ = app_handle.emit(
             "album-folder-paths-migrated",
@@ -4933,4 +4974,324 @@ pub async fn develop_cancel_export(
     export_job: String,
 ) -> Result<bool, String> {
     Ok(export_jobs.cancel(&export_job))
+}
+
+// ----------------------------------------------------------------------------
+// Virtual copies and bounded batch development (lap-952 / TASK-503).
+//
+// Virtual copies live in their own `name.ext.lapedit.v-<variantId>.json`
+// sidecars with independent per-asset/variant CAS revisions over the same
+// immutable source bytes. Batch operations commit or export one explicit
+// item at a time with per-item progress events, visible per-item failures
+// and cooperative cancellation through the shared export-job registry.
+// ----------------------------------------------------------------------------
+
+/// Serializable variant summary for the Develop panel.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VariantSummaryDto {
+    pub variant_id: String,
+    pub revision: u64,
+    pub is_edited: bool,
+    pub is_virtual_copy: bool,
+    pub content_hash: String,
+    pub sidecar_path: std::path::PathBuf,
+    pub exists: bool,
+}
+
+impl From<lap_lib::develop::variants::VariantSummary> for VariantSummaryDto {
+    fn from(summary: lap_lib::develop::variants::VariantSummary) -> Self {
+        Self {
+            variant_id: summary.variant_id,
+            revision: summary.revision,
+            is_edited: summary.is_edited,
+            is_virtual_copy: summary.is_virtual_copy,
+            content_hash: summary.content_hash,
+            sidecar_path: summary.sidecar_path,
+            exists: summary.exists,
+        }
+    }
+}
+
+/// Serializable reset receipt (the new durable revision after the reset).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VariantResetDto {
+    pub variant_id: String,
+    pub revision: u64,
+    pub content_hash: String,
+    pub sidecar_path: std::path::PathBuf,
+}
+
+/// Lists the asset's develop variants (default first, then virtual copies).
+#[tauri::command]
+pub async fn develop_list_variants(asset_id: i64) -> Result<Vec<VariantSummaryDto>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let source_path = develop_asset_source_path(asset_id)?;
+        let repo = DevelopRecipeRepository::lap_default();
+        let list = lap_lib::develop::variants::list_variants(&repo, &source_path)
+            .map_err(|e| e.to_string())?;
+        Ok(list.into_iter().map(Into::into).collect())
+    })
+    .await
+    .map_err(|e| format!("develop variants task failed: {e}"))?
+}
+
+/// Creates a virtual copy of the asset's recipe (`from_variant_id` omitted or
+/// "default" copies the primary recipe; a missing asset recipe starts a fresh
+/// virtual copy). The source bytes and every other variant are untouched.
+#[tauri::command]
+pub async fn develop_create_virtual_copy(
+    asset_id: i64,
+    from_variant_id: Option<String>,
+) -> Result<VariantSummaryDto, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let source_path = develop_asset_source_path(asset_id)?;
+        let repo = DevelopRecipeRepository::lap_default();
+        let conn = t_sqlite::open_conn().map_err(|e| e.to_string())?;
+        let envelope = lap_lib::develop::variants::create_virtual_copy(
+            &repo,
+            Some(&conn),
+            &source_path,
+            &asset_id.to_string(),
+            from_variant_id.as_deref(),
+            None,
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(VariantSummaryDto {
+            variant_id: envelope.variant_id.clone(),
+            revision: envelope.revision,
+            is_edited: lap_lib::develop::recipe_repository::is_edited_envelope(&envelope),
+            is_virtual_copy: true,
+            content_hash: envelope
+                .content_hash()
+                .map_err(|e| format!("created virtual copy hash failed: {e}"))?,
+            sidecar_path: lap_lib::develop::variants::variant_sidecar_path(
+                &source_path,
+                &envelope.variant_id,
+            ),
+            exists: true,
+        })
+    })
+    .await
+    .map_err(|e| format!("develop create-virtual-copy task failed: {e}"))?
+}
+
+/// Clears one variant's recipe/decode/resources under an explicit CAS
+/// revision bump. Other variants, resource store objects and the source are
+/// untouched.
+#[tauri::command]
+pub async fn develop_reset_variant(
+    asset_id: i64,
+    variant_id: String,
+    expected_revision: u64,
+) -> Result<VariantResetDto, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let source_path = develop_asset_source_path(asset_id)?;
+        let repo = DevelopRecipeRepository::lap_default();
+        let conn = t_sqlite::open_conn().map_err(|e| e.to_string())?;
+        let receipt = lap_lib::develop::variants::reset_variant(
+            &repo,
+            Some(&conn),
+            &source_path,
+            &variant_id,
+            expected_revision,
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(VariantResetDto {
+            variant_id,
+            revision: receipt.revision,
+            content_hash: receipt.content_hash,
+            sidecar_path: receipt.sidecar_path,
+        })
+    })
+    .await
+    .map_err(|e| format!("develop reset-variant task failed: {e}"))?
+}
+
+/// Deletes one virtual copy: its sidecar, retained previous revision and
+/// projection row. The primary variant is protected; every other variant and
+/// the shared resource store are untouched.
+#[tauri::command]
+pub async fn develop_delete_variant(asset_id: i64, variant_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let source_path = develop_asset_source_path(asset_id)?;
+        let conn = t_sqlite::open_conn().map_err(|e| e.to_string())?;
+        lap_lib::develop::variants::delete_variant(Some(&conn), &source_path, &variant_id)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("develop delete-variant task failed: {e}"))?
+}
+
+/// One batch recipe application request from the frontend.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchApplyItemDto {
+    pub asset_id: i64,
+    pub variant_id: String,
+    pub recipe: serde_json::Value,
+    pub expected_revision: Option<u64>,
+}
+
+/// Applies one recipe to many assets: explicit per-asset CAS commits, one
+/// progress event per item, visible per-item failures, cooperative
+/// cancellation (`develop_cancel_export` on `batchJob`). Bounded by the
+/// module's max-items limit before any write.
+#[tauri::command]
+pub async fn develop_batch_apply_recipes(
+    state: tauri::State<'_, DevelopAppState>,
+    export_jobs: tauri::State<'_, std::sync::Arc<DevelopExportJobs>>,
+    app_handle: tauri::AppHandle,
+    items: Vec<BatchApplyItemDto>,
+    batch_job: String,
+) -> Result<lap_lib::develop::batch::BatchSummary, String> {
+    if batch_job.is_empty() {
+        return Err("batch_job id is required for cancellation".to_string());
+    }
+    let service = state.service();
+    let (cancel, _slot, guard) = export_jobs.register(&batch_job, std::sync::Arc::clone(&service));
+    let progress_handle = app_handle.clone();
+    let progress_job = batch_job.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = (|| -> Result<lap_lib::develop::batch::BatchSummary, String> {
+            let conn = t_sqlite::open_conn().map_err(|e| e.to_string())?;
+            let repo = DevelopRecipeRepository::lap_default();
+            let mut batch_items = Vec::with_capacity(items.len());
+            for item in &items {
+                let source_path = develop_asset_source_path(item.asset_id)?;
+                let recipe: rapidraw_edit_model::Recipe =
+                    serde_json::from_value(item.recipe.clone()).map_err(|e| {
+                        format!("invalid batch recipe for asset {}: {e}", item.asset_id)
+                    })?;
+                batch_items.push(lap_lib::develop::batch::BatchApplyItem {
+                    asset_id: item.asset_id.to_string(),
+                    variant_id: item.variant_id.clone(),
+                    source_path,
+                    recipe,
+                    expected_revision: item.expected_revision,
+                    fault: None,
+                });
+            }
+            lap_lib::develop::batch::apply_recipes(
+                &repo,
+                Some(&conn),
+                &batch_items,
+                &cancel,
+                lap_lib::develop::batch::BatchLimits::default(),
+                &move |index, total, result| {
+                    let _ = progress_handle.emit(
+                        "develop_batch_progress",
+                        serde_json::json!({
+                            "job": progress_job,
+                            "index": index,
+                            "total": total,
+                            "key": result.key,
+                            "status": result.status,
+                        }),
+                    );
+                },
+            )
+            .map_err(|e| e.to_string())
+        })();
+        drop(guard);
+        result
+    })
+    .await
+    .map_err(|e| format!("develop batch apply task failed: {e}"))?
+}
+
+/// One batch export request from the frontend.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchExportItemDto {
+    pub asset_id: i64,
+    pub variant_id: String,
+    pub revision: u64,
+    pub destination: String,
+}
+
+/// Exports many committed recipe revisions as derivatives: sequential items
+/// with capped output edges (bounded memory), per-item source hashing and
+/// identity checks, per-item failures/cancellation visible in the summary.
+/// Failed or skipped items are never counted as exported.
+#[tauri::command]
+pub async fn develop_batch_export(
+    state: tauri::State<'_, DevelopAppState>,
+    export_jobs: tauri::State<'_, std::sync::Arc<DevelopExportJobs>>,
+    app_handle: tauri::AppHandle,
+    items: Vec<BatchExportItemDto>,
+    format: String,
+    quality: Option<u8>,
+    max_edge: Option<u32>,
+    batch_job: String,
+) -> Result<lap_lib::develop::batch::BatchSummary, String> {
+    if batch_job.is_empty() {
+        return Err("batch_job id is required for cancellation".to_string());
+    }
+    let format = lap_lib::develop::export::ExportFormat::parse(&format)
+        .ok_or_else(|| format!("unknown export format '{format}' (expected 'png' or 'jpeg')"))?;
+    let settings = lap_lib::develop::export::ExportSettings {
+        destination: std::path::PathBuf::new(),
+        format,
+        jpeg_quality: quality.unwrap_or(90),
+        max_edge,
+    };
+    let service = state.service();
+    let (cancel, _slot, guard) = export_jobs.register(&batch_job, std::sync::Arc::clone(&service));
+    let progress_handle = app_handle.clone();
+    let progress_job = batch_job.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = (|| -> Result<lap_lib::develop::batch::BatchSummary, String> {
+            let mut batch_items = Vec::with_capacity(items.len());
+            for item in &items {
+                let source_path = develop_asset_source_path(item.asset_id)?;
+                // Identity adoption (lap-487): exports resolve the committed
+                // sidecar by identity, so a copy/external-move asset is
+                // re-keyed first; replaced media is refused explicitly inside
+                // the batch item (it re-hashes the source itself).
+                if let Ok(source_bytes) = fs::read(&source_path) {
+                    lap_lib::develop::asset_operations::adopt_catalog_identity_with_fingerprint(
+                        &source_path,
+                        &item.asset_id.to_string(),
+                        &rapidraw_edit_model::sha256_hex(&source_bytes),
+                    )
+                    .map_err(|e| format!("develop recipe identity check failed: {e}"))?;
+                }
+                batch_items.push(lap_lib::develop::batch::BatchExportItem {
+                    asset_id: item.asset_id.to_string(),
+                    variant_id: item.variant_id.clone(),
+                    source_path,
+                    requested_revision: item.revision,
+                    destination: std::path::PathBuf::from(&item.destination),
+                });
+            }
+            lap_lib::develop::batch::export_developed_batch(
+                &service,
+                &batch_items,
+                settings,
+                &cancel,
+                lap_lib::develop::batch::BatchExportLimits::default(),
+                &move |index, total, result| {
+                    let _ = progress_handle.emit(
+                        "develop_batch_progress",
+                        serde_json::json!({
+                            "job": progress_job,
+                            "index": index,
+                            "total": total,
+                            "key": result.key,
+                            "status": result.status,
+                        }),
+                    );
+                },
+            )
+            .map_err(|e| e.to_string())
+        })();
+        drop(guard);
+        result
+    })
+    .await
+    .map_err(|e| format!("develop batch export task failed: {e}"))?
 }

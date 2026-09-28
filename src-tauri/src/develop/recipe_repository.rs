@@ -400,7 +400,12 @@ impl RecipeRepository {
     }
 
     pub fn previous_sidecar_path(source: &Path) -> PathBuf {
-        let mut sidecar = Self::sidecar_path(source).into_os_string();
+        Self::previous_sidecar_for(&Self::sidecar_path(source))
+    }
+
+    /// Retained-previous path for an arbitrary sidecar (primary or variant).
+    pub fn previous_sidecar_for(sidecar: &Path) -> PathBuf {
+        let mut sidecar = sidecar.as_os_str().to_os_string();
         sidecar.push(".prev");
         PathBuf::from(sidecar)
     }
@@ -453,32 +458,93 @@ impl RecipeRepository {
         Ok(self.load_opt(source)?.map(|envelope| envelope.revision))
     }
 
+    /// Parse the envelope stored at an explicit sidecar path (lap-952: used
+    /// for virtual-copy sidecars whose names are not the primary sidecar).
+    pub fn load_at_opt(&self, sidecar: &Path) -> Result<Option<RecipeEnvelope>, RecipeRepoError> {
+        match read_sidecar_raw(sidecar)? {
+            Some(bytes) => Ok(Some(parse_sidecar_bytes(sidecar, &bytes)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Load the virtual-copy envelope of `variant_id` for `source`, if any.
+    pub fn load_variant_opt(
+        &self,
+        source: &Path,
+        variant_id: &str,
+    ) -> Result<Option<RecipeEnvelope>, RecipeRepoError> {
+        self.load_at_opt(&super::variants::variant_sidecar_path(source, variant_id))
+    }
+
+    /// Current durable revision of one virtual-copy variant (`None` when the
+    /// variant sidecar does not exist).
+    pub fn current_variant_revision(
+        &self,
+        source: &Path,
+        variant_id: &str,
+    ) -> Result<Option<u64>, RecipeRepoError> {
+        Ok(self
+            .load_variant_opt(source, variant_id)?
+            .map(|envelope| envelope.revision))
+    }
+
     pub fn commit(
         &self,
         source: &Path,
+        expected_revision: u64,
+        envelope: RecipeEnvelope,
+        conn: Option<&Connection>,
+        fault: Option<FaultInjection>,
+    ) -> Result<CommitReceipt, RecipeRepoError> {
+        let sidecar = Self::sidecar_path(source);
+        self.commit_at(source, &sidecar, expected_revision, envelope, conn, fault)
+    }
+
+    /// Commit to the virtual-copy sidecar of `source` for `variant_id`
+    /// (lap-952). Same CAS/identity/fingerprint contract as [`Self::commit`];
+    /// revisions are per asset/variant and fully independent.
+    pub fn commit_variant(
+        &self,
+        source: &Path,
+        variant_id: &str,
+        expected_revision: u64,
+        envelope: RecipeEnvelope,
+        conn: Option<&Connection>,
+        fault: Option<FaultInjection>,
+    ) -> Result<CommitReceipt, RecipeRepoError> {
+        let sidecar = super::variants::variant_sidecar_path(source, variant_id);
+        self.commit_at(source, &sidecar, expected_revision, envelope, conn, fault)
+    }
+
+    /// Commit to an explicit sidecar path (primary via [`Self::commit`],
+    /// virtual copy via [`Self::commit_variant`]). `source` is the media path
+    /// used for catalog projection and retained-previous derivation.
+    pub fn commit_at(
+        &self,
+        source: &Path,
+        sidecar: &Path,
         expected_revision: u64,
         mut envelope: RecipeEnvelope,
         conn: Option<&Connection>,
         fault: Option<FaultInjection>,
     ) -> Result<CommitReceipt, RecipeRepoError> {
-        let sidecar = Self::sidecar_path(source);
-        let lock = write_lock_for(&sidecar);
+        let lock = write_lock_for(sidecar);
         let _guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-        let existing = read_sidecar_envelope(&sidecar)?;
+        let existing = read_sidecar_envelope(sidecar)?;
         let previous_revision = existing.as_ref().map(|(_, env)| env.revision);
 
         if let Some((_, current)) = &existing {
             if current.revision != expected_revision {
                 return Err(RecipeRepoError::RevisionConflict {
-                    path: sidecar.clone(),
+                    path: sidecar.to_path_buf(),
                     expected: expected_revision,
                     current: previous_revision,
                 });
             }
             if current.asset_id != envelope.asset_id || current.variant_id != envelope.variant_id {
                 return Err(RecipeRepoError::IdentityMismatch {
-                    path: sidecar.clone(),
+                    path: sidecar.to_path_buf(),
                     detail: format!(
                         "existing sidecar holds asset '{}' variant '{}'; the commit supplied asset '{}' variant '{}'",
                         current.asset_id,
@@ -490,14 +556,14 @@ impl RecipeRepository {
             }
             if current.source_fingerprint != envelope.source_fingerprint {
                 return Err(RecipeRepoError::SourceFingerprintMismatch {
-                    path: sidecar.clone(),
+                    path: sidecar.to_path_buf(),
                     expected: current.source_fingerprint.clone(),
                     found: envelope.source_fingerprint.clone(),
                 });
             }
         } else if expected_revision != 0 {
             return Err(RecipeRepoError::RevisionConflict {
-                path: sidecar.clone(),
+                path: sidecar.to_path_buf(),
                 expected: expected_revision,
                 current: None,
             });
@@ -507,7 +573,7 @@ impl RecipeRepository {
             expected_revision
                 .checked_add(1)
                 .ok_or_else(|| RecipeRepoError::InvalidRevision {
-                    path: sidecar.clone(),
+                    path: sidecar.to_path_buf(),
                     detail: format!("revision {expected_revision} cannot be incremented"),
                 })?;
         envelope.revision = new_revision;
@@ -517,37 +583,37 @@ impl RecipeRepository {
         let bytes = envelope
             .to_canonical_json()
             .map_err(|err| RecipeRepoError::Model {
-                path: sidecar.clone(),
+                path: sidecar.to_path_buf(),
                 source: err,
             })?;
         let value = serde_json::to_value(&envelope).map_err(|err| RecipeRepoError::Model {
-            path: sidecar.clone(),
+            path: sidecar.to_path_buf(),
             source: err.into(),
         })?;
         parse_envelope_value(value).map_err(|err| RecipeRepoError::Model {
-            path: sidecar.clone(),
+            path: sidecar.to_path_buf(),
             source: err,
         })?;
 
         if sidecar.exists() {
-            let metadata = fs::metadata(&sidecar).map_err(|err| RecipeRepoError::Io {
+            let metadata = fs::metadata(sidecar).map_err(|err| RecipeRepoError::Io {
                 context: "inspecting sidecar before replacement".to_string(),
-                path: sidecar.clone(),
+                path: sidecar.to_path_buf(),
                 source: err,
             })?;
             if metadata.permissions().readonly() {
                 return Err(RecipeRepoError::ReadOnlyDestination {
-                    path: sidecar.clone(),
+                    path: sidecar.to_path_buf(),
                 });
             }
         }
 
         hit_fault(fault.as_ref(), FaultPoint::BeforeTempWrite)?;
 
-        let temp = unique_temp_path(&sidecar);
+        let temp = unique_temp_path(sidecar);
         let outcome = self.commit_after_temp(
             source,
-            &sidecar,
+            sidecar,
             &temp,
             &bytes,
             existing,
@@ -601,7 +667,7 @@ impl RecipeRepository {
         hit_fault(fault, FaultPoint::AfterFlush)?;
 
         if let Some((previous_bytes, _)) = &existing {
-            let previous_path = Self::previous_sidecar_path(source);
+            let previous_path = Self::previous_sidecar_for(sidecar);
             let previous_temp = unique_temp_path(&previous_path);
             write_bytes_and_sync(&previous_temp, previous_bytes).map_err(|err| {
                 RecipeRepoError::Io {
@@ -841,7 +907,7 @@ impl RecipeRepository {
     }
 }
 
-fn project_envelope(
+pub(crate) fn project_envelope(
     conn: &Connection,
     source: &Path,
     envelope: &RecipeEnvelope,

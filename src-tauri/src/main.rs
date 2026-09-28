@@ -457,6 +457,13 @@ async fn main() {
             t_cmds::develop_lens_models,
             t_cmds::develop_autodetect_lens,
             t_cmds::develop_select_lens,
+            // virtual copies and bounded batch development (lap-952 / TASK-503)
+            t_cmds::develop_list_variants,
+            t_cmds::develop_create_virtual_copy,
+            t_cmds::develop_reset_variant,
+            t_cmds::develop_delete_variant,
+            t_cmds::develop_batch_apply_recipes,
+            t_cmds::develop_batch_export,
         ])
         .build(tauri::generate_context!());
 

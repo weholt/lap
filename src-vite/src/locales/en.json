@@ -1694,6 +1694,15 @@
       "vignetteAmount": "Vignetting",
       "provenance": "{maker} {model} · {version} · profile {hash}"
     },
+    "variants": {
+      "title": "Variants",
+      "create": "New virtual copy",
+      "reset": "Reset",
+      "delete": "Delete",
+      "revision": "rev {revision}",
+      "edited": "edited",
+      "unedited": "unedited"
+    },
     "groups": {
       "tone": "Tone",
       "color": "Color",
