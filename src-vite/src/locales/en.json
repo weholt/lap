@@ -1618,6 +1618,7 @@
     }
   },
   "develop": {
+    "rollbackNotice": "Develop editing is rolled back. Committed sidecars, previous revisions, resources and the catalog are retained; no recipe is written into your original files. Disable the rollback switch to resume editing.",
     "title": "Develop",
     "exposure": "Exposure",
     "whiteBalance": "White Balance",

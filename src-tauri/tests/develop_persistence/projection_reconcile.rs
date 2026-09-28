@@ -301,3 +301,42 @@ fn startup_reconciliation_uses_album_roots_and_is_tolerant() {
         "projection failures must stay visible"
     );
 }
+
+#[test]
+fn reconcile_folder_startup_cleans_orphan_crash_temps() {
+    // Spec A3 / lap-63f: a hard kill mid-commit can leave unique-temp
+    // siblings behind. Startup reconciliation (reconcile_folder, the path
+    // the app runs per album inside create_db) must remove exactly those
+    // orphaned sidecar-family temps and leave every durable file untouched.
+    let dir = tmp_root("orphan-temps");
+    let src = source_file(&dir);
+    let repo = repo();
+    let conn = catalog_db(&dir);
+    repo.commit(&src, 0, envelope(&repo, &src, 0.4), Some(&conn), None)
+        .unwrap();
+
+    let sidecar = RecipeRepository::sidecar_path(&src);
+    let sidecar_before = fs::read(&sidecar).unwrap();
+    let primary_temp = dir.join("photo.nef.lapedit.json.5012.18d97deff9428840.tmp");
+    let prev_temp = dir.join("photo.nef.lapedit.json.prev.5012.18d97deff94f5b10.tmp");
+    let variant_temp = dir.join("photo.nef.lapedit.v-copy.json.5012.18d97defff0000001.tmp");
+    fs::write(&primary_temp, b"partial primary payload").unwrap();
+    fs::write(&prev_temp, b"partial prev payload").unwrap();
+    fs::write(&variant_temp, b"partial variant payload").unwrap();
+    // Unrelated temp files of other tools are not ours to delete.
+    let foreign_temp = dir.join("editor-scratch.tmp");
+    fs::write(&foreign_temp, b"not a lap sidecar temp").unwrap();
+
+    let summary = repo.reconcile_folder(&conn, &dir).unwrap();
+
+    assert_eq!(summary.orphan_temps_removed, 3);
+    assert!(!primary_temp.exists());
+    assert!(!prev_temp.exists());
+    assert!(!variant_temp.exists());
+    assert!(foreign_temp.exists(), "unrelated temps must be preserved");
+    assert_eq!(fs::read(&sidecar).unwrap(), sidecar_before);
+
+    // Reconciliation is idempotent: a second startup removes nothing.
+    let summary2 = repo.reconcile_folder(&conn, &dir).unwrap();
+    assert_eq!(summary2.orphan_temps_removed, 0);
+}

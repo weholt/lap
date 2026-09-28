@@ -1618,6 +1618,7 @@
     }
   },
   "develop": {
+    "rollbackNotice": "Le développement est désactivé par rollback. Les sidecars enregistrés, les révisions précédentes, les ressources et le catalogue sont conservés ; aucune recette n\u0027est écrite dans vos fichiers originaux. Désactivez le commutateur de rollback pour reprendre la modification.",
     "title": "Développer",
     "exposure": "Exposition",
     "whiteBalance": "Balance des blancs",

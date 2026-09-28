@@ -1,8 +1,8 @@
 {
   "schema": "lap-raw-preview-parity/v1",
-  "captured_utc": "2026-09-27T18:42:16Z",
-  "host_revision": "9abe5e7249e08e9e699e544ddd00492f57a280a2",
-  "engine_revision": "e1035c38aa1150ac350faa3661f26144a922ea91",
+  "captured_utc": "2026-09-28T13:06:01Z",
+  "host_revision": "13e8eee41ed0d30825e532d94d033ab6c16553b4",
+  "engine_revision": "de4fdbd76723c76145b477a2b8874226512475f1",
   "gpu": {
     "adapterName": "NVIDIA GeForce RTX 4060",
     "available": true,

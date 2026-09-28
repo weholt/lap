@@ -1,9 +1,9 @@
 {
     "schema":  "lap-raw-baseline/v1",
     "issue":  "lap-7f5.2",
-    "captured":  "2026-09-27",
+    "captured":  "2026-09-28",
     "engine":  {
-                   "commit":  "e1035c38aa1150ac350faa3661f26144a922ea91",
+                   "commit":  "de4fdbd76723c76145b477a2b8874226512475f1",
                    "renderBaselineCommit":  "5e30bcbb246395d391ba2e9662510641ffe68e6b",
                    "renderSourceSha256":  {
                                               "src-tauri/src/raw_processing.rs":  "288bf513e5b6d27128e3c6000a912c4e9a81f165f1e49943bc399ec02916b0e6",

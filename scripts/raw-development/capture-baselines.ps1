@@ -127,6 +127,28 @@ if (-not (Test-Path -LiteralPath $ExePath)) {
     throw "Engine binary not found: $ExePath (build it first: cargo build --manifest-path src-tauri/Cargo.toml with the rustup PATH prepend)"
 }
 $engineCommit = (& git -C $EngineRoot rev-parse HEAD).Trim()
+# Record the CONSUMED engine revision (the exact rev Lap's Cargo manifest
+# pins, per docs/raw-development/engine-lock.json), not the checkout HEAD:
+# the checkout may legitimately sit above the pin (tracker-event commits).
+# The pin must be an ancestor of HEAD and the engine crates must be
+# identical between pin and HEAD, otherwise the capture aborts.
+$lapCargoToml = Get-Content -LiteralPath (Join-Path $RepoRoot "src-tauri\Cargo.toml") -Raw
+$consumptionPin = $null
+if ($lapCargoToml -match 'rapidraw-develop\s*=\s*\{\s*git\s*=\s*"[^"]*",\s*rev\s*=\s*"([0-9a-f]{40})"') {
+    $consumptionPin = $Matches[1]
+}
+if ($consumptionPin -and $consumptionPin -ne $engineCommit) {
+    & git -C $EngineRoot merge-base --is-ancestor $consumptionPin HEAD
+    if ($LASTEXITCODE -ne 0) {
+        throw "Consumed engine pin $consumptionPin is not an ancestor of the engine checkout HEAD $engineCommit; the baseline cannot be attributed to consumed sources."
+    }
+    $crateDrift = @(& git -C $EngineRoot diff --name-only $consumptionPin HEAD -- crates)
+    if ($crateDrift.Count -gt 0) {
+        throw "Engine crates drifted between the consumed pin ${consumptionPin} and HEAD: $($crateDrift -join ', ')"
+    }
+    Write-Host "Engine checkout HEAD $engineCommit sits above the consumed pin; recording the consumed pin $consumptionPin (crates identical)."
+    $engineCommit = $consumptionPin
+}
 $changed = @(& git -C $EngineRoot diff --name-only $RenderBaselineCommit -- $RenderSources)
 $sourceDriftAllowed = $false
 if ($changed.Count -gt 0) {

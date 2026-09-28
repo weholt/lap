@@ -226,6 +226,9 @@ pub struct ReconcileSummary {
     pub sidecars_seen: u64,
     pub projected: u64,
     pub removed_missing: u64,
+    /// Orphaned sidecar-family temp siblings (left behind by a hard kill
+    /// mid-commit) removed during this startup sweep. Spec A3.
+    pub orphan_temps_removed: u64,
     pub errors: Vec<(PathBuf, String)>,
 }
 
@@ -778,6 +781,23 @@ impl RecipeRepository {
                 continue;
             }
             let name = entry.file_name().to_string_lossy();
+            if name.ends_with(".tmp") && name.contains(".lapedit") {
+                // Startup cleanup of temp siblings orphaned by a hard kill
+                // between temp creation and the atomic replace (spec A3).
+                // The `.lapedit` family covers primary sidecars, retained
+                // previous revisions and virtual-copy sidecars; unrelated
+                // `.tmp` files of other tools are never touched.
+                match fs::remove_file(entry.path()) {
+                    Ok(()) => {
+                        summary.orphan_temps_removed += 1;
+                    }
+                    Err(err) => summary.errors.push((
+                        entry.path().to_path_buf(),
+                        format!("orphan temp cleanup failed: {err}"),
+                    )),
+                }
+                continue;
+            }
             if !name.ends_with(".lapedit.json") {
                 continue;
             }

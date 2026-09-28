@@ -98,6 +98,9 @@ function completedTicket(assetId: number) {
 
 function queueSuccessfulOpen(assetId: number) {
     invokeMock
+        // The rollback-switch refresh (lap-63f) is the panel's first IPC
+        // call during setup; it must not consume the session queue.
+        .mockResolvedValueOnce(false)
         .mockResolvedValueOnce(openedSession(assetId))
         .mockResolvedValueOnce(completedTicket(assetId))
         .mockResolvedValueOnce(new Uint8Array(8 * 8 * 4).buffer);
@@ -123,9 +126,11 @@ describe('DevelopPanel', () => {
     beforeEach(() => {
         invokeMock.mockReset();
         // Default for non-queued commands (e.g. the lens-profile catalog of
-        // lap-d52); queued mockResolvedValueOnce responses still win.
+        // lap-d52, the rollback switch of lap-63f); queued
+        // mockResolvedValueOnce responses still win.
         invokeMock.mockImplementation((command: string) => {
             if (command === 'develop_lens_catalog') return Promise.resolve([]);
+            if (command === 'develop_get_rollback') return Promise.resolve(false);
             return Promise.resolve([]);
         });
         setActivePinia(createPinia());
@@ -151,6 +156,44 @@ describe('DevelopPanel', () => {
         const tint = wrapper.get('[data-testid="develop-slider-tint"]').element as HTMLInputElement;
         expect(Number(tint.min)).toBe(RECIPE_PARAM_RANGES.tint.min);
         expect(Number(tint.max)).toBe(RECIPE_PARAM_RANGES.tint.max);
+    });
+
+    it('shows the rollback notice and no editing controls while the switch is engaged', async () => {
+        // lap-63f: the backend switch answers true; the panel must open no
+        // edit session and render only the explicit, localized notice.
+        invokeMock.mockImplementation((command: string) => {
+            if (command === 'develop_get_rollback') return Promise.resolve(true);
+            return Promise.resolve([]);
+        });
+        const wrapper = mount(DevelopPanel, {
+            props: { file: { id: 7, name: 'photo.CR2', thumbnail: 'blob:original' } },
+            global: { plugins: [makeI18n(), setActivePinia(createPinia())] },
+        });
+        await flushPromises();
+
+        const notice = wrapper.get('[data-testid="develop-rollback-notice"]');
+        expect(notice.text()).toContain('rolled back');
+        expect(wrapper.find('[data-testid="develop-slider-exposure"]').exists()).toBe(false);
+        expect(wrapper.find('[data-testid="develop-section-basic"]').exists()).toBe(false);
+        // No session was opened while rolled back.
+        const sessionCalls = invokeMock.mock.calls.filter((call) => call[0] === 'develop_open_edit_session');
+        expect(sessionCalls).toHaveLength(0);
+        wrapper.unmount();
+        await flushPromises();
+    });
+
+    it('fails closed with the rollback notice while the switch state is unreadable', async () => {
+        invokeMock.mockImplementation(() => Promise.reject(new Error('config unavailable')));
+        const wrapper = mount(DevelopPanel, {
+            props: { file: { id: 7, name: 'photo.CR2', thumbnail: 'blob:original' } },
+            global: { plugins: [makeI18n(), setActivePinia(createPinia())] },
+        });
+        await flushPromises();
+
+        expect(wrapper.find('[data-testid="develop-rollback-notice"]').exists()).toBe(true);
+        expect(wrapper.find('[data-testid="develop-slider-exposure"]').exists()).toBe(false);
+        wrapper.unmount();
+        await flushPromises();
     });
 
     it('edits exposure through keyboard/numeric input and Enter', async () => {

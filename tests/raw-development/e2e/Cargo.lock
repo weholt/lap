@@ -1877,6 +1877,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fuzzy-matcher"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54614a3312934d066701a80f20f15fa3b56d67ac7722b39eea5b4c9dd1d66c94"
+dependencies = [
+ "thread_local",
+]
+
+[[package]]
 name = "gdk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4832,6 +4841,16 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
+dependencies = [
+ "memchr",
+ "serde",
+]
+
+[[package]]
+name = "quick-xml"
 version = "0.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
@@ -5010,14 +5029,16 @@ checksum = "ca45419789ae5a7899559e9512e58ca889e41f04f1f2445e9f4b290ceccd1d08"
 [[package]]
 name = "rapidraw-develop"
 version = "0.1.0"
-source = "git+file:///C:/Users/Thomas/Desktop/RapidRAW-engine?rev=e1035c38aa1150ac350faa3661f26144a922ea91#e1035c38aa1150ac350faa3661f26144a922ea91"
+source = "git+file:///C:/Users/Thomas/Desktop/RapidRAW-engine?rev=de4fdbd76723c76145b477a2b8874226512475f1#de4fdbd76723c76145b477a2b8874226512475f1"
 dependencies = [
  "bytemuck",
+ "fuzzy-matcher",
  "glam",
  "half",
  "image",
  "log",
  "pollster",
+ "quick-xml 0.41.0",
  "rapidraw-edit-model",
  "rawler",
  "rayon",
@@ -5029,7 +5050,7 @@ dependencies = [
 [[package]]
 name = "rapidraw-edit-model"
 version = "0.1.0"
-source = "git+file:///C:/Users/Thomas/Desktop/RapidRAW-engine?rev=e1035c38aa1150ac350faa3661f26144a922ea91#e1035c38aa1150ac350faa3661f26144a922ea91"
+source = "git+file:///C:/Users/Thomas/Desktop/RapidRAW-engine?rev=de4fdbd76723c76145b477a2b8874226512475f1#de4fdbd76723c76145b477a2b8874226512475f1"
 dependencies = [
  "hex",
  "serde",
@@ -6781,6 +6802,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
+]
+
+[[package]]
+name = "thread_local"
+version = "1.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ad99c4c6d32803332c548b1af0540b357b3f5fc0be8f6c6bfe8b2e6ae784070"
+dependencies = [
+ "cfg-if",
 ]
 
 [[package]]

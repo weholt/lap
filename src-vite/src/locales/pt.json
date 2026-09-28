@@ -1618,6 +1618,7 @@
     }
   },
   "develop": {
+    "rollbackNotice": "A revelação está desativada por rollback. Os sidecars guardados, as revisões anteriores, os recursos e o catálogo são mantidos; nenhuma receita é gravada nos ficheiros originais. Desative o interruptor de rollback para retomar a edição.",
     "title": "Revelar",
     "exposure": "Exposição",
     "whiteBalance": "Balanço de brancos",

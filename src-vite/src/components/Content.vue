@@ -176,8 +176,9 @@
           <!-- toggle develop panel -->
           <TButton
             :icon="IconCameraAperture"
-            :tooltip="$t('develop.title')"
+            :tooltip="developRollbackEngaged ? $t('develop.rollbackNotice') : $t('develop.title')"
             :selected="isDevelopPanelOpen"
+            :disabled="developRollbackEngaged"
             @click="toggleDevelopPanel"
           />
         </div>
@@ -809,6 +810,7 @@ import FileInfo from '@/components/FileInfo.vue';
 import DevelopPanel from '@/components/DevelopPanel.vue';
 import DevelopMaskOverlay from '@/components/develop/masks/DevelopMaskOverlay.vue';
 import { useDevelopEditor } from '@/composables/useDevelopEditor';
+import { useDevelopRollback } from '@/composables/useDevelopRollback';
 import Breadcrumb from '@/components/Breadcrumb.vue';
 import DedupPane from '@/components/DedupPane.vue';
 import SelectionPanel from '@/components/SelectionPanel.vue';
@@ -2137,6 +2139,16 @@ const hasUnsavedChanges = computed(() => {
 
 const developEditor = useDevelopEditor();
 
+// Non-destructive develop rollback switch (lap-63f): while engaged the
+// Develop entry point is disabled with an explicit notice; sidecars and
+// resources are retained and recipes are never flattened into originals.
+const developRollback = useDevelopRollback();
+const developRollbackEngaged = computed(() => !developRollback.loaded.value || developRollback.active.value);
+void developRollback.refresh().catch(() => {
+  // Read failure leaves the switch unloaded: the gate fails closed and the
+  // toggle stays disabled with the rollback notice until state is readable.
+});
+
 // Unsaved develop edits are awaited (recipe commit) instead of shown as a
 // modal: failures retain the dirty state per asset for retry, and navigation
 // continues once the commit settles (spec A2/A10, "Persistence and
@@ -2162,6 +2174,12 @@ const checkUnsavedChanges = async (action: () => void) => {
 };
 
 const toggleDevelopPanel = () => {
+  // Rollback engaged (lap-63f): never open the entry point; the notice on
+  // the disabled toggle explains the retained state.
+  if (developRollbackEngaged.value) {
+    config.rightPanel.show = config.rightPanel.show && config.rightPanel.mode !== 'develop';
+    return;
+  }
   checkUnsavedChanges(() => {
     if (isDevelopPanelOpen.value) {
       config.rightPanel.show = false;

@@ -6,6 +6,10 @@ import {
     useDevelopEditor,
 } from '@/composables/useDevelopEditor';
 import {
+    ROLLBACK_NOTICE_KEY,
+    useDevelopRollback,
+} from '@/composables/useDevelopRollback';
+import {
     type Recipe,
     type SectionId,
     type ToneMapper,
@@ -55,6 +59,18 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const develop = useDevelopEditor();
+
+/**
+ * Non-destructive rollback switch (lap-63f): while enabled (or while the
+ * switch state is not yet readable — fails closed) the backend rejects
+ * every mutating develop command and this panel shows only the explicit
+ * notice; sidecars/resources stay untouched.
+ */
+const rollback = useDevelopRollback();
+const rollbackEngaged = computed(() => !rollback.loaded.value || rollback.active.value);
+void rollback.refresh().catch(() => {
+    // Read failure leaves `loaded` false: the gate and the notice fail closed.
+});
 
 const expandedSections = ref<Record<SectionId, boolean>>({
     basic: true,
@@ -230,9 +246,14 @@ function requestClose() {
 }
 
 watch(
-    () => Number(props.file?.id || 0),
-    async (fileId) => {
-        if (!fileId) return;
+    // Re-evaluates when the rollback state resolves (lap-63f): the
+    // fail-closed window before the first backend read must not permanently
+    // skip the session open.
+    [() => Number(props.file?.id || 0), rollback.loaded] as const,
+    async ([fileId]) => {
+        // Rollback engaged (lap-63f): do not open an edit session; the
+        // backend gate would reject it and no session state should exist.
+        if (!fileId || rollbackEngaged.value) return;
         try {
             await develop.openAsset({ id: fileId });
         } catch {
@@ -294,6 +315,16 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="file" class="mb-2 px-2 flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-1">
+            <!-- Rollback engaged (lap-63f): the entry point is disabled; the
+                 notice states exactly what stays retained. -->
+            <div
+                v-if="rollbackEngaged"
+                class="px-2 py-2 rounded-box bg-warning/10 text-warning text-xs break-words"
+                data-testid="develop-rollback-notice"
+                role="alert"
+            >{{ $t(ROLLBACK_NOTICE_KEY) }}</div>
+
+            <template v-else>
             <div
                 v-if="develop.openError.value"
                 class="px-2 py-1.5 rounded-box bg-error/10 text-error text-xs break-words"
@@ -506,6 +537,7 @@ onBeforeUnmount(() => {
                     {{ $t('develop.resetAll') }}
                 </button>
             </div>
+            </template>
         </div>
 
         <!-- Footer: original comparison + save status -->

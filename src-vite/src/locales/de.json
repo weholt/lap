@@ -1618,6 +1618,7 @@
     }
   },
   "develop": {
+    "rollbackNotice": "Die Entwicklungs-Funktion ist per Rollback deaktiviert. Gespeicherte Sidecars, frühere Revisionen, Ressourcen und der Katalog bleiben erhalten; kein Rezept wird in Ihre Originaldateien geschrieben. Deaktivieren Sie den Rollback-Schalter, um die Bearbeitung fortzusetzen.",
     "title": "Entwickeln",
     "exposure": "Belichtung",
     "whiteBalance": "Weißabgleich",

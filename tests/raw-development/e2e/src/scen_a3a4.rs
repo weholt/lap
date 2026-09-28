@@ -161,6 +161,16 @@ pub fn a3(scenario: &mut Scenario) {
                 format!("projection row: {row:?}"),
             );
 
+            // Startup sweep (lap-63f): the real app runs reconcile_folder
+            // per album inside create_db. It projects sidecars and removes
+            // temp siblings orphaned by the hard kill.
+            let sweep = repo.reconcile_folder(&conn, &dir);
+            scenario.check(
+                "startup-sweep-cleans-orphan-temps",
+                matches!(&sweep, Ok(summary) if summary.errors.is_empty()),
+                format!("startup folder sweep: {sweep:?}"),
+            );
+
             // The recovered asset remains editable: reopen + GPU preview of
             // the recovered recipe.
             if require_gpu(scenario) {

@@ -1618,6 +1618,7 @@
     }
   },
   "develop": {
+    "rollbackNotice": "El revelado está desactivado por rollback. Los sidecars guardados, las revisiones anteriores, los recursos y el catálogo se conservan; ninguna receta se escribe en los archivos originales. Desactive el interruptor de rollback para continuar la edición.",
     "title": "Revelar",
     "exposure": "Exposición",
     "whiteBalance": "Balance de blancos",

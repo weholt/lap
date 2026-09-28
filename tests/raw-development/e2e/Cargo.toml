@@ -9,10 +9,12 @@ publish = false
 # The real application library under qualification (develop service, recipe
 # repository, export pipeline, catalog projection migration).
 lap_lib = { package = "Lap", path = "../../../src-tauri" }
-# Same pinned engine revisions the application consumes
-# (docs/raw-development/engine-lock.json consumption.cargoDependency).
-rapidraw-edit-model = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "e1035c38aa1150ac350faa3661f26144a922ea91" }
-rapidraw-develop = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "e1035c38aa1150ac350faa3661f26144a922ea91" }
+# Same pinned engine revision the application consumes
+# (docs/raw-development/engine-lock.json consumption.cargoDependency;
+# aligned with src-tauri/Cargo.toml at lap-63f so the harness graph holds
+# exactly one copy of each engine crate).
+rapidraw-edit-model = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "de4fdbd76723c76145b477a2b8874226512475f1" }
+rapidraw-develop = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "de4fdbd76723c76145b477a2b8874226512475f1" }
 # Matching versions from the application graph so the unified build resolves
 # one shared compile of each.
 rusqlite = { version = "0.32.1", features = ["bundled"] }

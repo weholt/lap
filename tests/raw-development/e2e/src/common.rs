@@ -18,7 +18,7 @@ use lap_lib::develop::sessions::{
 use lap_lib::develop::RecipeRepository;
 use rapidraw_edit_model::sha256_hex;
 
-pub const ENGINE_REVISION: &str = "e1035c38aa1150ac350faa3661f26144a922ea91";
+pub const ENGINE_REVISION: &str = "de4fdbd76723c76145b477a2b8874226512475f1";
 
 // ---------------------------------------------------------------------------
 // Repo / fixture layout

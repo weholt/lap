@@ -4326,6 +4326,54 @@ fn develop_error_string(error: lap_lib::develop::sessions::DevelopError) -> Stri
     error.to_string()
 }
 
+/// Location of the non-destructive rollback flag document (lap-63f). It
+/// lives next to the other develop state under the app data directory so a
+/// missing/unwritable AppData path degrades to a process-local location the
+/// same way the resource store does.
+fn develop_rollback_flag() -> lap_lib::develop::rollback::RollbackFlag {
+    let dir = crate::t_config::get_app_data_dir().unwrap_or_else(|_| {
+        std::env::temp_dir().join(format!("lap-rollback-{}", std::process::id()))
+    });
+    lap_lib::develop::rollback::RollbackFlag::at(dir.join("develop-rollback.json"))
+}
+
+fn develop_rollback_enabled() -> Result<bool, String> {
+    develop_rollback_flag()
+        .load()
+        .map_err(|e| format!("rollback switch state is unreadable: {e}"))
+}
+
+/// Backend gate for every mutating develop command (lap-63f). Fails closed:
+/// while the switch is enabled the explicit rollback message is returned,
+/// and an unreadable flag document rejects editing with its own explicit
+/// error instead of silently allowing writes.
+fn develop_ensure_editing_available() -> Result<(), String> {
+    match develop_rollback_enabled()? {
+        false => Ok(()),
+        true => Err(lap_lib::develop::rollback::ROLLBACK_DISABLED_MESSAGE.to_string()),
+    }
+}
+
+/// Reports the non-destructive develop rollback switch (lap-63f). `true`
+/// means the Develop entry point is disabled; sidecars, retained previous
+/// revisions, resources and the catalog projection stay untouched.
+#[tauri::command]
+pub fn develop_get_rollback() -> Result<bool, String> {
+    develop_rollback_enabled()
+}
+
+/// Persists the rollback switch atomically and returns the stored state.
+/// Storing never touches sidecars, resources or the source media; flipping
+/// the switch back to `false` resumes editing on the same revision stream.
+#[tauri::command]
+pub fn develop_set_rollback(enabled: bool) -> Result<bool, String> {
+    let flag = develop_rollback_flag();
+    flag.store(enabled)
+        .map_err(|e| format!("failed to persist the rollback switch: {e}"))?;
+    flag.load()
+        .map_err(|e| format!("rollback switch state is unreadable after storing: {e}"))
+}
+
 /// Parses the frontend envelope JSON through the shared model's validator so
 /// schema violations fail before touching sessions or disk.
 fn develop_parse_envelope(
@@ -4354,6 +4402,7 @@ pub async fn develop_open_edit_session(
     asset_id: i64,
     variant_id: String,
 ) -> Result<lap_lib::develop::sessions::OpenedEditSession, String> {
+    develop_ensure_editing_available()?;
     let service = state.service();
     tauri::async_runtime::spawn_blocking(move || {
         let source_path = develop_asset_source_path(asset_id)?;
@@ -4439,6 +4488,8 @@ pub async fn develop_commit_recipe(
     expected_revision: u64,
     envelope: serde_json::Value,
 ) -> Result<lap_lib::develop::sessions::CommitReceiptDto, String> {
+    // Rollback gate (lap-63f): stale windows must not write past the switch.
+    develop_ensure_editing_available()?;
     let service = state.service();
     let envelope = develop_parse_envelope(envelope)?;
     let asset_id = envelope.asset_id.clone();
@@ -4755,6 +4806,9 @@ pub async fn develop_import_rrdata(
     source_width: u32,
     source_height: u32,
 ) -> Result<lap_lib::develop::rrdata_import::RrdataImportOutcome, String> {
+    // Rollback gate (lap-63f): imports write new recipe state, so they stop
+    // at the switch (the original .rrdata file is never modified anyway).
+    develop_ensure_editing_available()?;
     if asset_id <= 0 {
         return Err("develop rrdata import requires a catalog asset id".to_string());
     }
@@ -4916,6 +4970,8 @@ pub async fn develop_export_developed(
     max_edge: Option<u32>,
     export_job: String,
 ) -> Result<lap_lib::develop::export::ExportCompletion, String> {
+    // Rollback gate (lap-63f): no derivative export past the switch.
+    develop_ensure_editing_available()?;
     if export_job.is_empty() {
         return Err("export_job id is required for cancellation".to_string());
     }
@@ -5045,6 +5101,7 @@ pub async fn develop_create_virtual_copy(
     asset_id: i64,
     from_variant_id: Option<String>,
 ) -> Result<VariantSummaryDto, String> {
+    develop_ensure_editing_available()?;
     tauri::async_runtime::spawn_blocking(move || {
         let source_path = develop_asset_source_path(asset_id)?;
         let repo = DevelopRecipeRepository::lap_default();
@@ -5086,6 +5143,7 @@ pub async fn develop_reset_variant(
     variant_id: String,
     expected_revision: u64,
 ) -> Result<VariantResetDto, String> {
+    develop_ensure_editing_available()?;
     tauri::async_runtime::spawn_blocking(move || {
         let source_path = develop_asset_source_path(asset_id)?;
         let repo = DevelopRecipeRepository::lap_default();
@@ -5114,6 +5172,7 @@ pub async fn develop_reset_variant(
 /// the shared resource store are untouched.
 #[tauri::command]
 pub async fn develop_delete_variant(asset_id: i64, variant_id: String) -> Result<(), String> {
+    develop_ensure_editing_available()?;
     tauri::async_runtime::spawn_blocking(move || {
         let source_path = develop_asset_source_path(asset_id)?;
         let conn = t_sqlite::open_conn().map_err(|e| e.to_string())?;
@@ -5227,6 +5286,8 @@ pub async fn develop_batch_export(
     max_edge: Option<u32>,
     batch_job: String,
 ) -> Result<lap_lib::develop::batch::BatchSummary, String> {
+    // Rollback gate (lap-63f): batch derivative exports stop at the switch.
+    develop_ensure_editing_available()?;
     if batch_job.is_empty() {
         return Err("batch_job id is required for cancellation".to_string());
     }
