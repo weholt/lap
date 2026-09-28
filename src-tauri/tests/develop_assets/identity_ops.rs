@@ -288,6 +288,83 @@ fn companion_target_conflicts_are_detected_before_any_rename() {
 }
 
 #[test]
+/// Masks and their typed geometry are part of the recipe payload, so they
+/// must survive copy identity forks, catalog adoption and the projection
+/// rebuild intact (lap-78d, spec A8/A9).
+#[test]
+fn masks_survive_copy_fork_and_catalog_adoption() {
+    let dir = common::tmp_root("mask_copy");
+    let raw = write_source(&dir, "photo.nef", b"mask-raw");
+    let repo = repo();
+    let mut envelope = repo.new_envelope("copied-mask", "default", &fingerprint(&raw));
+    envelope
+        .recipe
+        .masks
+        .push(rapidraw_edit_model::MaskContainer {
+            id: "mask-1".to_string(),
+            name: "radial".to_string(),
+            visible: true,
+            adjustments: rapidraw_edit_model::MaskLocalAdjustments {
+                exposure: -1.5,
+                ..Default::default()
+            },
+            sub_masks: vec![rapidraw_edit_model::SubMask {
+                id: "sub-1".to_string(),
+                kind: "radial".to_string(),
+                geometry: Some(rapidraw_edit_model::MaskGeometry::Radial {
+                    center_x: 0.5,
+                    center_y: 0.5,
+                    radius_x: 0.25,
+                    radius_y: 0.3,
+                    rotation: 15.0,
+                    feather: 0.4,
+                }),
+                parameters: serde_json::json!({
+                    "centerX": 1000.0, "centerY": 500.0,
+                    "radiusX": 250.0, "radiusY": 250.0,
+                    "rotation": 15.0, "feather": 0.4
+                }),
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+    let revision = repo.current_revision(&raw).unwrap().unwrap_or(0);
+    repo.commit(&raw, revision, envelope, None, None).unwrap();
+
+    // Copy identity fork keeps the whole recipe including masks/geometry.
+    let copied = dir.join("copy.nef");
+    fs::copy(&raw, &copied).unwrap();
+    fork_sidecar_for_copy(&raw, &copied, &new_copy_asset_id())
+        .unwrap()
+        .expect("fork for the copy");
+    let copy_envelope = envelope_of(&copied);
+    assert_eq!(copy_envelope.recipe.masks.len(), 1);
+    assert!(
+        copy_envelope.recipe.masks[0].sub_masks[0]
+            .geometry
+            .is_some()
+    );
+
+    // Adoption (catalog rebuild/re-key) preserves the mask payload too.
+    let _ = adopt_catalog_identity(&copied, "400").unwrap();
+    let adopted = envelope_of(&copied);
+    assert_eq!(adopted.asset_id, "400");
+    assert_eq!(adopted.recipe.masks.len(), 1);
+    let sub_mask = &adopted.recipe.masks[0].sub_masks[0];
+    assert!(
+        matches!(
+            sub_mask.geometry,
+            Some(rapidraw_edit_model::MaskGeometry::Radial { .. })
+        ),
+        "typed geometry must survive adoption"
+    );
+    assert!(
+        (adopted.recipe.masks[0].adjustments.exposure - -1.5).abs() < 1e-9,
+        "mask-local adjustments must survive adoption"
+    );
+}
+
+#[test]
 fn adopt_preserves_resources_and_unsupported_payload() {
     let dir = common::tmp_root("adopt_resources");
     let raw = write_source(&dir, "photo.nef", b"resource-raw");

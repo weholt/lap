@@ -1,6 +1,7 @@
 use crate::common::*;
 use lap_lib::develop::recipe_repository::{RecipeRepository, is_edited_envelope};
 use lap_lib::develop::rrdata_import::{RrdataImportError, read_rrdata};
+use rapidraw_edit_model::masks::MaskGeometry;
 use rapidraw_edit_model::migrate::EnvelopeIdentity;
 use rapidraw_edit_model::types::EffectiveDecodeSettings;
 use std::fs;
@@ -284,6 +285,62 @@ fn unsupported_visible_effects_stay_discoverable() {
     assert!(kinds.contains(&"masks"), "kinds: {kinds:?}");
     assert!(kinds.contains(&"ai-patches"), "kinds: {kinds:?}");
     assert!(!outcome.faithful_subset);
+}
+
+#[test]
+fn supported_non_ai_masks_import_with_typed_geometry_and_no_limitation() {
+    // Brush/linear/radial geometry in the legacy pixel payload converts into
+    // the validated oriented normalized `geometry` field. Such masks are
+    // rendered by the engine, so they are NOT import limitations anymore
+    // (spec A9: limitations exist for genuinely unsupported effects only).
+    let doc = read_rrdata(&fixture("masked-supported-v1.rrdata.json")).unwrap();
+    let outcome = importer()
+        .import_document(&doc, &identity(), source_dimensions())
+        .unwrap();
+
+    assert_eq!(outcome.envelope.recipe.masks.len(), 1);
+    let mask = &outcome.envelope.recipe.masks[0];
+    assert_eq!(mask.sub_masks.len(), 2);
+    let radial = &mask.sub_masks[0];
+    assert_eq!(radial.kind, "radial");
+    let geometry = radial.geometry.as_ref().expect("radial geometry converts");
+    match geometry {
+        MaskGeometry::Radial {
+            center_x,
+            center_y,
+            radius_x,
+            radius_y,
+            rotation,
+            feather,
+        } => {
+            // Oriented frame is 4000x3000 (source, no rotation).
+            assert!((center_x - 0.5).abs() < 1e-9);
+            assert!((center_y - 0.5).abs() < 1e-9);
+            assert!((radius_x - 800.0 / 4000.0).abs() < 1e-9);
+            assert!((radius_y - 600.0 / 4000.0).abs() < 1e-9);
+            assert_eq!((*rotation, *feather), (0.0, 0.5));
+        }
+        other => panic!("expected radial geometry, got {other:?}"),
+    }
+    let linear = &mask.sub_masks[1];
+    assert_eq!(linear.kind, "linear");
+    assert!(linear.geometry.is_some(), "linear geometry converts");
+    // The original payload stays preserved for diagnostics/round trips.
+    assert!(linear.parameters.is_object());
+
+    let kinds: Vec<&str> = outcome
+        .limitations
+        .iter()
+        .map(|limitation| limitation.kind.as_str())
+        .collect();
+    assert!(
+        !kinds.contains(&"masks"),
+        "supported masks are rendered, not limitations: {kinds:?}"
+    );
+    assert!(
+        outcome.faithful_subset,
+        "no unsupported effects in this document"
+    );
 }
 
 #[test]

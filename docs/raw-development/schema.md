@@ -73,6 +73,19 @@ are validated structurally:
   mask-local noise reduction accepts [-100, 100] as in the UI), ≤ 16
   sub-masks (opaque `parameters` payload ≤ 64 KiB canonical each), and a
   preserved `unsupported` bucket (≤ 16 entries / 32 KiB per mask).
+- `subMasks[].geometry` (lap-78d): typed, validated geometry for the
+  supported non-AI kinds `brush`, `flow`, `linear`, `radial`, `all`
+  (`rapidraw_edit_model::masks`); `null` for other kinds (AI, luminance/
+  color) or unconvertible payloads. Limits: ≤ 256 lines per stroke
+  geometry, ≤ 4096 points per line, ≤ 16384 total points; positions and
+  lengths finite with |value| ≤ 16 in normalized units; `brushSize`,
+  `radiusX`, `radiusY`, `range` > 0; `feather` in [0, 1]; `flow` in
+  [0, 100]; radial `rotation` finite degrees. Geometry semantics and
+  compositing (invert → opacity → additive/subtractive/intersect in
+  sub-mask order, then container invert/opacity) reproduce RapidRAW
+  `mask_generation.rs` at revision `5e30bcbb246395d391ba2e9662510641ffe68e6b`.
+  A supported kind with `geometry: null` fails render/export explicitly
+  naming mask and kind — it is never silently dropped.
 - `sectionVisibility`: persisted bypass state for `basic/curves/color/
   details/effects` (`true` = the section applies). Accordion expansion,
   clipping overlays, hover previews and processing flags are **not**
@@ -103,6 +116,24 @@ resource referenced through `resources` hashes.
   rescale, no rotation). The legacy importer preserves an unconverted
   `crop` under `unsupported["legacyAdjustments.crop"]` until the host
   supplies oriented dimensions — it never guesses.
+
+## Mask geometry — oriented frame and rendering contract (lap-78d)
+
+Mask geometry lives in the **same oriented, un-cropped frame** as `crop`:
+
+- Positions (`points`, `centerX/centerY`, `startX/startY`, `endX/endY`) are
+  normalized to the oriented full-frame size (x by width, y by height).
+- Lengths (`brushSize` diameter, `radiusX`, `radiusY`, linear `range`) are
+  normalized to the oriented full-frame **width**, so circles stay circles
+  for any aspect ratio: rasterization converts back to oriented pixels and
+  applies the reference per-pixel formulas exactly.
+- Crop and orientation never move a mask relative to image content: a mask
+  painted at an image feature stays anchored under later crop/rotation/
+  flip edits, and survives copy/move/rebuild because it is recipe payload.
+- Rendering maps `dst = src_px * scale − crop_px * scale` with the uniform
+  scale `output_width / oriented_width`, reproducing the reference bitmap
+  pipeline; previews and exports share one rasterizer (`rapidraw_develop::
+  masks`) and a bounded bitmap cache (cleared above 50 entries).
 
 ## Persisted render data vs transient interaction state
 

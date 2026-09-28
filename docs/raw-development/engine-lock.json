@@ -7,8 +7,18 @@
   "engine": {
     "repository": "C:/Users/Thomas/Desktop/RapidRAW-engine",
     "branch": "feature/lap-engine-extraction",
-    "revision": "e1035c38aa1150ac350faa3661f26144a922ea91",
-    "revisionSubject": "feat(rapidraw-d73): route host RAW decode through rapidraw-develop and expose a pinned-revision workspace",
+    "revision": "6fae0d0a6aaca5dffd59c20080ef03c5adfee71f",
+    "revisionSubject": "fix(rapidraw-922): parse mask definitions from the typed camelCase recipe JSON",
+    "previousRevisions": [
+      {
+        "revision": "323960899befcb6dc90edf6c99a341160be42aeb",
+        "note": "feat(rapidraw-922): typed mask geometry + host-neutral mask rasterizer (lap-78d); superseded by the subMasks decoder fix above"
+      },
+      {
+        "revision": "e1035c38aa1150ac350faa3661f26144a922ea91",
+        "note": "feat(rapidraw-d73): decode/route extraction; pinned before lap-78d"
+      }
+    ],
     "renderBaselineCommit": "5e30bcbb246395d391ba2e9662510641ffe68e6b",
     "provenance": "Isolated extraction checkout of RapidRAW 5e30bcbb246395d391ba2e9662510641ffe68e6b (AGPL-3.0); upstream license decision for combined distribution is still pending (spec P3) and blocks release, not local development.",
     "toolchain": {
@@ -48,7 +58,7 @@
       },
       {
         "path": "crates/rapidraw-edit-model/gen/recipe.ts",
-        "sha256": "a15f5b4fcff133069539bb41b57028572b30d1a611157187238ad209d97749fa"
+        "sha256": "128d93f28933a12bfc5a55fe9e7e8162037aad28c3987915199d958aa6b401ed"
       },
       {
         "path": "crates/rapidraw-edit-model/gen/default-recipe.json",
@@ -59,7 +69,7 @@
   },
   "consumption": {
     "method": "Git dependency pinned by an exact revision from the local isolated clone. Never a floating branch, never an uncommitted path, no publication and no shared remote.",
-    "cargoDependency": "rapidraw-develop = { git = \"file:///C:/Users/Thomas/Desktop/RapidRAW-engine\", rev = \"e1035c38aa1150ac350faa3661f26144a922ea91\" }",
+    "cargoDependency": "rapidraw-develop = { git = \"file:///C:/Users/Thomas/Desktop/RapidRAW-engine\", rev = \"6fae0d0a6aaca5dffd59c20080ef03c5adfee71f\" }",
     "localReproduction": [
       "1. Keep the isolated engine clone at C:/Users/Thomas/Desktop/RapidRAW-engine on branch feature/lap-engine-extraction (no publication, no remote creation; C:/Users/Thomas/Desktop/RapidRAW stays reference-only).",
       "2. To rebuild or extend the engine locally: git -C C:/Users/Thomas/Desktop/RapidRAW-engine checkout e1035c38aa1150ac350faa3661f26144a922ea91, then apply the toolchain PATH prepend and build with cargo as usual. Engine changes require a new pinned revision plus a new lock entry here before any host adopts them.",

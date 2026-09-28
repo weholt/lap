@@ -2,10 +2,12 @@
 //! contract `docs/raw-development/spec.md`, "Persistence and compatibility",
 //! and the schema's `resources` rules in `docs/raw-development/schema.md`).
 //!
-//! Recipes reference external render resources (LUTs now; depth maps and mask
-//! bitmaps through the same map later) by stable, content-derived ids in
-//! `RecipeEnvelope::resources`; inline payloads are never persisted inside a
-//! recipe. This module owns the Lap-side resource store:
+//! Recipes reference external render resources (LUTs now; depth maps and
+//! other bitmap resources through the same map later) by stable,
+//! content-derived ids in `RecipeEnvelope::resources`; inline payloads are
+//! never persisted inside a recipe. Non-AI masks (lap-78d) carry their
+//! geometry inline in the validated recipe schema, so this slice needs no
+//! external mask resources; AI mask payloads are outside the engine entirely.
 //!
 //! - **Content addressing.** A resource id is `lut/<sha256-hex>` — the SHA-256
 //!   of the resource bytes. Ids are deterministic, deduplicated and portable

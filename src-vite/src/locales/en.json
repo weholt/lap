@@ -1652,6 +1652,26 @@
       "details": "Detail",
       "effects": "Effects"
     },
+    "masks": {
+      "title": "Masks",
+      "brush": "Brush",
+      "linear": "Linear",
+      "radial": "Radial",
+      "toolHint": "Drag on the image to draw the mask. Each stroke or gradient is one undo step; Escape cancels.",
+      "empty": "No masks yet. Pick a tool and drag on the image.",
+      "mask": "Mask",
+      "delete": "Delete mask",
+      "opacity": "Opacity",
+      "mode": "Combine",
+      "modeAdd": "Add",
+      "modeSubtract": "Subtract",
+      "modeIntersect": "Intersect",
+      "invert": "Invert",
+      "localContrast": "Contrast",
+      "localSaturation": "Saturation",
+      "resetAll": "Remove all masks",
+      "unsupported": "Contains kinds this build cannot render: {kinds}. They fail render/export explicitly instead of being silently dropped."
+    },
     "groups": {
       "tone": "Tone",
       "color": "Color",

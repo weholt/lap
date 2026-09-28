@@ -331,10 +331,15 @@
               class="absolute inset-0 z-20 flex items-center justify-center"
               data-testid="develop-central-preview"
             >
-              <canvas
-                ref="developPreviewCanvasRef"
-                class="max-w-full max-h-full object-contain"
-              ></canvas>
+              <div class="relative inline-flex max-w-full max-h-full">
+                <canvas
+                  ref="developPreviewCanvasRef"
+                  class="max-w-full max-h-full object-contain"
+                ></canvas>
+                <!-- Native mask tools overlay (lap-78d): mirrors the canvas
+                     box; gestures form one develop history transaction each -->
+                <DevelopMaskOverlay :target="developPreviewCanvasRef" />
+              </div>
               <div
                 v-if="developEditor.rendering.value && !developEditor.preview.value"
                 class="absolute inset-0 flex items-center justify-center"
@@ -802,6 +807,7 @@ import AddToCollectionDialog from '@/components/AddToCollectionDialog.vue';
 import ExternalAppsDialog from '@/components/ExternalAppsDialog.vue';
 import FileInfo from '@/components/FileInfo.vue';
 import DevelopPanel from '@/components/DevelopPanel.vue';
+import DevelopMaskOverlay from '@/components/develop/masks/DevelopMaskOverlay.vue';
 import { useDevelopEditor } from '@/composables/useDevelopEditor';
 import Breadcrumb from '@/components/Breadcrumb.vue';
 import DedupPane from '@/components/DedupPane.vue';

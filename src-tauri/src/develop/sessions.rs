@@ -29,7 +29,7 @@
 /// `docs/raw-development/engine-lock.json` (`engine.revision`) and the
 /// `rev=` recorded for both engine crates in `src-tauri/Cargo.lock`
 /// (enforced by `cargo_lock_pins_engine_revision`).
-pub const ENGINE_GIT_REVISION: &str = "e1035c38aa1150ac350faa3661f26144a922ea91";
+pub const ENGINE_GIT_REVISION: &str = "6fae0d0a6aaca5dffd59c20080ef03c5adfee71f";
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -400,6 +400,38 @@ pub(crate) fn recipe_geometry_hash(recipe: &rapidraw_edit_model::Recipe) -> u64 
     hash
 }
 
+/// Builds the mask rasterization frame for a render of `out_w x out_h` from
+/// a decoded source of `source_dims` with the recipe's geometry applied.
+/// Mask geometry lives in the oriented, un-cropped frame (lap-78d), so the
+/// frame carries the oriented full dimensions and the crop offset; crop and
+/// orientation never move a mask relative to the image content.
+pub(crate) fn mask_raster_frame(
+    source_dims: (u32, u32),
+    recipe: &rapidraw_edit_model::Recipe,
+    out_w: u32,
+    out_h: u32,
+) -> Result<rapidraw_develop::MaskRasterFrame, EngineError> {
+    let steps = recipe.orientation_steps % 4;
+    let oriented = if steps == 1 || steps == 3 {
+        (source_dims.1, source_dims.0)
+    } else {
+        source_dims
+    };
+    rapidraw_develop::MaskRasterFrame::new(oriented.0, oriented.1, recipe.crop, out_w, out_h)
+        .map_err(|err| EngineError::InvalidInput(err.to_string()))
+}
+
+/// Rasterizes the recipe's supported visible masks for one render, mapping
+/// engine errors onto typed host errors. Unsupported kinds name the mask and
+/// kind; they are never silently dropped (spec A9).
+pub(crate) fn rasterize_recipe_masks(
+    recipe: &rapidraw_edit_model::Recipe,
+    frame: &rapidraw_develop::MaskRasterFrame,
+) -> Result<Vec<image::GrayImage>, EngineError> {
+    rapidraw_develop::rasterize_visible_masks(&recipe.masks, frame)
+        .map_err(|err| EngineError::Unsupported(err.to_string()))
+}
+
 // ---------------------------------------------------------------------------
 // GPU preview renderer
 // ---------------------------------------------------------------------------
@@ -423,6 +455,9 @@ pub struct GpuPreviewRenderer {
     renderer: OnceLock<Result<OffscreenRenderer, String>>,
     factory: Mutex<Option<GpuContextFactory>>,
     resources: Option<Arc<crate::develop::resources::ResourceStore>>,
+    /// Bounded mask-bitmap cache (lap-78d). Keyed by mask geometry content
+    /// plus frame; adjustment-only edits never invalidate geometry bitmaps.
+    mask_cache: Mutex<rapidraw_develop::BoundedMaskCache>,
 }
 
 impl GpuPreviewRenderer {
@@ -438,6 +473,7 @@ impl GpuPreviewRenderer {
             renderer: OnceLock::new(),
             factory: Mutex::new(Some(factory)),
             resources: None,
+            mask_cache: Mutex::new(rapidraw_develop::BoundedMaskCache::new()),
         }
     }
 
@@ -555,6 +591,30 @@ impl PreviewRenderer for GpuPreviewRenderer {
                 .tonemapper_override
                 .map(tonemapper_override_code),
         );
+        // Supported visible masks rasterize into the processing output
+        // space (layer i aligns with visible mask i in `adjustments`).
+        // Unsupported kinds fail explicitly; adjustment-only edits reuse
+        // cached geometry bitmaps through the bounded cache.
+        let mask_frame = mask_raster_frame(
+            job.original.image.dimensions(),
+            &job.envelope.recipe,
+            target_w,
+            target_h,
+        )?;
+        let mask_bitmaps = {
+            let mut cache = self
+                .mask_cache
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            cache
+                .get_or_rasterize(&job.envelope.recipe.masks, &mask_frame, || {
+                    rapidraw_develop::rasterize_visible_masks(
+                        &job.envelope.recipe.masks,
+                        &mask_frame,
+                    )
+                })
+                .map_err(|err| EngineError::Unsupported(err.to_string()))?
+        };
         // Stable per (session base, preview size, geometry): identical
         // previews reuse the uploaded input texture; different sessions or a
         // geometry change never collide.
@@ -565,7 +625,7 @@ impl PreviewRenderer for GpuPreviewRenderer {
 
         let request = RenderRequest {
             adjustments,
-            mask_bitmaps: &[],
+            mask_bitmaps: &mask_bitmaps,
             // Resolved from the content-addressed resource store when one is
             // installed; a missing/changed resource fails explicitly above.
             // Without a store the engine fails with ResourceMissing below
@@ -1070,11 +1130,12 @@ impl DevelopService {
                 self.max_preview_edge
             )));
         }
-        if envelope.recipe.masks.iter().any(|mask| mask.visible) {
-            return Err(DevelopError::Unsupported(
-                "masked local adjustments are a later milestone; previews must not silently drop them"
-                    .to_string(),
-            ));
+        // Masks: every visible sub-mask must be a supported non-AI kind with
+        // convertible geometry (lap-78d). Unsupported kinds are preserved in
+        // the recipe but fail here explicitly, naming mask and kind; they are
+        // never silently dropped from previews.
+        if let Err(err) = rapidraw_develop::validate_masks_supported(&envelope.recipe.masks) {
+            return Err(DevelopError::Unsupported(err.to_string()));
         }
 
         let ticket: PreviewTicket = self.manager.render_preview(PreviewRequest {
@@ -2129,9 +2190,9 @@ mod tests {
     }
 
     #[test]
-    fn masked_recipe_preview_is_explicitly_unsupported() {
+    fn masked_preview_rejects_unsupported_kind_naming_it() {
         let bytes = gradient_bytes();
-        let dir = tmp_dir("masks");
+        let dir = tmp_dir("masks-ai");
         let source = write_source(&dir, "masks.dng", &bytes);
         let service = service_with(Arc::new(GateRenderer::new(&[]).0), Arc::new(NullStore));
         let session = open_ok(&service, "asset-a", &source, &bytes);
@@ -2142,15 +2203,124 @@ mod tests {
             .masks
             .push(rapidraw_edit_model::MaskContainer {
                 id: "mask-1".to_string(),
-                name: "brush".to_string(),
+                name: "ai".to_string(),
                 visible: true,
+                sub_masks: vec![rapidraw_edit_model::SubMask {
+                    id: "sub-1".to_string(),
+                    kind: "ai-subject".to_string(),
+                    ..Default::default()
+                }],
                 ..Default::default()
             });
         let err = service
             .render_preview(session.session_id, 1, envelope, PreviewQuality::Settled, 48)
-            .expect_err("visible masks are not silently dropped");
-        assert!(matches!(err, DevelopError::Unsupported(_)), "{err:?}");
+            .expect_err("unsupported mask kinds are never silently dropped");
+        match err {
+            DevelopError::Unsupported(message) => {
+                assert!(
+                    message.contains("ai-subject") && message.contains("mask-1"),
+                    "the rejection must name the mask and the unsupported kind: {message}"
+                );
+            }
+            other => panic!("expected Unsupported, got {other:?}"),
+        }
         service.close_session(session.session_id).unwrap();
+    }
+
+    #[test]
+    fn masked_preview_renders_supported_masks_or_fails_gpu_only() {
+        // The supported non-AI mask path: a radial mask with local exposure
+        // changes the rendered preview. Combinations with crop/orientation
+        // exercise the oriented-frame mask mapping. On a machine without an
+        // offscreen device the failure must be an explicit GPU capability
+        // error; silently un-masked pixels are impossible by construction.
+        let bytes = gradient_bytes();
+        let dir = tmp_dir("masks-render");
+        let source = write_source(&dir, "masks.dng", &bytes);
+        let service = DevelopService::with_parts(
+            test_config(),
+            Arc::new(GpuPreviewRenderer::new()),
+            Arc::new(StubExportRenderer),
+            Arc::new(NullStore),
+        );
+        let session = open_ok(&service, "asset-a", &source, &bytes);
+        let sid = session.session_id;
+
+        let render = |envelope: rapidraw_edit_model::RecipeEnvelope,
+                      generation: u64|
+         -> Result<rapidraw_develop::session::PreviewFrame, DevelopError> {
+            match service.render_preview(sid, generation, envelope, PreviewQuality::Settled, 64) {
+                Ok(PreviewWait::Completed { ticket }) => service.take_preview_frame(&ticket.handle),
+                Ok(PreviewWait::Failed { message, .. }) => Err(DevelopError::Unsupported(message)),
+                Ok(other) => panic!("unexpected preview outcome: {other:?}"),
+                Err(err) => Err(err),
+            }
+        };
+
+        let masked_envelope = |crop: bool| {
+            let mut envelope = service.session_envelope(sid).unwrap();
+            if crop {
+                envelope.recipe.orientation_steps = 1;
+                envelope.recipe.crop = Some(rapidraw_edit_model::CropRect {
+                    x: 0.1,
+                    y: 0.1,
+                    width: 0.6,
+                    height: 0.6,
+                });
+            }
+            envelope
+                .recipe
+                .masks
+                .push(rapidraw_edit_model::MaskContainer {
+                    id: "mask-1".to_string(),
+                    name: "radial".to_string(),
+                    visible: true,
+                    adjustments: rapidraw_edit_model::MaskLocalAdjustments {
+                        exposure: -2.0,
+                        ..Default::default()
+                    },
+                    sub_masks: vec![rapidraw_edit_model::SubMask {
+                        id: "sub-1".to_string(),
+                        kind: "radial".to_string(),
+                        geometry: Some(rapidraw_edit_model::MaskGeometry::Radial {
+                            center_x: 0.3,
+                            center_y: 0.5,
+                            radius_x: 0.2,
+                            radius_y: 0.4,
+                            rotation: 0.0,
+                            feather: 0.4,
+                        }),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                });
+            envelope
+        };
+
+        // Plain frame without masks.
+        let base = render(service.session_envelope(sid).unwrap(), 1)
+            .expect("unmasked preview renders or the GPU error surfaces");
+
+        // Masked frames: plain, and combined with crop + orientation.
+        let masked = render(masked_envelope(false), 2);
+        let masked_geo = render(masked_envelope(true), 3);
+        for (label, outcome) in [("masked", masked), ("masked+crop/orientation", masked_geo)] {
+            let frame = match outcome {
+                Ok(frame) => frame,
+                Err(DevelopError::Unsupported(message))
+                    if message.to_lowercase().contains("gpu") =>
+                {
+                    // Honest capability skip: no device on this machine.
+                    continue;
+                }
+                Err(other) => panic!("masked {label} preview failed unexpectedly: {other:?}"),
+            };
+            assert_ne!(
+                frame.rgba8, base.rgba8,
+                "masked {label} preview must differ from the unmasked render"
+            );
+        }
+        service.close_session(sid).unwrap();
     }
 
     #[test]

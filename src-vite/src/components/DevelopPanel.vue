@@ -21,6 +21,7 @@ import {
 import DevelopSliderControl from '@/components/develop/DevelopSliderControl.vue';
 import DevelopSection from '@/components/develop/DevelopSection.vue';
 import DevelopCurveEditor from '@/components/develop/DevelopCurveEditor.vue';
+import DevelopMasksSection from '@/components/develop/masks/MasksSection.vue';
 import ImportRecipeDialog from '@/components/develop/ImportRecipeDialog.vue';
 import ImageHistogram from '@/components/ImageHistogram.vue';
 import TButton from '@/components/TButton.vue';
@@ -429,6 +430,19 @@ onBeforeUnmount(() => {
                     </template>
                 </div>
             </DevelopSection>
+
+            <!-- Local masks (lap-78d): native brush/linear/radial tools;
+                 gestures run on the central preview overlay -->
+            <div class="border-t border-base-content/5" data-testid="develop-section-masks">
+                <div class="px-1 pt-2 pb-1">
+                    <span class="font-bold uppercase text-[11px] tracking-wide text-base-content/40">
+                        {{ $t('develop.masks.title') }}
+                    </span>
+                </div>
+                <div class="pb-1">
+                    <DevelopMasksSection :disabled="!develop.session.value" />
+                </div>
+            </div>
 
             <!-- Reset all -->
             <div class="border-t border-base-content/5 px-1 py-2">

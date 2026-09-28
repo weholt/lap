@@ -163,7 +163,8 @@ pub struct OriginalRrdata {
 /// One named reason the imported recipe cannot claim a faithful preview or
 /// export. Limitations are data: the UI surfaces them and the render path
 /// enforces them (LUT-enabled recipes fail rendering explicitly until LUT
-/// resources are supported; visible masks are rejected by the host renderer).
+/// resources are supported; masks the engine cannot render fail explicitly
+/// naming mask and kind).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportLimitation {
@@ -331,6 +332,7 @@ impl RrdataImporter {
             })?;
 
         self.convert_legacy_crop(doc, &mut envelope, source_dimensions)?;
+        self.convert_mask_geometry(&mut envelope, source_dimensions);
 
         let limitations = self.fidelity_report(&envelope, &report);
 
@@ -447,6 +449,35 @@ impl RrdataImporter {
         Ok(())
     }
 
+    /// Converts legacy pixel mask payloads of supported kinds into the typed
+    /// oriented normalized `geometry` field (lap-78d). Unsupported kinds and
+    /// unconvertible payloads keep `geometry: None`; they stay preserved in
+    /// `parameters` and are reported by the fidelity report, never dropped.
+    fn convert_mask_geometry(&self, envelope: &mut RecipeEnvelope, source_dimensions: (u64, u64)) {
+        let (source_width, source_height) = source_dimensions;
+        let oriented = oriented_dimensions(
+            (
+                u32::try_from(source_width).unwrap_or(u32::MAX),
+                u32::try_from(source_height).unwrap_or(u32::MAX),
+            ),
+            envelope.recipe.orientation_steps,
+        );
+        let width = f64::from(oriented.0);
+        let height = f64::from(oriented.1);
+        for mask in &mut envelope.recipe.masks {
+            for sub_mask in &mut mask.sub_masks {
+                sub_mask.geometry = rapidraw_edit_model::masks::MaskGeometry::from_legacy(
+                    &sub_mask.kind,
+                    &sub_mask.parameters,
+                    width,
+                    height,
+                )
+                .ok()
+                .flatten();
+            }
+        }
+    }
+
     /// Fidelity report: every visible effect this slice cannot render
     /// faithfully becomes a named limitation (spec A9: unsupported imported
     /// effects stay visible and cannot be silently discarded).
@@ -486,14 +517,24 @@ impl RrdataImporter {
             });
         }
 
-        let visible_masks = recipe.masks.iter().filter(|mask| mask.visible).count();
-        if visible_masks > 0 {
-            limitations.push(ImportLimitation {
-                kind: "masks".to_string(),
-                detail: format!(
-                    "{visible_masks} visible local mask(s) were preserved in the recipe; local adjustments are not rendered by this engine slice and are rejected explicitly at render time"
-                ),
-            });
+        // Masks (lap-78d): supported non-AI kinds (brush/flow/linear/radial/
+        // all) with convertible geometry are rendered by the engine and are
+        // NOT limitations. Unsupported kinds (AI, luminance/color range,
+        // unknown) and unconvertible supported payloads stay discoverable as
+        // named limitations; nothing is silently dropped (spec A9).
+        for mask in recipe.masks.iter().filter(|mask| mask.visible) {
+            for sub_mask in mask.sub_masks.iter().filter(|s| s.visible) {
+                if sub_mask.geometry.is_some() {
+                    continue;
+                }
+                limitations.push(ImportLimitation {
+                    kind: "masks".to_string(),
+                    detail: format!(
+                        "mask '{}' sub-mask '{}' of kind '{}' has no typed geometry the engine can render; it is preserved in the recipe and fails render/export explicitly instead of being silently dropped",
+                        mask.id, sub_mask.id, sub_mask.kind
+                    ),
+                });
+            }
         }
 
         if envelope.unsupported.contains_key("legacy.aiPatches")

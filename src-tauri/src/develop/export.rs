@@ -456,6 +456,17 @@ impl ExportRenderer for GpuExportRenderer {
                 .tonemapper_override
                 .map(tonemapper_override_code),
         );
+        // Supported visible masks rasterize into the output space (layer i
+        // aligns with visible mask i in `adjustments`); unsupported kinds
+        // were rejected before enqueue and fail explicitly here too.
+        let mask_frame = super::sessions::mask_raster_frame(
+            job.original.image.dimensions(),
+            &job.envelope.recipe,
+            base.dimensions().0,
+            base.dimensions().1,
+        )?;
+        let mask_bitmaps =
+            super::sessions::rasterize_recipe_masks(&job.envelope.recipe, &mask_frame)?;
         // Stable per job identity and output size; the renderer's input
         // cache is single-slot, so distinct jobs never collide.
         let transform_hash = job.job_id.0.wrapping_mul(0x9E37_79B9_7F4A_7C15)
@@ -464,9 +475,7 @@ impl ExportRenderer for GpuExportRenderer {
 
         let request = RenderRequest {
             adjustments,
-            // Visible masks were rejected by the service before enqueue; the
-            // engine also fails explicitly if a recipe still referenced one.
-            mask_bitmaps: &[],
+            mask_bitmaps: &mask_bitmaps,
             // Resolved from the content-addressed resource store when one is
             // installed; a missing/changed resource fails explicitly above.
             // Without a store the engine fails with ResourceMissing below
@@ -633,11 +642,12 @@ pub fn export_developed_with(
             found: source_fingerprint,
         });
     }
-    if envelope.recipe.masks.iter().any(|mask| mask.visible) {
-        return Err(ExportError::Unsupported(
-            "masked local adjustments are a later milestone; derivatives must not silently drop them"
-                .to_string(),
-        ));
+    // Masks: every visible sub-mask must be a supported non-AI kind with
+    // convertible geometry (lap-78d). Unsupported kinds are preserved in the
+    // recipe but fail here explicitly, naming mask and kind; derivatives
+    // never silently drop them.
+    if let Err(err) = rapidraw_develop::validate_masks_supported(&envelope.recipe.masks) {
+        return Err(ExportError::Unsupported(err.to_string()));
     }
     // Provenance is part of the derivative receipt; a recipe that cannot be
     // hashed is not exported (nothing is written).
@@ -1813,9 +1823,9 @@ mod tests {
     }
 
     #[test]
-    fn export_rejects_visible_masks_explicitly() {
+    fn export_rejects_unsupported_mask_kind_naming_it() {
         let bytes = gradient_bytes();
-        let dir = tmp_dir("masks");
+        let dir = tmp_dir("masks-ai");
         let source = write_source(&dir, "photo.dng", &bytes);
         let repo = RecipeRepository::new("lap-test/export");
         let current = repo.current_revision(&source).unwrap().unwrap_or(0);
@@ -1825,8 +1835,13 @@ mod tests {
             .masks
             .push(rapidraw_edit_model::MaskContainer {
                 id: "mask-1".to_string(),
-                name: "brush".to_string(),
+                name: "ai".to_string(),
                 visible: true,
+                sub_masks: vec![rapidraw_edit_model::SubMask {
+                    id: "sub-1".to_string(),
+                    kind: "ai-sky".to_string(),
+                    ..Default::default()
+                }],
                 ..Default::default()
             });
         repo.commit_sidecar(&source, current, envelope).unwrap();
@@ -1840,13 +1855,121 @@ mod tests {
             &CancelToken::pair().1,
             &ExportCancelSlot::new(),
         )
-        .expect_err("visible masks must not be silently dropped from derivatives");
-        assert!(matches!(err, ExportError::Unsupported(_)), "{err:?}");
+        .expect_err("unsupported mask kinds are never silently dropped from derivatives");
+        match err {
+            ExportError::Unsupported(message) => {
+                assert!(
+                    message.contains("ai-sky") && message.contains("mask-1"),
+                    "the rejection must name the mask and the unsupported kind: {message}"
+                );
+            }
+            other => panic!("expected Unsupported, got {other:?}"),
+        }
         assert_eq!(
             renderer.render_count(),
             0,
             "no pixels may be produced for an unsupported recipe"
         );
+    }
+
+    #[test]
+    fn export_renders_supported_masks_or_fails_gpu_only() {
+        // Supported non-AI masks are rendered into derivatives. Combined with
+        // crop/orientation the geometry must stay anchored to the oriented
+        // frame. Without a device the failure must be an explicit GPU
+        // capability error; silently un-masked output is impossible.
+        let bytes = gradient_bytes();
+        let dir = tmp_dir("masks-export");
+        let source = write_source(&dir, "photo.dng", &bytes);
+        let repo = RecipeRepository::new("lap-test/export");
+
+        let masked_envelope = |with_geometry: bool| {
+            let current = repo.current_revision(&source).unwrap().unwrap_or(0);
+            let mut envelope = repo.new_envelope("asset-mx", "default", &fingerprint(&bytes));
+            envelope.recipe.orientation_steps = 1;
+            envelope.recipe.crop = Some(rapidraw_edit_model::CropRect {
+                x: 0.1,
+                y: 0.1,
+                width: 0.6,
+                height: 0.6,
+            });
+            let mut mask = rapidraw_edit_model::MaskContainer {
+                id: "mask-1".to_string(),
+                name: "radial".to_string(),
+                visible: true,
+                adjustments: rapidraw_edit_model::MaskLocalAdjustments {
+                    exposure: -2.0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            if with_geometry {
+                mask.sub_masks = vec![rapidraw_edit_model::SubMask {
+                    id: "sub-1".to_string(),
+                    kind: "radial".to_string(),
+                    geometry: Some(rapidraw_edit_model::MaskGeometry::Radial {
+                        center_x: 0.35,
+                        center_y: 0.5,
+                        radius_x: 0.25,
+                        radius_y: 0.45,
+                        rotation: 0.0,
+                        feather: 0.3,
+                    }),
+                    ..Default::default()
+                }];
+            } else {
+                mask.sub_masks = Vec::new();
+                mask.visible = false;
+            }
+            envelope.recipe.masks.push(mask);
+            repo.commit_sidecar(&source, current, envelope).unwrap();
+        };
+
+        let service = DevelopService::with_parts(
+            export_config(),
+            Arc::new(NoopPreviewRenderer),
+            Arc::new(GpuExportRenderer::new()),
+            Arc::new(NullStore),
+        );
+        let run = |requested_revision: u64, name: &str| {
+            export_developed(
+                &service,
+                export_input(&source, &bytes, "asset-mx", requested_revision),
+                png_settings(&dir.join(name)),
+                &CancelToken::pair().1,
+                &ExportCancelSlot::new(),
+            )
+        };
+
+        // Reference derivative first (sidecar revision 1, no visible mask),
+        // then commit the masked envelope and export again (revision 2).
+        masked_envelope(false);
+        let unmasked = run(committed(&repo, &source), "unmasked.png");
+        masked_envelope(true);
+        let masked = run(committed(&repo, &source), "masked.png");
+        match (unmasked, masked) {
+            (Ok(ExportCompletion::Completed { .. }), Ok(ExportCompletion::Completed { .. })) => {
+                let plain = image::ImageReader::open(dir.join("unmasked.png"))
+                    .unwrap()
+                    .decode()
+                    .unwrap();
+                let masked = image::ImageReader::open(dir.join("masked.png"))
+                    .unwrap()
+                    .decode()
+                    .unwrap();
+                assert_ne!(
+                    plain.as_bytes(),
+                    masked.as_bytes(),
+                    "masked derivative must differ from the unmasked render"
+                );
+            }
+            (Err(ExportError::Unsupported(m)), _) | (_, Err(ExportError::Unsupported(m)))
+                if m.to_lowercase().contains("gpu") =>
+            {
+                // Honest capability skip on machines without an offscreen device.
+            }
+            (a, b) => panic!("unexpected export outcomes: unmasked={a:?} masked={b:?}"),
+        }
     }
 
     #[test]
