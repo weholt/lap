@@ -29,7 +29,7 @@
 /// `docs/raw-development/engine-lock.json` (`engine.revision`) and the
 /// `rev=` recorded for both engine crates in `src-tauri/Cargo.lock`
 /// (enforced by `cargo_lock_pins_engine_revision`).
-pub const ENGINE_GIT_REVISION: &str = "6fae0d0a6aaca5dffd59c20080ef03c5adfee71f";
+pub const ENGINE_GIT_REVISION: &str = "de4fdbd76723c76145b477a2b8874226512475f1";
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -384,6 +384,9 @@ pub(crate) fn apply_recipe_geometry(
 /// input pixels. The renderers' input caches are keyed by their transform
 /// hash, so a geometry change at a constant output size (e.g. a 180-degree
 /// turn) must change this value or previews would reuse a stale texture.
+/// Lens-correction warp inputs are geometry (lap-d52): any coefficient,
+/// amount, enable flag or manual distortion change re-renders the warped
+/// input, while adjustment-only edits keep the cached input.
 pub(crate) fn recipe_geometry_hash(recipe: &rapidraw_edit_model::Recipe) -> u64 {
     const PRIME: u64 = 0x9E37_79B9_7F4A_7C15;
     let mut hash = (recipe.orientation_steps % 4) as u64;
@@ -397,6 +400,31 @@ pub(crate) fn recipe_geometry_hash(recipe: &rapidraw_edit_model::Recipe) -> u64 
     } else {
         hash = hash.wrapping_mul(PRIME) ^ 0x517C_C1B7_2722_0A95;
     }
+    let lens = rapidraw_develop::LensWarpParams::from_recipe(recipe);
+    for value in [
+        lens.distortion,
+        lens.lens_dist_k1,
+        lens.lens_dist_k2,
+        lens.lens_dist_k3,
+        lens.lens_distortion_amount,
+        lens.tca_vr,
+        lens.tca_vb,
+        lens.lens_tca_amount,
+        lens.vig_k1,
+        lens.vig_k2,
+        lens.vig_k3,
+        lens.lens_vignette_amount,
+    ] {
+        hash = hash.wrapping_mul(PRIME) ^ value.to_bits();
+    }
+    for flag in [
+        lens.lens_distortion_enabled,
+        lens.lens_tca_enabled,
+        lens.lens_vignette_enabled,
+    ] {
+        hash = hash.wrapping_mul(PRIME) ^ (u64::from(flag)).rotate_left(11);
+    }
+    hash = hash.wrapping_mul(PRIME) ^ u64::from(lens.lens_model);
     hash
 }
 
@@ -507,6 +535,31 @@ impl GpuPreviewRenderer {
         }
     }
 
+    /// Verifies the recipe's lens-profile reference before any pixel work
+    /// (lap-d52): the parsed profile database when a present, unchanged
+    /// profile is referenced; `None` without a reference. A referenced
+    /// profile is a *required* capability input — missing, changed or
+    /// unmapped resources (and renders without a store that could verify
+    /// them) fail explicitly instead of silently changing the correction,
+    /// matching the LUT behavior and spec A7.
+    pub(crate) fn resolve_render_lens_profile(
+        &self,
+        envelope: &RecipeEnvelope,
+    ) -> Result<Option<Arc<rapidraw_develop::lens::LensDatabase>>, EngineError> {
+        if envelope.recipe.lens_profile.is_none() {
+            return Ok(None);
+        }
+        let Some(store) = &self.resources else {
+            return Err(EngineError::Unsupported(
+                "the recipe references a lens profile but no resource store is installed to verify it"
+                    .to_string(),
+            ));
+        };
+        store
+            .resolve_recipe_lens_profile(envelope)
+            .map_err(|err| EngineError::Unsupported(err.to_string()))
+    }
+
     fn renderer(&self) -> Result<&OffscreenRenderer, EngineError> {
         loop {
             if let Some(result) = self.renderer.get() {
@@ -570,12 +623,32 @@ fn gpu_unsupported(detail: String) -> EngineError {
 impl PreviewRenderer for GpuPreviewRenderer {
     fn render(&self, job: &PreviewJob) -> Result<PreviewFrame, EngineError> {
         job.cancel.check()?;
+
+        // Lens-profile verification precedes every pixel work (lap-d52): a
+        // referenced profile that is missing, changed or unverifiable fails
+        // explicitly instead of silently changing the correction. This runs
+        // BEFORE device initialization so a lost resource never hides behind
+        // a GPU capability error.
+        self.resolve_render_lens_profile(&job.envelope)?;
+
         let renderer = self.renderer()?;
+
+        // Lens correction warp on the full un-cropped frame, matching the
+        // pinned reference order (warp -> coarse rotation -> flip -> crop):
+        // identity lens fields never touch the pixels.
+        let lens_params = rapidraw_develop::LensWarpParams::from_recipe(&job.envelope.recipe);
+        let lens_warped;
+        let lens_corrected: &rapidraw_develop::LinearImage = if lens_params.is_identity() {
+            &job.original.image
+        } else {
+            lens_warped = rapidraw_develop::lens_warp(&job.original.image, &lens_params);
+            &lens_warped
+        };
 
         // Recipe geometry in the engine's oriented coordinate system, applied
         // by the SAME helper the export renderer uses (lap-6bc): preview and
         // export can never diverge on crop/rotation/flip.
-        let oriented = apply_recipe_geometry(&job.original.image, &job.envelope.recipe)?;
+        let oriented = apply_recipe_geometry(lens_corrected, &job.envelope.recipe)?;
         let (width, height) = oriented.dimensions();
         let (target_w, target_h) = preview_dimensions(width, height, job.max_edge);
         let base = preview_base(&oriented, target_w, target_h)?;
@@ -2474,5 +2547,252 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn missing_lens_profile_fails_the_preview_before_the_gpu() {
+        use crate::develop::resources::ResourceStore;
+        use rapidraw_develop::lens::LensWarpParams;
+
+        fn failing_gpu() -> super::GpuContextFactory {
+            Box::new(|| {
+                rapidraw_develop::gpu::OffscreenGpuContext::new_with_backends(
+                    wgpu::Backends::empty(),
+                )
+            })
+        }
+
+        let store = Arc::new(ResourceStore::open(&tmp_dir("lens-preview-missing")).expect("store"));
+        let renderer = GpuPreviewRenderer::with_context_factory(failing_gpu())
+            .with_resource_store(Some(Arc::clone(&store) as _));
+
+        // A recipe without a lens profile resolves to nothing.
+        let plain = RecipeEnvelope::new("lap-test/0", "asset-a", "default", &"a".repeat(64));
+        assert!(
+            renderer
+                .resolve_render_lens_profile(&plain)
+                .unwrap()
+                .is_none()
+        );
+
+        // A referenced profile cannot be verified without a store.
+        let renderer_without_store = GpuPreviewRenderer::with_context_factory(failing_gpu());
+        let mut unverified = plain.clone();
+        unverified.recipe.lens_profile = Some(rapidraw_edit_model::LensProfileRef {
+            uri: format!("resource://lens/{}", "b".repeat(64)),
+            maker: "TestCorp".to_string(),
+            model: "Test 24-70mm f/2.8".to_string(),
+            version: "v1".to_string(),
+            sha256: "b".repeat(64),
+        });
+        let err = renderer_without_store
+            .resolve_render_lens_profile(&unverified)
+            .expect_err("profile verification requires a resource store");
+        assert!(
+            matches!(err, EngineError::Unsupported(ref m) if m.contains("resource store")),
+            "got {err:?}"
+        );
+
+        // Missing object: explicit failure naming the profile, BEFORE the GPU
+        // capability error — the check must precede device work.
+        let profiled_envelope = {
+            let imported = store
+                .import_lens_profile_bytes(
+                    b"<?xml version=\"1.0\"?><lensdatabase><lens><maker>M</maker><model>L</model><mount>T</mount></lens></lensdatabase>",
+                    None,
+                    Some("v1"),
+                )
+                .expect("profile imports");
+            let mut envelope =
+                RecipeEnvelope::new("lap-test/0", "asset-a", "default", &"a".repeat(64));
+            crate::develop::resources::attach_lens_profile(&mut envelope, &imported, "M", "L");
+            // Simulate a lost/pruned resource object before any render.
+            let root = store.root().to_path_buf();
+            std::fs::remove_file(
+                root.join("objects")
+                    .join(&imported.digest[..2])
+                    .join(&imported.digest),
+            )
+            .expect("object removed");
+            envelope
+        };
+        let err = renderer
+            .resolve_render_lens_profile(&profiled_envelope)
+            .expect_err("a missing lens profile object must fail explicitly");
+        assert!(
+            matches!(err, EngineError::Unsupported(ref m) if m.to_lowercase().contains("missing")),
+            "got {err:?}"
+        );
+
+        // The warp helper is identity for neutral lens fields.
+        let image = LinearImage::from_fn(4, 3, |x, y| [x as f32 / 4.0, y as f32 / 3.0, 0.5]);
+        let warped =
+            rapidraw_develop::lens_warp(&image, &LensWarpParams::from_recipe(&plain.recipe));
+        assert_eq!(
+            warped.rgb(),
+            image.rgb(),
+            "neutral lens fields never touch pixels"
+        );
+
+        // Full render path: the profile failure must surface before the GPU
+        // failure (the injected device always fails, so only the profile
+        // message can be present).
+        let decoded = Arc::new(
+            decode_original(&gradient_bytes(), &DecodeOptions::default()).expect("decode"),
+        );
+        let (cancel_source, cancel) = CancelToken::pair();
+        let _ = cancel_source;
+        let job = PreviewJob {
+            session_id: SessionId(21),
+            asset_id: "asset-a".to_string(),
+            variant_id: "default".to_string(),
+            generation: 1,
+            quality: PreviewQuality::Settled,
+            max_edge: 48,
+            original: decoded,
+            envelope: profiled_envelope,
+            cancel,
+        };
+        let err = renderer
+            .render(&job)
+            .expect_err("a missing profile must fail the preview explicitly");
+        let message = err.to_string().to_lowercase();
+        assert!(
+            message.contains("lens"),
+            "the profile failure must be visible, got {message}"
+        );
+        assert!(
+            !message.contains("gpu"),
+            "the profile check must precede GPU work, got {message}"
+        );
+    }
+
+    #[test]
+    fn recipe_geometry_hash_covers_lens_correction() {
+        use rapidraw_develop::lens::LensWarpParams;
+
+        let base = rapidraw_edit_model::Recipe::default();
+        let base_hash = super::recipe_geometry_hash(&base);
+        assert_eq!(
+            base_hash,
+            super::recipe_geometry_hash(&rapidraw_edit_model::Recipe::default()),
+            "equal recipes hash equally"
+        );
+
+        // Lens coefficient changes must invalidate the geometry input cache.
+        let mut distorted = base.clone();
+        distorted.lens_distortion_params = Some(rapidraw_edit_model::LensDistortionParams {
+            k1: -0.05,
+            k2: 0.0,
+            k3: 0.0,
+            model: 0.0,
+            tca_vr: 1.0,
+            tca_vb: 1.0,
+            vig_k1: 0.0,
+            vig_k2: 0.0,
+            vig_k3: 0.0,
+        });
+        assert_ne!(
+            base_hash,
+            super::recipe_geometry_hash(&distorted),
+            "lens distortion changes the geometry-applied input"
+        );
+
+        // Amount and enable changes too.
+        let mut stronger = distorted.clone();
+        stronger.lens_distortion_amount = 150.0;
+        assert_ne!(
+            super::recipe_geometry_hash(&distorted),
+            super::recipe_geometry_hash(&stronger),
+        );
+        let mut disabled = distorted.clone();
+        disabled.lens_distortion_enabled = false;
+        assert_ne!(
+            super::recipe_geometry_hash(&distorted),
+            super::recipe_geometry_hash(&disabled),
+        );
+
+        // Non-lens edits never invalidate the geometry input cache.
+        let mut exposure_edit = base.clone();
+        exposure_edit.exposure = 0.7;
+        assert_eq!(
+            base_hash,
+            super::recipe_geometry_hash(&exposure_edit),
+            "adjustment-only edits reuse the geometry input"
+        );
+
+        // The warp params mirror the recipe and identity stays identity.
+        assert!(LensWarpParams::from_recipe(&base).is_identity());
+        assert!(!LensWarpParams::from_recipe(&distorted).is_identity());
+    }
+
+    #[test]
+    fn lens_correction_warp_reaches_the_preview() {
+        // Honest capability gate: with a real offscreen device, a recipe with
+        // strong lens distortion must render visibly differently from the
+        // same recipe without it (the warp is applied to the linear input
+        // before downscaling and adjustments). Without a device the failure
+        // is an explicit GPU capability error and the check is skipped.
+        let renderer = GpuPreviewRenderer::new();
+        if !renderer.probe().available {
+            return;
+        }
+        let store = Arc::new(
+            crate::develop::resources::ResourceStore::open(&tmp_dir("lens-preview-warp"))
+                .expect("store"),
+        );
+        let renderer = renderer.with_resource_store(Some(store));
+
+        let decoded = Arc::new(
+            decode_original(&gradient_bytes(), &DecodeOptions::default()).expect("decode"),
+        );
+        let render = |envelope: RecipeEnvelope, generation: u64| {
+            let (cancel_source, cancel) = CancelToken::pair();
+            let _ = cancel_source;
+            let job = PreviewJob {
+                session_id: SessionId(31),
+                asset_id: "asset-a".to_string(),
+                variant_id: "default".to_string(),
+                generation,
+                quality: PreviewQuality::Settled,
+                max_edge: 64,
+                original: Arc::clone(&decoded),
+                envelope,
+                cancel,
+            };
+            renderer.render(&job).expect("lens preview renders")
+        };
+
+        let mut corrected = RecipeEnvelope::new(
+            "lap-test/0",
+            "asset-a",
+            "default",
+            &fingerprint(&gradient_bytes()),
+        );
+        corrected.recipe.lens_distortion_params = Some(rapidraw_edit_model::LensDistortionParams {
+            k1: -0.2,
+            k2: 0.05,
+            k3: 0.0,
+            model: 0.0,
+            tca_vr: 1.0,
+            tca_vb: 1.0,
+            vig_k1: -0.4,
+            vig_k2: 0.0,
+            vig_k3: 0.0,
+        });
+        let with_lens = render(corrected, 1);
+        let without_lens = render(
+            RecipeEnvelope::new(
+                "lap-test/0",
+                "asset-a",
+                "default",
+                &fingerprint(&gradient_bytes()),
+            ),
+            2,
+        );
+        assert_ne!(
+            with_lens.rgba8, without_lens.rgba8,
+            "lens correction must change the rendered preview"
+        );
     }
 }

@@ -174,12 +174,19 @@
       "location": "RapidRAW-engine/src-tauri/lensfun_db/",
       "files": "60 lens XML databases plus lensfun-database.dtd/xsd and timestamp.txt",
       "sourceRevision": "bundled at upstream rev 5e30bcbb246395d391ba2e9662510641ffe68e6b; timestamp.txt = 1577948414 (2020-01-01 UTC snapshot)",
+      "lapUsage": {
+        "bundledInLap": false,
+        "policy": "Lap does not bundle, redistribute, or auto-download any lens calibration data (lap-d52). Lens profiles are locally acquired resources: a user imports a locally licensed lensfun XML file into the content-addressed resource store, where its SHA-256 becomes the versioned profile identity. Every recipe that uses a correction persists explicit provenance (maker, model, user-declared version label, sha256) in recipe.lensProfile plus the content-addressed resource entry, so each distributed-or-acquired profile is auditable per recipe. Renders and exports verify the referenced profile object is present and unchanged before any pixel work and fail explicitly otherwise.",
+        "openQuestions": [
+          "Confirm the license terms of any locally acquired profile before it may be bundled or redistributed; local import does not imply redistribution rights."
+        ]
+      },
       "license": {
         "status": "unknown",
         "note": "The lensfun_db directory contains no license file. A bundled LGPL-3.0.txt exists under src-tauri/resources/licenses/, but its mapping to this database snapshot is not verified locally. Lensfun upstream licensing (code vs. data terms) has not been checked from primary sources in this inventory."
       },
       "openQuestions": [
-        "Confirm lensfun database license/attribution terms from the upstream project for this snapshot revision."
+        "Confirm lensfun database licensing/attribution for the bundled snapshot (timestamp 1577948414)."
       ]
     },
     "lap-native-submodules": {

@@ -1,15 +1,19 @@
 {
   "schema": "lap-engine-lock/v1",
-  "issue": "lap-517",
-  "task": "TASK-205",
+  "issue": "lap-d52",
+  "task": "TASK-502",
   "plan": "PLAN-CONTROL-E47134A0CB19-001",
   "created": "2026-09-27",
   "engine": {
     "repository": "C:/Users/Thomas/Desktop/RapidRAW-engine",
     "branch": "feature/lap-engine-extraction",
-    "revision": "6fae0d0a6aaca5dffd59c20080ef03c5adfee71f",
-    "revisionSubject": "fix(rapidraw-922): parse mask definitions from the typed camelCase recipe JSON",
+    "revision": "de4fdbd76723c76145b477a2b8874226512475f1",
+    "revisionSubject": "feat(rapidraw-50c): add lens profile resolution and host-neutral lens warp for Lap lap-d52 (TASK-502)",
     "previousRevisions": [
+      {
+        "revision": "6fae0d0a6aaca5dffd59c20080ef03c5adfee71f",
+        "note": "fix(rapidraw-922): parse mask definitions from the typed camelCase recipe JSON (lap-78d)"
+      },
       {
         "revision": "323960899befcb6dc90edf6c99a341160be42aeb",
         "note": "feat(rapidraw-922): typed mask geometry + host-neutral mask rasterizer (lap-78d); superseded by the subMasks decoder fix above"
@@ -28,19 +32,19 @@
       "windowsNotes": "Prepend %USERPROFILE%/.cargo/bin before every cargo command (an older standalone GNU 1.85 toolchain sits earlier on the default PATH); default features only, never --all-features on Windows."
     },
     "workspaceManifestSha256": "9286e9a031cb97803a79423f8da14dfd379d190291640f09d2b4042ae7563343",
-    "workspaceLockSha256": "bc5cf3fe84b816519344240e0b5d0daf31324f2221fda38c7038fecbcd2f7136",
+    "workspaceLockSha256": "de67b0ef2b840a7eab238fda12acb154683f6dac2b77efba37073c6bab149ded",
     "crates": [
       {
         "name": "rapidraw-edit-model",
         "version": "0.1.0",
         "manifestSha256": "b55880963cb303d6008991a3bc838dd98bd937491fa34688945250ce9ed30e39",
-        "role": "Validated recipe envelope, bounded semantic parameters, migrations, canonical serialization/hash, generated frontend contract."
+        "role": "Validated recipe envelope, bounded semantic parameters, lens-profile provenance reference, migrations, canonical serialization/hash, generated frontend contract."
       },
       {
         "name": "rapidraw-develop",
         "version": "0.1.0",
-        "manifestSha256": "f30baa1fc8585a8e491b0db701ed81311c88be1384b2cec728292ed49c90ba01",
-        "role": "High-precision RAW decode, linear buffers, oriented-frame geometry, offscreen GPU pipeline, bounded edit sessions; depends on rapidraw-edit-model by path inside the same revision."
+        "manifestSha256": "152c93e7ab9b54248e73b217c618a663eddd3cf69f8fd980cb80202bc4222b35",
+        "role": "High-precision RAW decode, linear buffers, oriented-frame geometry, host-neutral lens profile resolution and lens warp, offscreen GPU pipeline, bounded edit sessions; depends on rapidraw-edit-model by path inside the same revision."
       }
     ],
     "resources": [
@@ -58,18 +62,18 @@
       },
       {
         "path": "crates/rapidraw-edit-model/gen/recipe.ts",
-        "sha256": "128d93f28933a12bfc5a55fe9e7e8162037aad28c3987915199d958aa6b401ed"
+        "sha256": "979e18db893b4302102b2912cef64d638b7bcfce4ff222ec9a116b2a85ad2318"
       },
       {
         "path": "crates/rapidraw-edit-model/gen/default-recipe.json",
-        "sha256": "5604829c8b27d255c4834f05d70d33492a7590f1e233eac13b81d871283f43dc"
+        "sha256": "e3033f7d45ea465d68c5ee30c5be25fcc514839231847d15b92d84d0dadc56ab"
       }
     ],
     "hashBasis": "SHA256 over the committed content at the pinned revision (git show <rev>:<path>, LF line endings). Working-tree copies of this local checkout may differ by autocrlf line endings only; consumers check out the committed bytes."
   },
   "consumption": {
     "method": "Git dependency pinned by an exact revision from the local isolated clone. Never a floating branch, never an uncommitted path, no publication and no shared remote.",
-    "cargoDependency": "rapidraw-develop = { git = \"file:///C:/Users/Thomas/Desktop/RapidRAW-engine\", rev = \"6fae0d0a6aaca5dffd59c20080ef03c5adfee71f\" }",
+    "cargoDependency": "rapidraw-develop = { git = \"file:///C:/Users/Thomas/Desktop/RapidRAW-engine\", rev = \"de4fdbd76723c76145b477a2b8874226512475f1\" }",
     "localReproduction": [
       "1. Keep the isolated engine clone at C:/Users/Thomas/Desktop/RapidRAW-engine on branch feature/lap-engine-extraction (no publication, no remote creation; C:/Users/Thomas/Desktop/RapidRAW stays reference-only).",
       "2. To rebuild or extend the engine locally: git -C C:/Users/Thomas/Desktop/RapidRAW-engine checkout e1035c38aa1150ac350faa3661f26144a922ea91, then apply the toolchain PATH prepend and build with cargo as usual. Engine changes require a new pinned revision plus a new lock entry here before any host adopts them.",

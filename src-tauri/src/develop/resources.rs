@@ -1,34 +1,51 @@
-//! Content-addressed development resources (lap-62b / TASK-405; governing
-//! contract `docs/raw-development/spec.md`, "Persistence and compatibility",
-//! and the schema's `resources` rules in `docs/raw-development/schema.md`).
+//! Content-addressed development resources (lap-62b / TASK-405; lens
+//! profiles added in lap-d52; governing contract
+//! `docs/raw-development/spec.md`, "Persistence and compatibility", and the
+//! schema's `resources` rules in `docs/raw-development/schema.md`).
 //!
-//! Recipes reference external render resources (LUTs now; depth maps and
-//! other bitmap resources through the same map later) by stable,
-//! content-derived ids in `RecipeEnvelope::resources`; inline payloads are
-//! never persisted inside a recipe. Non-AI masks (lap-78d) carry their
-//! geometry inline in the validated recipe schema, so this slice needs no
-//! external mask resources; AI mask payloads are outside the engine entirely.
+//! Recipes reference external render resources (LUTs and lensfun profile
+//! files now; depth maps and other bitmap resources through the same map
+//! later) by stable, content-derived ids in `RecipeEnvelope::resources`;
+//! inline payloads are never persisted inside a recipe. Non-AI masks
+//! (lap-78d) carry their geometry inline in the validated recipe schema, so
+//! this slice needs no external mask resources; AI mask payloads are outside
+//! the engine entirely.
 //!
-//! - **Content addressing.** A resource id is `lut/<sha256-hex>` — the SHA-256
-//!   of the resource bytes. Ids are deterministic, deduplicated and portable
-//!   across assets and machines: identical content always maps to the same id,
-//!   and file operations (copy/move/rebuild) re-associate recipes without
-//!   duplicating payloads or sharing asset identity.
+//! - **Content addressing.** A resource id is `lut/<sha256-hex>` or
+//!   `lens/<sha256-hex>` — the SHA-256 of the resource bytes. Ids are
+//!   deterministic, deduplicated and portable across assets and machines:
+//!   identical content always maps to the same id, and file operations
+//!   (copy/move/rebuild) re-associate recipes without duplicating payloads
+//!   or sharing asset identity.
+//! - **Versioned lens profiles.** A lens profile import records the
+//!   lensfun database file's content hash and an explicit version label.
+//!   Selecting a lens for a recipe resolves the distortion/TCA/vignetting
+//!   coefficients through the engine and persists
+//!   [`rapidraw_edit_model::LensProfileRef`] provenance (maker/model/
+//!   version/sha256) plus the resolved parameters. Renders verify the
+//!   profile object is still present and unchanged before any pixel work:
+//!   a missing, changed or unmapped profile is a typed error, never a
+//!   silently different export (spec A7). No lens data is bundled with Lap;
+//!   profiles are locally acquired and their distribution terms remain an
+//!   unresolved prerequisite (`docs/raw-development/provenance.json`).
 //! - **Bounded storage.** Imports are rejected above
 //!   [`ResourceStoreLimits::max_resource_bytes`] and LUT cube edges above
-//!   [`ResourceStoreLimits::max_lut_edge`]; parsed LUT payloads are cached in
-//!   a bounded LRU.
-//! - **Explicit limitations.** Missing, changed (tampered), corrupt, oversized
-//!   and non-portable references surface as typed errors / limitation reports.
-//!   Nothing silently renders un-LUT-ed pixels (spec A7).
-//! - **Portable references.** `recipe.lut_path` holds a `resource://lut/<hex>`
-//!   URI; absolute paths are never portable and fail explicitly when resolved.
+//!   [`ResourceStoreLimits::max_lut_edge`]; parsed payloads are cached in
+//!   bounded LRUs.
+//! - **Explicit limitations.** Missing, changed (tampered), corrupt,
+//!   oversized and non-portable references surface as typed errors /
+//!   limitation reports. Nothing silently renders without a referenced
+//!   resource (spec A7).
+//! - **Portable references.** `recipe.lut_path` and the lens-profile URI
+//!   hold `resource://<id>` URIs; absolute paths are never portable and
+//!   fail explicitly when resolved.
 //!
-//! Provenance: `.cube`/`.3dl` parsing semantics follow RapidRAW
-//! `src-tauri/src/lut_processing.rs` at revision
+//! Provenance: `.cube`/`.3dl` parsing semantics and the lens-correction
+//! resolution semantics follow RapidRAW `src-tauri/src/lut_processing.rs` and
+//! `src-tauri/src/lens_correction.rs` at revision
 //! `5e30bcbb246395d391ba2e9662510641ffe68e6b`, tightened with explicit bounds
-//! and error outcomes. Distribution/licensing of bundled LUT content remains
-//! an unresolved prerequisite (spec P3); no built-in LUTs are shipped here.
+//! and error outcomes. Distribution/licensing of bundled content remains an
+//! unresolved prerequisite (spec P3); no LUT or lens data is shipped here.
 
 use std::collections::{BTreeSet, VecDeque};
 use std::fmt;
@@ -38,7 +55,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rapidraw_develop::gpu::LutData;
-use rapidraw_edit_model::{RecipeEnvelope, ResourceAlgorithm, ResourceRef, sha256_hex};
+use rapidraw_develop::lens::{LensCapabilityNotice, LensDatabase};
+use rapidraw_edit_model::{
+    LensDistortionParams, LensProfileRef, RecipeEnvelope, ResourceAlgorithm, ResourceRef,
+    sha256_hex,
+};
 
 /// URI scheme of portable in-envelope resource references.
 pub const RESOURCE_URI_SCHEME: &str = "resource://";
@@ -82,6 +103,10 @@ pub enum ResourceError {
     /// The recipe's LUT reference cannot be resolved from the envelope's
     /// resource map (legacy absolute path, unmapped id, digest mismatch).
     UnresolvedReference { reference: String, detail: String },
+    /// A lens profile cannot be used: unknown lens, or a selected distortion
+    /// model this engine does not implement. Rendered selections never
+    /// silently fall back to no correction (spec A7).
+    UnsupportedLens { detail: String },
 }
 
 impl fmt::Display for ResourceError {
@@ -114,10 +139,18 @@ impl fmt::Display for ResourceError {
                 "resource '{id}' changed after import (expected sha256 {expected}, found {found})"
             ),
             ResourceError::UnresolvedReference { reference, detail } => {
+                let kind = if reference.starts_with("resource://lens/") {
+                    "lens profile"
+                } else {
+                    "LUT"
+                };
                 write!(
                     f,
-                    "LUT reference '{reference}' cannot be resolved: {detail}"
+                    "{kind} reference '{reference}' cannot be resolved: {detail}"
                 )
+            }
+            ResourceError::UnsupportedLens { detail } => {
+                write!(f, "lens profile cannot be used: {detail}")
             }
         }
     }
@@ -156,7 +189,7 @@ pub struct ResourceLimitation {
 // ---------------------------------------------------------------------------
 
 fn is_valid_resource_id(id: &str) -> bool {
-    let Some(digest) = id.strip_prefix("lut/") else {
+    let Some(digest) = id.strip_prefix("lut/").or_else(|| id.strip_prefix("lens/")) else {
         return false;
     };
     digest.len() == 64
@@ -168,6 +201,11 @@ fn is_valid_resource_id(id: &str) -> bool {
 /// The content id of a LUT resource: `lut/<sha256 lowercase hex>`.
 pub fn lut_resource_id(digest: &str) -> String {
     format!("lut/{digest}")
+}
+
+/// The content id of a lens-profile resource: `lens/<sha256 lowercase hex>`.
+pub fn lens_resource_id(digest: &str) -> String {
+    format!("lens/{digest}")
 }
 
 /// Portable in-envelope reference for a resource id.
@@ -196,8 +234,8 @@ pub fn is_portable_reference(value: Option<&str>) -> bool {
     }
 }
 
-/// Resource ids the recipe's fields actually reference (LUT path now; depth
-/// maps through the same URI scheme). Sorted, deduplicated.
+/// Resource ids the recipe's fields actually reference (LUT path, lens
+/// profile, depth maps through the same URI scheme). Sorted, deduplicated.
 pub fn referenced_resource_ids(envelope: &RecipeEnvelope) -> Vec<String> {
     let mut ids = BTreeSet::new();
     for reference in [
@@ -207,6 +245,11 @@ pub fn referenced_resource_ids(envelope: &RecipeEnvelope) -> Vec<String> {
         if let Some(id) = reference.and_then(resource_uri_id) {
             ids.insert(id.to_string());
         }
+    }
+    if let Some(profile) = &envelope.recipe.lens_profile
+        && let Some(id) = resource_uri_id(&profile.uri)
+    {
+        ids.insert(id.to_string());
     }
     ids.into_iter().collect()
 }
@@ -448,6 +491,7 @@ pub struct ResourceStore {
     root: PathBuf,
     limits: ResourceStoreLimits,
     cache: Mutex<VecDeque<(String, Arc<LutData>)>>,
+    lens_cache: Mutex<VecDeque<(String, Arc<LensDatabase>)>>,
 }
 
 impl ResourceStore {
@@ -470,6 +514,7 @@ impl ResourceStore {
             root: root.to_path_buf(),
             limits,
             cache: Mutex::new(VecDeque::new()),
+            lens_cache: Mutex::new(VecDeque::new()),
         })
     }
 
@@ -572,10 +617,11 @@ impl ResourceStore {
     }
 
     /// Observes one object's integrity against its content id. Reads are
-    /// bounded by `max_resource_bytes`.
+    /// bounded by `max_resource_bytes`. Accepts both `lut/` and `lens/` ids.
     pub fn status(&self, id: &str) -> Result<ResourceStatus, ResourceError> {
         let digest = id
             .strip_prefix("lut/")
+            .or_else(|| id.strip_prefix("lens/"))
             .ok_or_else(|| ResourceError::InvalidId { id: id.to_string() })?;
         if !is_valid_resource_id(id) {
             return Err(ResourceError::InvalidId { id: id.to_string() });
@@ -751,7 +797,8 @@ impl ResourceStore {
                 Err(ResourceError::InvalidId { .. }) => out.push(ResourceLimitation {
                     id: id.clone(),
                     kind: "invalid-resource-id",
-                    detail: "the resource id is not a well-formed lut/<64-hex> id".to_string(),
+                    detail: "the resource id is not a well-formed lut/<64-hex> or lens/<64-hex> id"
+                        .to_string(),
                 }),
                 Err(ResourceError::Oversized { detail }) => out.push(ResourceLimitation {
                     id: id.clone(),
@@ -794,6 +841,370 @@ impl ResourceStore {
             .join("objects")
             .join(&digest[..2])
             .join(format!("{digest}.{}. {nanos:x}.tmp", std::process::id()))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Lens profile resources (lap-d52)
+// ---------------------------------------------------------------------------
+
+/// A successfully imported lens-profile (lensfun XML database file).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportedLensProfile {
+    pub id: String,
+    pub digest: String,
+    pub size_bytes: u64,
+    pub lens_count: usize,
+    pub camera_count: usize,
+    /// Explicit version label recorded at import (`None` = unversioned).
+    pub version: Option<String>,
+    pub name: Option<String>,
+    /// `false` when identical content was already stored (deduplicated).
+    pub newly_stored: bool,
+}
+
+impl ImportedLensProfile {
+    /// The envelope `resources` entry for this import.
+    pub fn resource(&self) -> ResourceRef {
+        ResourceRef {
+            algorithm: ResourceAlgorithm::Sha256,
+            digest: self.digest.clone(),
+            size_bytes: Some(self.size_bytes),
+        }
+    }
+
+    /// The version label this profile contributes to provenance; imports
+    /// without an explicit label stay explicitly `unversioned`, never
+    /// invented.
+    pub fn version_label(&self) -> &str {
+        self.version.as_deref().unwrap_or("unversioned")
+    }
+}
+
+/// One lens selection request: which stored profile, which lens in it, the
+/// user-declared version label, and the capture conditions used to resolve
+/// the coefficients.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LensSelection<'a> {
+    pub profile_id: &'a str,
+    pub maker: &'a str,
+    pub model: &'a str,
+    pub version: &'a str,
+    pub focal_length: f32,
+    pub aperture: Option<f32>,
+    pub distance: Option<f32>,
+}
+
+impl ResourceStore {
+    /// Imports lensfun XML bytes as a versioned profile resource. The XML
+    /// must parse (through the engine's lens module) before anything is
+    /// stored; deterministic like every content-addressed import.
+    pub fn import_lens_profile_bytes(
+        &self,
+        bytes: &[u8],
+        name: Option<&str>,
+        version: Option<&str>,
+    ) -> Result<ImportedLensProfile, ResourceError> {
+        let len = bytes.len() as u64;
+        if len > self.limits.max_resource_bytes {
+            return Err(self.oversized_bytes(len));
+        }
+        let text = std::str::from_utf8(bytes).map_err(|err| ResourceError::Corrupt {
+            detail: format!("lens profiles must be UTF-8 lensfun XML documents: {err}"),
+        })?;
+        let database = rapidraw_develop::lens::parse_lensfun_db(text).map_err(|err| {
+            ResourceError::Corrupt {
+                detail: err.to_string(),
+            }
+        })?;
+        let digest = sha256_hex(bytes);
+        let id = lens_resource_id(&digest);
+        let object = self.object_path(&digest);
+        let mut newly_stored = false;
+        if !object.exists() {
+            if let Some(parent) = object.parent() {
+                fs::create_dir_all(parent).map_err(|err| ResourceError::Io {
+                    context: "creating the object shard directory".to_string(),
+                    path: parent.to_path_buf(),
+                    source: err,
+                })?;
+            }
+            let temp = self.temp_object_path(&digest);
+            fs::write(&temp, bytes).map_err(|err| ResourceError::Io {
+                context: "writing the resource object".to_string(),
+                path: temp.clone(),
+                source: err,
+            })?;
+            if let Err(err) = fs::rename(&temp, &object) {
+                let _ = fs::remove_file(&temp);
+                return Err(ResourceError::Io {
+                    context: "placing the resource object".to_string(),
+                    path: object.clone(),
+                    source: err,
+                });
+            }
+            newly_stored = true;
+        }
+        Ok(ImportedLensProfile {
+            id,
+            digest,
+            size_bytes: len,
+            lens_count: database.lenses.len(),
+            camera_count: database.cameras.len(),
+            version: version.map(str::to_string),
+            name: name.map(str::to_string),
+            newly_stored,
+        })
+    }
+
+    /// Loads the parsed lens database for a profile resource id. Integrity is
+    /// verified against the content id on every call; successful parses are
+    /// kept in a bounded LRU cache.
+    pub fn lens_database(&self, id: &str) -> Result<Arc<LensDatabase>, ResourceError> {
+        match self.status(id)? {
+            ResourceStatus::Present { .. } => {}
+            ResourceStatus::Missing => return Err(ResourceError::Missing { id: id.to_string() }),
+            ResourceStatus::Changed {
+                expected_digest,
+                found_digest,
+                ..
+            } => {
+                return Err(ResourceError::Changed {
+                    id: id.to_string(),
+                    expected: expected_digest,
+                    found: found_digest,
+                });
+            }
+        }
+        if let Some(hit) = self.cached_lens(id) {
+            return Ok(hit);
+        }
+        let digest = id.strip_prefix("lens/").unwrap_or_default();
+        let bytes = fs::read(self.object_path(digest)).map_err(|err| ResourceError::Io {
+            context: "reading the lens profile object".to_string(),
+            path: self.object_path(digest),
+            source: err,
+        })?;
+        let text = std::str::from_utf8(&bytes).map_err(|err| ResourceError::Corrupt {
+            detail: format!("lens profiles must be UTF-8 lensfun XML documents: {err}"),
+        })?;
+        let database = Arc::new(
+            rapidraw_develop::lens::parse_lensfun_db(text).map_err(|err| {
+                ResourceError::Corrupt {
+                    detail: err.to_string(),
+                }
+            })?,
+        );
+        self.remember_lens(id, &database);
+        Ok(database)
+    }
+
+    /// Sorted, deduplicated maker list of one stored profile.
+    pub fn lens_makers(&self, id: &str) -> Result<Vec<String>, ResourceError> {
+        let database = self.lens_database(id)?;
+        let mut makers: Vec<String> = database
+            .lenses
+            .iter()
+            .map(|lens| lens.get_maker())
+            .collect();
+        makers.sort_unstable();
+        makers.dedup();
+        Ok(makers)
+    }
+
+    /// Reference `find_best_lens_match` against one stored profile.
+    pub fn find_best_lens_match(
+        &self,
+        id: &str,
+        maker: &str,
+        model: &str,
+    ) -> Result<Option<(String, String)>, ResourceError> {
+        let database = self.lens_database(id)?;
+        Ok(rapidraw_develop::lens::find_best_lens_match(
+            &database, maker, model,
+        ))
+    }
+
+    /// Reference `resolve_lens_params` against one stored profile.
+    pub fn resolve_lens_params(
+        &self,
+        id: &str,
+        maker: &str,
+        model: &str,
+        focal_length: f32,
+        aperture: Option<f32>,
+        distance: Option<f32>,
+    ) -> Result<(LensDistortionParams, Vec<LensCapabilityNotice>), ResourceError> {
+        let database = self.lens_database(id)?;
+        rapidraw_develop::lens::resolve_lens_params(
+            &database,
+            maker,
+            model,
+            focal_length,
+            aperture,
+            distance,
+        )
+        .map_err(|err| ResourceError::UnsupportedLens {
+            detail: err.to_string(),
+        })
+    }
+
+    /// Selects a lens from a stored profile for a recipe: resolves the
+    /// correction coefficients, writes the recipe's lens fields, and records
+    /// the full provenance (maker/model/version/sha256) plus the
+    /// content-addressed resource entry. `version` is the explicit label the
+    /// importer declared for this profile (`unversioned` when none) — the
+    /// engine never invents one. A failed selection leaves the recipe
+    /// untouched.
+    pub fn select_lens_profile(
+        &self,
+        envelope: &mut RecipeEnvelope,
+        selection: &LensSelection,
+    ) -> Result<(LensDistortionParams, Vec<LensCapabilityNotice>), ResourceError> {
+        let (params, notices) = self.resolve_lens_params(
+            selection.profile_id,
+            selection.maker,
+            selection.model,
+            selection.focal_length,
+            selection.aperture,
+            selection.distance,
+        )?;
+        // Integrity was just verified by resolve_lens_params -> lens_database.
+        let id = selection.profile_id;
+        let digest = id
+            .strip_prefix("lens/")
+            .ok_or_else(|| ResourceError::InvalidId { id: id.to_string() })?;
+        let size_bytes = fs::metadata(self.object_path(digest))
+            .map(|meta| meta.len())
+            .ok();
+        envelope.recipe.lens_maker = Some(selection.maker.to_string());
+        envelope.recipe.lens_model = Some(selection.model.to_string());
+        envelope.recipe.lens_profile = Some(LensProfileRef {
+            uri: format!("{RESOURCE_URI_SCHEME}{id}"),
+            maker: selection.maker.to_string(),
+            model: selection.model.to_string(),
+            version: if selection.version.is_empty() {
+                "unversioned".to_string()
+            } else {
+                selection.version.to_string()
+            },
+            sha256: digest.to_string(),
+        });
+        envelope
+            .resources
+            .entry(id.to_string())
+            .or_insert(ResourceRef {
+                algorithm: ResourceAlgorithm::Sha256,
+                digest: digest.to_string(),
+                size_bytes,
+            });
+        envelope.recipe.lens_distortion_params = Some(params);
+        Ok((params, notices))
+    }
+
+    /// Resolves the recipe's lens-profile reference for render-time
+    /// verification: the parsed database when a present, unchanged profile is
+    /// referenced, `None` without a profile reference, and typed errors for
+    /// missing/changed objects, unmapped references and digest disagreement.
+    pub fn resolve_recipe_lens_profile(
+        &self,
+        envelope: &RecipeEnvelope,
+    ) -> Result<Option<Arc<LensDatabase>>, ResourceError> {
+        let Some(profile) = envelope.recipe.lens_profile.as_ref() else {
+            return Ok(None);
+        };
+        let Some(id) = resource_uri_id(&profile.uri) else {
+            return Err(ResourceError::UnresolvedReference {
+                reference: profile.uri.clone(),
+                detail: "only resource:// references are portable; legacy absolute paths must be re-imported into the resource store".to_string(),
+            });
+        };
+        let entry = envelope.resources.get(id).ok_or_else(|| {
+            ResourceError::UnresolvedReference {
+                reference: profile.uri.clone(),
+                detail: "the recipe references this lens profile but it is absent from the envelope resource map".to_string(),
+            }
+        })?;
+        if entry.digest != profile.sha256 {
+            return Err(ResourceError::UnresolvedReference {
+                reference: profile.uri.clone(),
+                detail: format!(
+                    "the recipe's profile sha256 '{}' disagrees with the envelope resource entry digest '{}'",
+                    profile.sha256, entry.digest
+                ),
+            });
+        }
+        self.lens_database(id).map(Some)
+    }
+
+    fn cached_lens(&self, id: &str) -> Option<Arc<LensDatabase>> {
+        let mut cache = self
+            .lens_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let index = cache.iter().position(|(candidate, _)| candidate == id)?;
+        let entry = cache.remove(index)?;
+        cache.push_back(entry.clone());
+        Some(entry.1)
+    }
+
+    fn remember_lens(&self, id: &str, database: &Arc<LensDatabase>) {
+        let mut cache = self
+            .lens_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if cache.iter().any(|(candidate, _)| candidate == id) {
+            return;
+        }
+        while cache.len() >= self.limits.max_cached_luts.max(1) {
+            cache.pop_front();
+        }
+        cache.push_back((id.to_string(), Arc::clone(database)));
+    }
+}
+
+/// Attaches a selected lens profile to an envelope: the recipe gains the
+/// portable provenance reference and identity fields, and the envelope's
+/// resource map gains the content-addressed entry. Renders of this recipe
+/// verify the profile object before any pixel work; missing/changed objects
+/// fail explicitly instead of silently changing the export.
+pub fn attach_lens_profile(
+    envelope: &mut RecipeEnvelope,
+    imported: &ImportedLensProfile,
+    maker: &str,
+    model: &str,
+) {
+    envelope.recipe.lens_maker = Some(maker.to_string());
+    envelope.recipe.lens_model = Some(model.to_string());
+    envelope.recipe.lens_profile = Some(LensProfileRef {
+        uri: format!("{RESOURCE_URI_SCHEME}{}", imported.id),
+        maker: maker.to_string(),
+        model: model.to_string(),
+        version: imported.version_label().to_string(),
+        sha256: imported.digest.clone(),
+    });
+    envelope
+        .resources
+        .entry(imported.id.clone())
+        .or_insert_with(|| imported.resource());
+}
+
+/// Detaches a lens profile: clears the recipe's provenance, lens selection
+/// and resolved coefficients, and removes the resource map entry. LUT and
+/// other resources are untouched.
+pub fn detach_lens_profile(envelope: &mut RecipeEnvelope, id: &str) {
+    envelope.resources.remove(id);
+    let references_removed = envelope
+        .recipe
+        .lens_profile
+        .as_ref()
+        .and_then(|profile| resource_uri_id(&profile.uri))
+        .is_some_and(|referenced| referenced == id);
+    if references_removed {
+        envelope.recipe.lens_profile = None;
+        envelope.recipe.lens_maker = None;
+        envelope.recipe.lens_model = None;
+        envelope.recipe.lens_distortion_params = None;
     }
 }
 

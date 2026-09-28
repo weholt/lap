@@ -392,6 +392,28 @@ impl GpuExportRenderer {
         }
     }
 
+    /// Verifies the recipe's lens-profile reference before any pixel work
+    /// (lap-d52). A referenced profile that is missing, changed, unmapped or
+    /// unverifiable fails explicitly: exports must never silently render with
+    /// a different correction than the acknowledged recipe (spec A7).
+    pub(crate) fn resolve_render_lens_profile(
+        &self,
+        envelope: &rapidraw_edit_model::RecipeEnvelope,
+    ) -> Result<Option<Arc<rapidraw_develop::lens::LensDatabase>>, EngineError> {
+        if envelope.recipe.lens_profile.is_none() {
+            return Ok(None);
+        }
+        let Some(store) = &self.resources else {
+            return Err(EngineError::Unsupported(
+                "the recipe references a lens profile but no resource store is installed to verify it"
+                    .to_string(),
+            ));
+        };
+        store
+            .resolve_recipe_lens_profile(envelope)
+            .map_err(|err| EngineError::Unsupported(err.to_string()))
+    }
+
     fn renderer(&self) -> Result<&OffscreenRenderer, EngineError> {
         loop {
             if let Some(result) = self.device.get() {
@@ -430,15 +452,35 @@ fn gpu_unavailable(detail: String) -> EngineError {
 impl ExportRenderer for GpuExportRenderer {
     fn render(&self, job: &ExportJob) -> Result<ExportFrame, EngineError> {
         job.cancel.check()?;
+
+        // Lens-profile verification precedes every pixel work (lap-d52): a
+        // referenced profile that is missing, changed or unverifiable fails
+        // explicitly instead of silently changing the export. This runs
+        // BEFORE device initialization so a lost resource never hides behind
+        // a GPU capability error.
+        self.resolve_render_lens_profile(&job.envelope)?;
+
         let renderer = self.renderer()?;
+
+        // Lens correction warp on the full un-cropped frame, matching the
+        // pinned reference order (warp -> coarse rotation -> flip -> crop);
+        // the SAME engine transform the preview path uses (lap-d52): preview
+        // and export can never diverge on lens correction.
+        let lens_params = rapidraw_develop::LensWarpParams::from_recipe(&job.envelope.recipe);
+        let lens_warped;
+        let lens_corrected: &rapidraw_develop::LinearImage = if lens_params.is_identity() {
+            &job.original.image
+        } else {
+            lens_warped = rapidraw_develop::lens_warp(&job.original.image, &lens_params);
+            &lens_warped
+        };
 
         // Recipe geometry in the engine's oriented coordinate system,
         // applied by the SAME shared helper the preview renderer uses
         // (lap-6bc): preview and export can never diverge on
         // crop/rotation/flip. The decode already applied the RAW metadata
         // orientation.
-        let linear =
-            super::sessions::apply_recipe_geometry(&job.original.image, &job.envelope.recipe)?;
+        let linear = super::sessions::apply_recipe_geometry(lens_corrected, &job.envelope.recipe)?;
 
         // Explicit resize only; otherwise the original decoded dimensions
         // pass through untouched (spec A5). The RGBA32F input is the same
@@ -2204,6 +2246,81 @@ mod tests {
         assert!(
             matches!(err, EngineError::Unsupported(ref message) if message.contains("missing")),
             "missing LUT resources surface as explicit failures, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn missing_lens_profile_fails_the_export_before_the_gpu() {
+        use crate::develop::resources::{ResourceStore, attach_lens_profile};
+
+        let store = Arc::new(ResourceStore::open(&tmp_dir("lens-export-missing")).expect("store"));
+        let renderer = GpuExportRenderer::with_context_factory(Box::new(|| {
+            rapidraw_develop::gpu::OffscreenGpuContext::new_with_backends(wgpu::Backends::empty())
+        }))
+        .with_resource_store(Some(Arc::clone(&store)));
+
+        // A recipe without a lens profile resolves to nothing.
+        let plain = RecipeEnvelope::new("lap-test/0", "asset-a", "default", &"a".repeat(64));
+        assert!(
+            renderer
+                .resolve_render_lens_profile(&plain)
+                .unwrap()
+                .is_none()
+        );
+
+        // Attach a profile, then make the object disappear: the export must
+        // fail naming the profile BEFORE any GPU work.
+        let imported = store
+            .import_lens_profile_bytes(
+                b"<?xml version=\"1.0\"?><lensdatabase><lens><maker>M</maker><model>L</model><mount>T</mount></lens></lensdatabase>",
+                None,
+                Some("v1"),
+            )
+            .expect("profile imports");
+        let mut envelope = RecipeEnvelope::new("lap-test/0", "asset-a", "default", &"a".repeat(64));
+        attach_lens_profile(&mut envelope, &imported, "M", "L");
+        let _ = &mut envelope;
+
+        let digest = imported.digest.clone();
+        let object = {
+            let root = store.root().to_path_buf();
+            root.join("objects").join(&digest[..2]).join(&digest)
+        };
+        std::fs::remove_file(&object).expect("object removed to simulate a lost resource");
+
+        let err = renderer
+            .resolve_render_lens_profile(&envelope)
+            .expect_err("a missing lens profile must fail the export explicitly");
+        assert!(
+            matches!(err, EngineError::Unsupported(ref m) if m.to_lowercase().contains("missing")),
+            "got {err:?}"
+        );
+
+        // Full render path: the profile failure must surface before the GPU
+        // capability failure.
+        let decoded = Arc::new(
+            rapidraw_develop::decode_original(&gradient_bytes(), &Default::default())
+                .expect("decode"),
+        );
+        let (cancel_source, cancel) = rapidraw_develop::CancelToken::pair();
+        let _ = cancel_source;
+        let job = ExportJob {
+            job_id: rapidraw_develop::ExportJobId(1),
+            asset_id: "asset-a".to_string(),
+            variant_id: "default".to_string(),
+            revision: envelope.revision,
+            original: decoded,
+            envelope,
+            max_edge: None,
+            cancel,
+        };
+        let err = renderer
+            .render(&job)
+            .expect_err("a missing profile must fail the export");
+        let message = err.to_string().to_lowercase();
+        assert!(
+            message.contains("lens") && !message.contains("gpu"),
+            "the profile check must precede GPU work, got {message}"
         );
     }
 }

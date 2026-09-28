@@ -7,5 +7,6 @@
 //! `asset_operations`.
 
 mod common;
+mod lens_cases;
 mod portability_cases;
 mod store_cases;

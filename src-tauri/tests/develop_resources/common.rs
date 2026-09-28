@@ -118,6 +118,67 @@ pub fn tamper_object(root: &Path, id: &str) {
 }
 
 pub fn object_path(root: &Path, id: &str) -> PathBuf {
-    let digest = id.strip_prefix("lut/").expect("lut id");
+    let digest = id
+        .strip_prefix("lut/")
+        .or_else(|| id.strip_prefix("lens/"))
+        .expect("resource id");
     root.join("objects").join(&digest[..2]).join(digest)
+}
+
+// ---------------------------------------------------------------------------
+// Lens profile fixtures (lap-d52)
+// ---------------------------------------------------------------------------
+
+/// A deterministic minimal lensfun database: one camera, three lenses —
+/// the main zoom (poly3 distortion, linear TCA, pa vignetting at two
+/// apertures), a ptlens prime, and a lens with an unsupported distortion
+/// model (ptbrown) for explicit-error coverage.
+pub fn lensfun_xml() -> Vec<u8> {
+    let mut text = String::new();
+    text.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<lensdatabase>\n");
+    text.push_str("  <camera>\n    <maker>TestCorp</maker>\n    <model>TestBody X1</model>\n    <mount>TestMount</mount>\n    <cropfactor>1.5</cropfactor>\n  </camera>\n");
+    text.push_str("  <lens>\n");
+    text.push_str("    <maker>TestCorp</maker>\n");
+    text.push_str("    <maker lang=\"en\">TestCorp Optics</maker>\n");
+    text.push_str("    <model>Test 24-70mm f/2.8</model>\n");
+    text.push_str("    <mount>TestMount</mount>\n");
+    text.push_str("    <cropfactor>1.5</cropfactor>\n");
+    text.push_str("    <calibration>\n");
+    text.push_str(
+        "      <distortion model=\"poly3\" focal=\"24\" k1=\"-0.01\" k2=\"0.005\" k3=\"0.001\"/>\n",
+    );
+    text.push_str(
+        "      <distortion model=\"poly3\" focal=\"50\" k1=\"-0.02\" k2=\"0.01\" k3=\"0.002\"/>\n",
+    );
+    text.push_str("      <tca model=\"linear\" focal=\"24\" vr=\"1.0004\" vb=\"0.9998\"/>\n");
+    text.push_str("      <vignetting model=\"pa\" focal=\"24\" aperture=\"2.8\" distance=\"10\" k1=\"-0.2\" k2=\"0.05\" k3=\"0.01\"/>\n");
+    text.push_str("      <vignetting model=\"pa\" focal=\"24\" aperture=\"8\" distance=\"10\" k1=\"-0.05\" k2=\"0.01\" k3=\"0.0\"/>\n");
+    text.push_str("      <vignetting model=\"pa\" focal=\"50\" aperture=\"2.8\" distance=\"10\" k1=\"-0.3\" k2=\"0.1\" k3=\"0.02\"/>\n");
+    text.push_str("    </calibration>\n");
+    text.push_str("  </lens>\n");
+    text.push_str("  <lens>\n");
+    text.push_str("    <maker>OtherCorp</maker>\n");
+    text.push_str("    <model>Other 35mm f/1.4</model>\n");
+    text.push_str("    <mount>TestMount</mount>\n");
+    text.push_str("    <cropfactor>1.0</cropfactor>\n");
+    text.push_str("    <calibration>\n");
+    text.push_str(
+        "      <distortion model=\"ptlens\" focal=\"35\" a=\"0.012\" b=\"-0.021\" c=\"0.008\"/>\n",
+    );
+    text.push_str("    </calibration>\n");
+    text.push_str("  </lens>\n");
+    text.push_str("  <lens>\n");
+    text.push_str("    <maker>LegacyCorp</maker>\n");
+    text.push_str("    <model>Legacy 50mm f/2</model>\n");
+    text.push_str("    <mount>LegacyMount</mount>\n");
+    text.push_str("    <calibration>\n");
+    text.push_str("      <distortion model=\"ptbrown\" focal=\"50\" k1=\"-0.01\" k2=\"0.002\"/>\n");
+    text.push_str("    </calibration>\n");
+    text.push_str("  </lens>\n");
+    text.push_str("</lensdatabase>\n");
+    text.into_bytes()
+}
+
+pub fn lensfun_xml_digest() -> String {
+    sha256_hex(&lensfun_xml())
 }

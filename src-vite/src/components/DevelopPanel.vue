@@ -22,6 +22,7 @@ import DevelopSliderControl from '@/components/develop/DevelopSliderControl.vue'
 import DevelopSection from '@/components/develop/DevelopSection.vue';
 import DevelopCurveEditor from '@/components/develop/DevelopCurveEditor.vue';
 import DevelopMasksSection from '@/components/develop/masks/MasksSection.vue';
+import LensControls from '@/components/develop/LensControls.vue';
 import ImportRecipeDialog from '@/components/develop/ImportRecipeDialog.vue';
 import ImageHistogram from '@/components/ImageHistogram.vue';
 import TButton from '@/components/TButton.vue';
@@ -63,6 +64,7 @@ const expandedSections = ref<Record<SectionId, boolean>>({
 });
 const selectedHslChannel = ref<string>('reds');
 const selectedGradingZone = ref<string>('global');
+const lensExpanded = ref(false);
 const importDialogOpen = ref(false);
 
 const groupsBySection = computed<Record<SectionId, ControlGroup[]>>(() => {
@@ -442,6 +444,30 @@ onBeforeUnmount(() => {
                 <div class="pb-1">
                     <DevelopMasksSection :disabled="!develop.session.value" />
                 </div>
+            </div>
+
+            <!-- Lens correction (lap-d52): versioned profile resources with
+                 explicit provenance; missing/unsupported profiles surface as
+                 visible capability errors, never silent correction changes -->
+            <div class="border-t border-base-content/5" data-testid="develop-section-lens">
+                <div class="px-1 pt-2 pb-1">
+                    <button
+                        type="button"
+                        class="font-bold uppercase text-[11px] tracking-wide text-base-content/40 hover:text-base-content/70"
+                        data-testid="develop-lens-section-toggle"
+                        :aria-expanded="lensExpanded ? 'true' : 'false'"
+                        @click.stop="lensExpanded = !lensExpanded"
+                    >
+                        {{ $t('develop.lens.title') }}
+                    </button>
+                </div>
+                <LensControls
+                    v-show="lensExpanded"
+                    :active="lensExpanded"
+                    :disabled="!develop.session.value"
+                    :recipe="develop.recipe.value"
+                    :apply-patch="(patch, label) => develop.applyRecipePatch(patch, label)"
+                />
             </div>
 
             <!-- Reset all -->

@@ -122,6 +122,12 @@ async function expandSection(wrapper: any, section: string) {
 describe('DevelopPanel', () => {
     beforeEach(() => {
         invokeMock.mockReset();
+        // Default for non-queued commands (e.g. the lens-profile catalog of
+        // lap-d52); queued mockResolvedValueOnce responses still win.
+        invokeMock.mockImplementation((command: string) => {
+            if (command === 'develop_lens_catalog') return Promise.resolve([]);
+            return Promise.resolve([]);
+        });
         setActivePinia(createPinia());
     });
 

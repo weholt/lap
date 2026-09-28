@@ -1,4 +1,10 @@
-﻿/**
+use crate::t_apple_sidecar::{
+    apple_aae_sidecar_paths, build_apple_sidecar_rename_plan, collect_original_rename_db_names,
+    collect_replaced_file_ids_for_targets, delete_apple_aae_sidecars, preflight_rename_plan,
+    resolve_group_primary_target, rollback_copied_transfers, rollback_rename_changes,
+    rollback_renamed_sidecars,
+};
+/**
  * Tauri commands for frontend-backend communication.
  * project: Lap
  * author:  julyx10
@@ -7,22 +13,17 @@
 use crate::t_config::{self, AppConfig, Library, LibraryInfo, LibraryState};
 use crate::t_face;
 use crate::t_image;
-use crate::t_apple_sidecar::{
-    apple_aae_sidecar_paths, build_apple_sidecar_rename_plan,
-    collect_original_rename_db_names, collect_replaced_file_ids_for_targets,
-    delete_apple_aae_sidecars, preflight_rename_plan, resolve_group_primary_target,
-    rollback_copied_transfers, rollback_rename_changes, rollback_renamed_sidecars,
-};
-use lap_lib::develop::asset_operations as asset_ops;
 use crate::t_similar;
 use crate::t_sqlite::{
-    ACamera, ACollection, ACollectionOrder, ACollectionSelectionCount, AFile, AFileCollection, AFolder, ALens, ALocation, ATag, ATagFileState,
-    ATagSelectionCount, AThumb, ATimeLine, Album, AlbumDisplayOrder, GroupedQueryResult, ImageSearchParams, Person,
-    PersonPage, PersonPageRequest, QueryParams, SmartQueryParams,
+    ACamera, ACollection, ACollectionOrder, ACollectionSelectionCount, AFile, AFileCollection,
+    AFolder, ALens, ALocation, ATag, ATagFileState, ATagSelectionCount, AThumb, ATimeLine, Album,
+    AlbumDisplayOrder, GroupedQueryResult, ImageSearchParams, Person, PersonPage,
+    PersonPageRequest, QueryParams, SmartQueryParams,
 };
 use crate::t_storage;
 use crate::t_utils;
 use crate::{t_ai, t_common, t_sqlite};
+use lap_lib::develop::asset_operations as asset_ops;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -44,7 +45,10 @@ pub struct ImportState {
 
 impl Default for ImportState {
     fn default() -> Self {
-        Self { cancelled: false, running: false }
+        Self {
+            cancelled: false,
+            running: false,
+        }
     }
 }
 
@@ -249,8 +253,9 @@ fn probe_gstreamer_available() -> bool {
 
 fn gstreamer_element_missing(exit_code: Option<i32>, stderr: &[u8]) -> bool {
     exit_code.is_some_and(|code| code != 0)
-        && String::from_utf8_lossy(stderr).lines().any(|line|
-            line.trim() == "No such element or plugin 'autoaudiosink'")
+        && String::from_utf8_lossy(stderr)
+            .lines()
+            .any(|line| line.trim() == "No such element or plugin 'autoaudiosink'")
 }
 
 #[cfg(test)]
@@ -263,7 +268,10 @@ mod gstreamer_probe_tests {
         assert!(gstreamer_element_missing(Some(255), missing));
         assert!(!gstreamer_element_missing(Some(0), missing));
         assert!(!gstreamer_element_missing(None, missing));
-        assert!(!gstreamer_element_missing(Some(127), b"error while loading shared libraries"));
+        assert!(!gstreamer_element_missing(
+            Some(127),
+            b"error while loading shared libraries"
+        ));
         assert!(!gstreamer_element_missing(Some(1), b"unknown failure"));
     }
 }
@@ -544,8 +552,8 @@ pub fn get_current_library_state() -> Result<LibraryState, String> {
 pub fn get_all_albums(refresh_accessibility: bool) -> Result<Vec<Album>, String> {
     // Best-effort: repair stale covers so the album list never renders a
     // broken thumbnail.
-    let albums = Album::get_all_albums()
-        .map_err(|e| format!("Error while getting all albums: {}", e))?;
+    let albums =
+        Album::get_all_albums().map_err(|e| format!("Error while getting all albums: {}", e))?;
     for album in &albums {
         if let Some(album_id) = album.id {
             let _ = Album::auto_set_cover(album_id);
@@ -553,8 +561,8 @@ pub fn get_all_albums(refresh_accessibility: bool) -> Result<Vec<Album>, String>
     }
 
     // Reload to reflect any repaired covers.
-    let mut albums = Album::get_all_albums()
-        .map_err(|e| format!("Error while getting all albums: {}", e))?;
+    let mut albums =
+        Album::get_all_albums().map_err(|e| format!("Error while getting all albums: {}", e))?;
     if refresh_accessibility {
         t_utils::refresh_all_album_accessibility(&mut albums);
     } else {
@@ -731,10 +739,7 @@ pub fn clear_index_recovery_info() -> Result<(), String> {
 
 // folder
 
-fn find_renamed_sibling_folder(
-    album_id: i64,
-    folder_path: &str,
-) -> Result<Option<String>, String> {
+fn find_renamed_sibling_folder(album_id: i64, folder_path: &str) -> Result<Option<String>, String> {
     let Some(inode) = AFolder::get_inode(album_id, folder_path)? else {
         return Ok(None);
     };
@@ -750,7 +755,9 @@ fn find_renamed_sibling_folder(
     };
 
     for entry in entries.flatten() {
-        if t_utils::is_fs_entry_hidden(&entry) || !entry.file_type().is_ok_and(|file_type| file_type.is_dir()) {
+        if t_utils::is_fs_entry_hidden(&entry)
+            || !entry.file_type().is_ok_and(|file_type| file_type.is_dir())
+        {
             continue;
         }
         let path = entry.path().to_string_lossy().to_string();
@@ -774,17 +781,15 @@ pub fn select_folder(
 ) -> Result<AFolder, String> {
     if !t_utils::directory_accessible(folder_path) {
         if let Some(renamed_path) = find_renamed_sibling_folder(album_id, folder_path)? {
-            t_utils::authorize_directory_scope(&app_handle, &renamed_path).map_err(|e| {
-                format!("Error while authorizing folder '{}': {}", renamed_path, e)
-            })?;
+            t_utils::authorize_directory_scope(&app_handle, &renamed_path)
+                .map_err(|e| format!("Error while authorizing folder '{}': {}", renamed_path, e))?;
             let inode = t_utils::FileInfo::new(&renamed_path)
                 .ok()
                 .map(|info| info.inode as i64)
                 .filter(|inode| *inode != 0);
             AFolder::migrate_path_by_inode(album_id, &renamed_path, inode)?;
-            return AFolder::fetch(&renamed_path)?.ok_or_else(|| {
-                format!("Renamed folder missing from DB: {}", renamed_path)
-            });
+            return AFolder::fetch(&renamed_path)?
+                .ok_or_else(|| format!("Renamed folder missing from DB: {}", renamed_path));
         }
 
         if let Some(folder) = AFolder::fetch(folder_path)? {
@@ -1062,12 +1067,12 @@ pub async fn set_desktop_wallpaper(
 
     #[cfg(target_os = "windows")]
     {
-        use windows::core::HSTRING;
         use windows::Win32::System::Com::{
-            CLSCTX_ALL, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
-            CoTaskMemFree, CoUninitialize,
+            CLSCTX_ALL, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree,
+            CoUninitialize,
         };
         use windows::Win32::UI::Shell::{DesktopWallpaper, IDesktopWallpaper};
+        use windows::core::HSTRING;
 
         let (sender, receiver) = tokio::sync::oneshot::channel();
         std::thread::spawn(move || {
@@ -1078,10 +1083,13 @@ pub async fn set_desktop_wallpaper(
                     .ok()
                     .map_err(|error| format!("Failed to initialize Windows COM: {error}"))?;
                 let update = (|| {
-                    let wallpaper: IDesktopWallpaper = CoCreateInstance(&DesktopWallpaper, None, CLSCTX_ALL)
-                        .map_err(|error| format!("Windows desktop wallpaper service is unavailable: {error}"))?;
-                    let monitor_count = wallpaper.GetMonitorDevicePathCount()
-                        .map_err(|error| format!("Failed to enumerate Windows displays: {error}"))?;
+                    let wallpaper: IDesktopWallpaper =
+                        CoCreateInstance(&DesktopWallpaper, None, CLSCTX_ALL).map_err(|error| {
+                            format!("Windows desktop wallpaper service is unavailable: {error}")
+                        })?;
+                    let monitor_count = wallpaper.GetMonitorDevicePathCount().map_err(|error| {
+                        format!("Failed to enumerate Windows displays: {error}")
+                    })?;
                     let primary_monitor = (0..monitor_count)
                         .find_map(|index| {
                             let monitor = wallpaper.GetMonitorDevicePathAt(index).ok()?;
@@ -1093,15 +1101,20 @@ pub async fn set_desktop_wallpaper(
                         })
                         .ok_or_else(|| "Windows could not find the primary display".to_string())?;
                     let path = HSTRING::from(source_path);
-                    wallpaper.SetWallpaper(&primary_monitor, &path)
-                        .map_err(|error| format!("Windows could not set the desktop wallpaper: {error}"))
+                    wallpaper
+                        .SetWallpaper(&primary_monitor, &path)
+                        .map_err(|error| {
+                            format!("Windows could not set the desktop wallpaper: {error}")
+                        })
                 })();
                 CoUninitialize();
                 update
             })();
             let _ = sender.send(result);
         });
-        receiver.await.map_err(|_| "Windows wallpaper update was cancelled".to_string())??;
+        receiver
+            .await
+            .map_err(|_| "Windows wallpaper update was cancelled".to_string())??;
     }
 
     #[cfg(target_os = "linux")]
@@ -1125,10 +1138,15 @@ pub async fn set_desktop_wallpaper(
             .add(b'|')
             .add(b'}');
 
-        let file_uri = format!("file://{}", utf8_percent_encode(&source_path, URI_PATH_ENCODE_SET));
-        let set_key = |key: &str| Command::new("gsettings")
-            .args(["set", "org.gnome.desktop.background", key, &file_uri])
-            .output();
+        let file_uri = format!(
+            "file://{}",
+            utf8_percent_encode(&source_path, URI_PATH_ENCODE_SET)
+        );
+        let set_key = |key: &str| {
+            Command::new("gsettings")
+                .args(["set", "org.gnome.desktop.background", key, &file_uri])
+                .output()
+        };
         let output = set_key("picture-uri")
             .map_err(|error| format!("Failed to start GNOME wallpaper service: {error}"))?;
         if !output.status.success() {
@@ -1259,7 +1277,9 @@ pub async fn get_query_file_ids(params: QueryParams) -> Result<Vec<i64>, String>
 }
 
 #[tauri::command]
-pub fn get_library_visible_counts(small_file_filter: i64) -> Result<t_sqlite::LibraryVisibleCounts, String> {
+pub fn get_library_visible_counts(
+    small_file_filter: i64,
+) -> Result<t_sqlite::LibraryVisibleCounts, String> {
     AFile::get_library_visible_counts(small_file_filter)
         .map_err(|e| format!("Error while getting library visible counts: {}", e))
 }
@@ -2075,7 +2095,10 @@ pub fn import_and_organize(
     completed_paths: Vec<String>,
 ) -> Result<(), String> {
     {
-        let mut import = state.0.lock().map_err(|_| "Import cancellation state is unavailable")?;
+        let mut import = state
+            .0
+            .lock()
+            .map_err(|_| "Import cancellation state is unavailable")?;
         if import.running {
             return Err("An import is already in progress".to_string());
         }
@@ -2090,15 +2113,28 @@ pub fn import_and_organize(
             &destination_path,
             &layout,
             completed_paths.into_iter().collect(),
-            |progress| { let _ = app_handle.emit("import-organize-progress", progress); },
-            || cancellation.lock().map(|import| import.cancelled).unwrap_or(true),
+            |progress| {
+                let _ = app_handle.emit("import-organize-progress", progress);
+            },
+            || {
+                cancellation
+                    .lock()
+                    .map(|import| import.cancelled)
+                    .unwrap_or(true)
+            },
         );
         if let Ok(mut import) = cancellation.lock() {
             import.running = false;
         }
         let payload = match result {
-            Ok(result) => ImportOrganizeFinished { result: Some(result), error: None },
-            Err(error) => ImportOrganizeFinished { result: None, error: Some(error) },
+            Ok(result) => ImportOrganizeFinished {
+                result: Some(result),
+                error: None,
+            },
+            Err(error) => ImportOrganizeFinished {
+                result: None,
+                error: Some(error),
+            },
         };
         let _ = app_handle.emit("import-organize-finished", payload);
     });
@@ -2107,7 +2143,11 @@ pub fn import_and_organize(
 
 #[tauri::command]
 pub fn cancel_import_and_organize(state: State<ImportCancellation>) -> Result<(), String> {
-    state.0.lock().map_err(|_| "Import cancellation state is unavailable")?.cancelled = true;
+    state
+        .0
+        .lock()
+        .map_err(|_| "Import cancellation state is unavailable")?
+        .cancelled = true;
     Ok(())
 }
 
@@ -2489,10 +2529,7 @@ pub fn delete_file(file_id: i64, file_path: &str) -> Result<BatchDeleteResult, S
 
 /// delete a file permanently
 #[tauri::command]
-pub fn delete_file_permanently(
-    file_id: i64,
-    file_path: &str,
-) -> Result<BatchDeleteResult, String> {
+pub fn delete_file_permanently(file_id: i64, file_path: &str) -> Result<BatchDeleteResult, String> {
     delete_file_group(file_id, file_path, true)
 }
 
@@ -2553,7 +2590,11 @@ fn delete_file_group(
     // fingerprint check at session open prevents any later wrong association.
     let mut trashed_recipe_sidecars: Vec<PathBuf> = Vec::new();
     let mut recipe_members: Vec<&str> = vec![file_path];
-    recipe_members.extend(component_files.iter().filter_map(|c| c.file_path.as_deref()));
+    recipe_members.extend(
+        component_files
+            .iter()
+            .filter_map(|c| c.file_path.as_deref()),
+    );
     for member in recipe_members {
         let result = if permanently {
             asset_ops::delete_companion_permanently(Path::new(member))
@@ -2561,7 +2602,9 @@ fn delete_file_group(
             asset_ops::trash_companion(Path::new(member))
         };
         match result {
-            Ok(true) => trashed_recipe_sidecars.push(asset_ops::sidecar_path_for(Path::new(member))),
+            Ok(true) => {
+                trashed_recipe_sidecars.push(asset_ops::sidecar_path_for(Path::new(member)))
+            }
             Ok(false) => {}
             Err(error) => delete_errors.push(format!(
                 "Failed to delete develop recipe sidecar: {}",
@@ -2766,12 +2809,12 @@ pub fn edit_file_comment(file_id: i64, comment: &str) -> Result<usize, String> {
 /// many small `remove_file` calls â€” heavy IO must not block the main thread
 /// (see project convention: async + spawn_blocking for heavy IO commands).
 #[tauri::command]
-pub async fn clean_unused_thumbnail_cache(library_id: Option<String>) -> Result<t_sqlite::ThumbnailCacheCleanupResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        AThumb::clean_unused_cache(library_id.as_deref())
-    })
-    .await
-    .map_err(|e| format!("Failed to join clean thumbnail cache task: {}", e))?
+pub async fn clean_unused_thumbnail_cache(
+    library_id: Option<String>,
+) -> Result<t_sqlite::ThumbnailCacheCleanupResult, String> {
+    tauri::async_runtime::spawn_blocking(move || AThumb::clean_unused_cache(library_id.as_deref()))
+        .await
+        .map_err(|e| format!("Failed to join clean thumbnail cache task: {}", e))?
 }
 
 /// get a file's thumb image, if not exist, create a new one.
@@ -3100,7 +3143,9 @@ fn extract_embedded_mp4(source: &str, offset: u64, dest: &Path) -> Result<(), St
             .map_err(|e| format!("Failed to create cache file: {}", e))?;
         let mut buf = vec![0u8; 1024 * 1024];
         loop {
-            let n = src.read(&mut buf).map_err(|e| format!("Failed to read source: {}", e))?;
+            let n = src
+                .read(&mut buf)
+                .map_err(|e| format!("Failed to read source: {}", e))?;
             if n == 0 {
                 break;
             }
@@ -3274,7 +3319,9 @@ pub fn get_tag_group_name(id: i64) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn get_tag_groups(small_file_filter: i64) -> Result<Vec<crate::t_tag_groups::TagGroup>, String> {
+pub fn get_tag_groups(
+    small_file_filter: i64,
+) -> Result<Vec<crate::t_tag_groups::TagGroup>, String> {
     crate::t_tag_groups::get_all(small_file_filter)
 }
 
@@ -3314,7 +3361,8 @@ pub fn get_tag_counts(small_file_filter: i64) -> Result<HashMap<i64, i64>, Strin
 /// get tag name by id
 #[tauri::command]
 pub fn get_tag_name(tag_id: i64, include_group: Option<bool>) -> Result<String, String> {
-    ATag::get_name(tag_id, include_group.unwrap_or(false)).map_err(|e| format!("Error while getting tag name: {}", e))
+    ATag::get_name(tag_id, include_group.unwrap_or(false))
+        .map_err(|e| format!("Error while getting tag name: {}", e))
 }
 
 /// create a new tag
@@ -3386,13 +3434,15 @@ pub fn get_taken_dates(sort: i64, small_file_filter: i64) -> Result<Vec<(String,
 /// get a file's camera make and model info
 #[tauri::command]
 pub fn get_camera_info(sort: i64, small_file_filter: i64) -> Result<Vec<ACamera>, String> {
-    ACamera::get_from_db(sort, small_file_filter).map_err(|e| format!("Error while getting camera info: {}", e))
+    ACamera::get_from_db(sort, small_file_filter)
+        .map_err(|e| format!("Error while getting camera info: {}", e))
 }
 
 /// get a file's lens make and model info
 #[tauri::command]
 pub fn get_lens_info(sort: i64, small_file_filter: i64) -> Result<Vec<ALens>, String> {
-    ALens::get_from_db(sort, small_file_filter).map_err(|e| format!("Error while getting lens info: {}", e))
+    ALens::get_from_db(sort, small_file_filter)
+        .map_err(|e| format!("Error while getting lens info: {}", e))
 }
 
 // location
@@ -3400,7 +3450,8 @@ pub fn get_lens_info(sort: i64, small_file_filter: i64) -> Result<Vec<ALens>, St
 /// get a file's location info
 #[tauri::command]
 pub fn get_location_info(sort: i64, small_file_filter: i64) -> Result<Vec<ALocation>, String> {
-    ALocation::get_from_db(sort, small_file_filter).map_err(|e| format!("Error while getting location info: {}", e))
+    ALocation::get_from_db(sort, small_file_filter)
+        .map_err(|e| format!("Error while getting location info: {}", e))
 }
 
 #[tauri::command]
@@ -3539,7 +3590,11 @@ pub fn similar_get_eligible_count(
 }
 
 #[tauri::command]
-pub fn similar_list_groups(scope_key: String, limit: i64, offset: i64) -> Result<serde_json::Value, String> {
+pub fn similar_list_groups(
+    scope_key: String,
+    limit: i64,
+    offset: i64,
+) -> Result<serde_json::Value, String> {
     t_similar::list_groups(&scope_key, limit, offset)
 }
 
@@ -3637,8 +3692,7 @@ pub fn get_persons(sort: i64) -> Result<Vec<Person>, String> {
 /// Get a page of persons with face counts.
 #[tauri::command]
 pub fn get_persons_page(request: PersonPageRequest) -> Result<PersonPage, String> {
-    Person::get_page(&request)
-        .map_err(|e| format!("Error while getting persons page: {}", e))
+    Person::get_page(&request).map_err(|e| format!("Error while getting persons page: {}", e))
 }
 
 /// rename a person
@@ -3779,9 +3833,39 @@ pub fn restore_databases(
 pub struct DevelopAppState {
     service: std::sync::OnceLock<std::sync::Arc<DevelopService>>,
     derivatives: std::sync::OnceLock<std::sync::Arc<DevelopDerivativeParts>>,
+    resources:
+        std::sync::OnceLock<Option<std::sync::Arc<lap_lib::develop::resources::ResourceStore>>>,
 }
 
 impl DevelopAppState {
+    /// The shared content-addressed resource store (lap-62b; lens profiles
+    /// lap-d52). Opened once; the same instance is installed on the preview
+    /// renderer so imports are immediately render-verified.
+    pub(crate) fn resource_store(
+        &self,
+    ) -> Option<std::sync::Arc<lap_lib::develop::resources::ResourceStore>> {
+        self.resources
+            .get_or_init(|| {
+                let resource_root = crate::t_config::get_app_data_dir()
+                    .map(|dir| dir.join("develop-resources"))
+                    .unwrap_or_else(|_| {
+                        std::env::temp_dir()
+                            .join(format!("lap-develop-resources-{}", std::process::id()))
+                    });
+                match lap_lib::develop::resources::ResourceStore::open(&resource_root) {
+                    Ok(resources) => Some(std::sync::Arc::new(resources)),
+                    Err(error) => {
+                        eprintln!(
+                            "develop resource store unavailable at {}: {error}",
+                            resource_root.display()
+                        );
+                        None
+                    }
+                }
+            })
+            .clone()
+    }
+
     fn service(&self) -> std::sync::Arc<DevelopService> {
         std::sync::Arc::clone(self.service.get_or_init(|| {
             let store = std::sync::Arc::new(
@@ -3799,22 +3883,7 @@ impl DevelopAppState {
             // directory; if that is unavailable, degrade to a process-local
             // temporary directory (logged) rather than losing imported
             // resources.
-            let resource_root = crate::t_config::get_app_data_dir()
-                .map(|dir| dir.join("develop-resources"))
-                .unwrap_or_else(|_| {
-                    std::env::temp_dir()
-                        .join(format!("lap-develop-resources-{}", std::process::id()))
-                });
-            let resources = match lap_lib::develop::resources::ResourceStore::open(&resource_root) {
-                Ok(resources) => Some(std::sync::Arc::new(resources)),
-                Err(error) => {
-                    eprintln!(
-                        "develop resource store unavailable at {}: {error}",
-                        resource_root.display()
-                    );
-                    None
-                }
-            };
+            let resources = self.resource_store();
             let gpu = std::sync::Arc::new(
                 DevelopGpuPreviewRenderer::new().with_resource_store(resources),
             );
@@ -3953,9 +4022,7 @@ fn acknowledge_commit_side_effects(
     let thumbnail_invalidated = match AThumb::delete(file_id) {
         Ok(_) => true,
         Err(error) => {
-            eprintln!(
-                "develop commit: thumbnail invalidation failed for file {file_id}: {error}"
-            );
+            eprintln!("develop commit: thumbnail invalidation failed for file {file_id}: {error}");
             false
         }
     };
@@ -4154,7 +4221,9 @@ fn render_developed_thumbnail(
         }
         lap_lib::develop::sessions::PreviewWait::Failed { code, message } => {
             let _ = service.close_session(opened.session_id);
-            return Err(format!("developed thumbnail render failed ({code}): {message}"));
+            return Err(format!(
+                "developed thumbnail render failed ({code}): {message}"
+            ));
         }
     };
     let _ = service.close_session(opened.session_id);
@@ -4363,7 +4432,9 @@ pub async fn develop_close_edit_session(
 ) -> Result<lap_lib::develop::sessions::ClosedEditSession, String> {
     let service = state.service();
     tauri::async_runtime::spawn_blocking(move || {
-        service.close_session(session_id).map_err(develop_error_string)
+        service
+            .close_session(session_id)
+            .map_err(develop_error_string)
     })
     .await
     .map_err(|e| format!("develop close task failed: {e}"))?
@@ -4379,6 +4450,250 @@ pub async fn develop_get_capabilities(
     tauri::async_runtime::spawn_blocking(move || service.capabilities())
         .await
         .map_err(|e| format!("develop capabilities task failed: {e}"))
+}
+
+// ----------------------------------------------------------------------------
+// Lens-correction profiles (lap-d52 / TASK-502). Locally acquired versioned
+// resources: imports are content-addressed and carry an explicit,
+// user-declared version label; selection resolves the correction coefficients
+// through the engine and records full provenance on the recipe. Nothing is
+// bundled: distribution terms for lens data remain an unresolved prerequisite
+// (docs/raw-development/provenance.json, release hold).
+// ----------------------------------------------------------------------------
+
+/// Serializable result of one lens-profile file import.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LensProfileImportDto {
+    pub id: String,
+    pub digest: String,
+    pub size_bytes: u64,
+    pub lens_count: usize,
+    pub camera_count: usize,
+    pub version: String,
+    pub newly_stored: bool,
+}
+
+/// Serializable summary of a stored lens profile (catalog listing).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LensProfileSummaryDto {
+    pub id: String,
+    pub lens_count: usize,
+    pub camera_count: usize,
+}
+
+/// Serializable capability notice from a lens selection.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LensNoticeDto {
+    pub kind: String,
+    pub detail: String,
+}
+
+/// Serializable lens selection: resolved coefficients, visible capability
+/// notices and the recorded provenance.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LensSelectionDto {
+    pub params: rapidraw_edit_model::LensDistortionParams,
+    pub notices: Vec<LensNoticeDto>,
+    pub profile: rapidraw_edit_model::LensProfileRef,
+}
+
+fn require_resource_store(
+    state: &DevelopAppState,
+) -> Result<std::sync::Arc<lap_lib::develop::resources::ResourceStore>, String> {
+    state.resource_store().ok_or_else(|| {
+        "develop resource store is unavailable; lens profiles cannot be imported or verified"
+            .to_string()
+    })
+}
+
+/// Imports lensfun XML files as versioned lens-profile resources. `version`
+/// is the user-declared label recorded verbatim in the recipe provenance
+/// (`unversioned` when omitted); the backend never invents one.
+#[tauri::command]
+pub async fn develop_import_lens_profile(
+    state: tauri::State<'_, DevelopAppState>,
+    paths: Vec<String>,
+    version: Option<String>,
+) -> Result<Vec<LensProfileImportDto>, String> {
+    let store = require_resource_store(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut out = Vec::new();
+        for path in paths {
+            let bytes = std::fs::read(&path)
+                .map_err(|error| format!("cannot read lens profile {}: {error}", path))?;
+            let imported = store
+                .import_lens_profile_bytes(&bytes, None, version.as_deref())
+                .map_err(|error| format!("{}: {error}", path))?;
+            out.push(LensProfileImportDto {
+                id: imported.id.clone(),
+                digest: imported.digest.clone(),
+                size_bytes: imported.size_bytes,
+                lens_count: imported.lens_count,
+                camera_count: imported.camera_count,
+                version: imported.version_label().to_string(),
+                newly_stored: imported.newly_stored,
+            });
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|e| format!("develop lens import task failed: {e}"))?
+}
+
+/// Lists every stored object that parses as a lensfun profile database.
+#[tauri::command]
+pub async fn develop_lens_catalog(
+    state: tauri::State<'_, DevelopAppState>,
+) -> Result<Vec<LensProfileSummaryDto>, String> {
+    let store = require_resource_store(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut out = Vec::new();
+        let objects = store.root().join("objects");
+        let mut stack = vec![objects];
+        while let Some(dir) = stack.pop() {
+            let entries = match std::fs::read_dir(&dir) {
+                Ok(entries) => entries,
+                Err(_) => continue,
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                let Some(digest) = path.file_name().and_then(|name| name.to_str()) else {
+                    continue;
+                };
+                if digest.len() != 64 {
+                    continue;
+                }
+                let id = lap_lib::develop::resources::lens_resource_id(digest);
+                if let Ok(database) = store.lens_database(&id) {
+                    out.push(LensProfileSummaryDto {
+                        id,
+                        lens_count: database.lenses.len(),
+                        camera_count: database.cameras.len(),
+                    });
+                }
+            }
+        }
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(out)
+    })
+    .await
+    .map_err(|e| format!("develop lens catalog task failed: {e}"))?
+}
+
+/// Sorted maker list of one stored profile.
+#[tauri::command]
+pub async fn develop_lens_makers(
+    state: tauri::State<'_, DevelopAppState>,
+    profile_id: String,
+) -> Result<Vec<String>, String> {
+    let store = require_resource_store(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        store
+            .lens_makers(&profile_id)
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|e| format!("develop lens makers task failed: {e}"))?
+}
+
+/// Display model names of one maker inside one stored profile.
+#[tauri::command]
+pub async fn develop_lens_models(
+    state: tauri::State<'_, DevelopAppState>,
+    profile_id: String,
+    maker: String,
+) -> Result<Vec<String>, String> {
+    let store = require_resource_store(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let database = store
+            .lens_database(&profile_id)
+            .map_err(|error| error.to_string())?;
+        let maker_lenses = rapidraw_develop::lens::lenses_for_maker(&database, &maker);
+        let mut models: Vec<String> = maker_lenses
+            .iter()
+            .map(|lens| lens.get_display_name(&maker_lenses))
+            .collect();
+        models.sort_unstable();
+        models.dedup();
+        Ok(models)
+    })
+    .await
+    .map_err(|e| format!("develop lens models task failed: {e}"))?
+}
+
+/// Reference fuzzy auto-detection of a lens from camera-reported EXIF names.
+#[tauri::command]
+pub async fn develop_autodetect_lens(
+    state: tauri::State<'_, DevelopAppState>,
+    profile_id: String,
+    maker: String,
+    model: String,
+) -> Result<Option<(String, String)>, String> {
+    let store = require_resource_store(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        store
+            .find_best_lens_match(&profile_id, &maker, &model)
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|e| format!("develop lens autodetect task failed: {e}"))?
+}
+
+/// Resolves the correction coefficients for a lens selection. The command
+/// performs NO recipe write: the frontend applies the returned data through
+/// the editor's durable commit path.
+#[allow(clippy::too_many_arguments)] // flat argument list is a Tauri IPC requirement
+#[tauri::command]
+pub async fn develop_select_lens(
+    state: tauri::State<'_, DevelopAppState>,
+    profile_id: String,
+    maker: String,
+    model: String,
+    version: Option<String>,
+    focal_length: f32,
+    aperture: Option<f32>,
+    distance: Option<f32>,
+) -> Result<LensSelectionDto, String> {
+    let store = require_resource_store(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut envelope = rapidraw_edit_model::RecipeEnvelope::default();
+        let selection = lap_lib::develop::resources::LensSelection {
+            profile_id: &profile_id,
+            maker: &maker,
+            model: &model,
+            version: version.as_deref().unwrap_or("unversioned"),
+            focal_length,
+            aperture,
+            distance,
+        };
+        let (params, notices) = store
+            .select_lens_profile(&mut envelope, &selection)
+            .map_err(|error| error.to_string())?;
+        Ok(LensSelectionDto {
+            params,
+            notices: notices
+                .into_iter()
+                .map(|notice| LensNoticeDto {
+                    kind: notice.kind.to_string(),
+                    detail: notice.detail,
+                })
+                .collect(),
+            profile: envelope
+                .recipe
+                .lens_profile
+                .expect("selection records provenance"),
+        })
+    })
+    .await
+    .map_err(|e| format!("develop lens select task failed: {e}"))?
 }
 
 /// Explicit one-way `.rrdata` compatibility reader (lap-5c2 / TASK-404;
@@ -4403,9 +4718,7 @@ pub async fn develop_import_rrdata(
         return Err("develop rrdata import requires a catalog asset id".to_string());
     }
     if source_width == 0 || source_height == 0 {
-        return Err(
-            "develop rrdata import requires the decoded original dimensions".to_string(),
-        );
+        return Err("develop rrdata import requires the decoded original dimensions".to_string());
     }
     if source_fingerprint.len() != 64 {
         return Err(

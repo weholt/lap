@@ -2,10 +2,10 @@
 //
 // The RECIPE CONTRACT section below is the generated TypeScript contract of
 // rapidraw-edit-model, copied verbatim from the pinned engine revision
-// 6fae0d0a6aaca5dffd59c20080ef03c5adfee71f (see
+// de4fdbd76723c76145b477a2b8874226512475f1 (see
 // docs/raw-development/engine-lock.json, resource
 // crates/rapidraw-edit-model/gen/recipe.ts,
-// sha256 128d93f28933a12bfc5a55fe9e7e8162037aad28c3987915199d958aa6b401ed,
+// sha256 979e18db893b4302102b2912cef64d638b7bcfce4ff222ec9a116b2a85ad2318,
 // verified against the committed bytes). Regenerate from the engine and
 // re-copy; do not hand-edit the generated part.
 //
@@ -39,6 +39,8 @@ export interface ColorGrading { [zone: string]: number | HueSatLum; balance: num
 export interface ColorCalibration { shadowsTint: number; redHue: number; redSaturation: number; greenHue: number; greenSaturation: number; blueHue: number; blueSaturation: number; }
 export interface CropRect { x: number; y: number; width: number; height: number; }
 export interface LensDistortionParams { k1: number; k2: number; k3: number; model: number; tca_vr: number; tca_vb: number; vig_k1: number; vig_k2: number; vig_k3: number; }
+/** Provenance of the lens profile the persisted lensDistortionParams were resolved from. */
+export interface LensProfileRef { uri: string; maker: string; model: string; version: string; sha256: string; }
 export interface SectionVisibility { [section: string]: boolean; basic: boolean; curves: boolean; color: boolean; details: boolean; effects: boolean; }
 export interface MaskSectionVisibility { [section: string]: boolean; basic: boolean; curves: boolean; color: boolean; details: boolean; effects: boolean; }
 /**
@@ -110,6 +112,7 @@ export interface Recipe {
   lensDistortionAmount: number; lensVignetteAmount: number; lensTcaAmount: number;
   lensDistortionEnabled: boolean; lensTcaEnabled: boolean; lensVignetteEnabled: boolean;
   lensDistortionParams: LensDistortionParams | null;
+  lensProfile: LensProfileRef | null;
   masks: MaskContainer[];
   sectionVisibility: SectionVisibility;
   sectionOrder: SectionId[];
@@ -393,6 +396,7 @@ export const DEFAULT_RECIPE: Recipe = {
   "lensTcaEnabled": true,
   "lensVignetteEnabled": true,
   "lensDistortionParams": null,
+  "lensProfile": null,
   "masks": [],
   "sectionVisibility": {
     "basic": true,

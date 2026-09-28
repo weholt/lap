@@ -30,13 +30,13 @@ mod t_jxl;
 mod t_lens;
 mod t_libraw;
 mod t_menu;
-mod t_tag_groups;
 mod t_motion_photo;
 mod t_pasteboard;
 mod t_protocol;
 mod t_similar;
 mod t_sqlite;
 mod t_storage;
+mod t_tag_groups;
 mod t_utils;
 mod t_video;
 
@@ -448,9 +448,15 @@ async fn main() {
             t_cmds::develop_close_edit_session,
             t_cmds::develop_get_capabilities,
             t_cmds::develop_import_rrdata,
-            // durable derivative export (lap-7ae / TASK-304)
             t_cmds::develop_export_developed,
             t_cmds::develop_cancel_export,
+            // lens correction profiles (lap-d52 / TASK-502)
+            t_cmds::develop_import_lens_profile,
+            t_cmds::develop_lens_catalog,
+            t_cmds::develop_lens_makers,
+            t_cmds::develop_lens_models,
+            t_cmds::develop_autodetect_lens,
+            t_cmds::develop_select_lens,
         ])
         .build(tauri::generate_context!());
 

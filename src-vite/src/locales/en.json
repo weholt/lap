@@ -1672,6 +1672,28 @@
       "resetAll": "Remove all masks",
       "unsupported": "Contains kinds this build cannot render: {kinds}. They fail render/export explicitly instead of being silently dropped."
     },
+    "lens": {
+      "title": "Lens Correction",
+      "mode": "Correction mode",
+      "modeManual": "Manual",
+      "modeAuto": "Auto",
+      "noProfiles": "No lens profiles imported. Import a locally licensed lensfun XML database to enable lens correction; nothing is bundled and no correction is applied silently.",
+      "profile": "Lens profile database",
+      "profileOption": "{lenses} lenses",
+      "import": "Import…",
+      "maker": "Lens maker",
+      "model": "Lens model",
+      "focal": "Focal (mm)",
+      "apply": "Apply",
+      "noMatch": "No matching lens found in the selected profile.",
+      "distortion": "Distortion correction",
+      "tca": "Chromatic aberration correction",
+      "vignette": "Vignetting correction",
+      "distortionAmount": "Distortion",
+      "tcaAmount": "Chromatic aberration",
+      "vignetteAmount": "Vignetting",
+      "provenance": "{maker} {model} · {version} · profile {hash}"
+    },
     "groups": {
       "tone": "Tone",
       "color": "Color",
