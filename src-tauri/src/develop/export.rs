@@ -342,9 +342,13 @@ impl ExportSettings {
 /// original decoded dimensions (or an explicitly requested downscale) through
 /// the engine's offscreen GPU pipeline. No embedded preview ever supplies
 /// pixels; a missing device is a typed failure, never an unadjusted fallback.
+/// When a resource store is installed, recipe LUT references resolve from the
+/// content-addressed store; missing or changed resources fail explicitly
+/// (never a silently un-LUT-ed derivative).
 pub struct GpuExportRenderer {
     device: OnceLock<Result<OffscreenRenderer, String>>,
     factory: Mutex<Option<GpuContextFactory>>,
+    resources: Option<Arc<crate::develop::resources::ResourceStore>>,
 }
 
 impl GpuExportRenderer {
@@ -359,6 +363,32 @@ impl GpuExportRenderer {
         Self {
             device: OnceLock::new(),
             factory: Mutex::new(Some(factory)),
+            resources: None,
+        }
+    }
+
+    /// Installs the content-addressed resource store used to resolve recipe
+    /// LUT references at render time (chainable).
+    pub fn with_resource_store(
+        mut self,
+        store: Option<Arc<crate::develop::resources::ResourceStore>>,
+    ) -> Self {
+        self.resources = store;
+        self
+    }
+
+    /// Resolves the recipe's LUT payload from the resource store. A store
+    /// error (missing, changed, non-portable reference) is an explicit
+    /// failure, never a silent un-LUT-ed derivative.
+    fn resolve_render_lut(
+        &self,
+        envelope: &rapidraw_edit_model::RecipeEnvelope,
+    ) -> Result<Option<Arc<LutData>>, EngineError> {
+        match &self.resources {
+            None => Ok(None),
+            Some(store) => store
+                .resolve_recipe_lut(envelope)
+                .map_err(|err| EngineError::Unsupported(err.to_string())),
         }
     }
 
@@ -437,10 +467,11 @@ impl ExportRenderer for GpuExportRenderer {
             // Visible masks were rejected by the service before enqueue; the
             // engine also fails explicitly if a recipe still referenced one.
             mask_bitmaps: &[],
-            // LUT resources arrive in a later slice; enabling one makes the
-            // engine fail with ResourceMissing (never a silently un-LUT-ed
-            // derivative).
-            lut: None::<Arc<LutData>>,
+            // Resolved from the content-addressed resource store when one is
+            // installed; a missing/changed resource fails explicitly above.
+            // Without a store the engine fails with ResourceMissing below
+            // (never a silently un-LUT-ed derivative).
+            lut: self.resolve_render_lut(&job.envelope)?,
             roi: None,
         };
         let pixels = renderer
@@ -2008,5 +2039,48 @@ mod tests {
                 panic!("inconsistent outcomes across restarts: {other_a:?} vs {other_b:?}");
             }
         }
+    }
+
+    #[test]
+    fn lut_resources_resolve_explicitly_in_the_export_renderer() {
+        use crate::develop::resources::{ResourceStore, lut_resource_id};
+        use rapidraw_edit_model::{ResourceAlgorithm, ResourceRef};
+
+        fn failing_gpu() -> GpuContextFactory {
+            Box::new(|| {
+                rapidraw_develop::gpu::OffscreenGpuContext::new_with_backends(
+                    wgpu::Backends::empty(),
+                )
+            })
+        }
+
+        let digest = "e".repeat(64);
+        let id = lut_resource_id(&digest);
+        let mut envelope = RecipeEnvelope::new("lap-test/0", "asset-a", "default", &"a".repeat(64));
+        envelope.recipe.lut_path = Some(format!("resource://{id}"));
+        envelope.resources.insert(
+            id.clone(),
+            ResourceRef {
+                algorithm: ResourceAlgorithm::Sha256,
+                digest,
+                size_bytes: Some(1),
+            },
+        );
+
+        // No store: the engine's ResourceMissing check remains the backstop.
+        let renderer = GpuExportRenderer::with_context_factory(failing_gpu());
+        assert!(renderer.resolve_render_lut(&envelope).unwrap().is_none());
+
+        // With a store but an absent object: explicit typed failure.
+        let store = ResourceStore::open(&tmp_dir("lut-missing")).expect("store opens");
+        let renderer = GpuExportRenderer::with_context_factory(failing_gpu())
+            .with_resource_store(Some(Arc::new(store)));
+        let err = renderer
+            .resolve_render_lut(&envelope)
+            .expect_err("a missing LUT resource must fail explicitly");
+        assert!(
+            matches!(err, EngineError::Unsupported(ref message) if message.contains("missing")),
+            "missing LUT resources surface as explicit failures, got {err:?}"
+        );
     }
 }

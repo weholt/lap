@@ -3783,24 +3783,47 @@ pub struct DevelopAppState {
 
 impl DevelopAppState {
     fn service(&self) -> std::sync::Arc<DevelopService> {
-        std::sync::Arc::clone(
-            self.service.get_or_init(|| {
-                let store = std::sync::Arc::new(
-                    SidecarBackedStore::new(DevelopRecipeRepository::lap_default())
-                        .with_conn_factory(std::sync::Arc::new(|| {
-                            crate::t_sqlite::open_conn().map(|pooled| {
-                                Box::new(pooled)
-                                    as Box<dyn std::ops::Deref<Target = rusqlite::Connection>>
-                            })
-                        })),
-                );
-                std::sync::Arc::new(DevelopService::with_gpu_and_sidecar_store(
-                    DevelopConfig::default(),
-                    std::sync::Arc::new(DevelopGpuPreviewRenderer::new()),
-                    store,
-                ))
-            }),
-        )
+        std::sync::Arc::clone(self.service.get_or_init(|| {
+            let store = std::sync::Arc::new(
+                SidecarBackedStore::new(DevelopRecipeRepository::lap_default()).with_conn_factory(
+                    std::sync::Arc::new(|| {
+                        crate::t_sqlite::open_conn().map(|pooled| {
+                            Box::new(pooled)
+                                as Box<dyn std::ops::Deref<Target = rusqlite::Connection>>
+                        })
+                    }),
+                ),
+            );
+            // Content-addressed develop resources (lap-62b): durable data
+            // referenced from sidecars, so it lives under the app data
+            // directory; if that is unavailable, degrade to a process-local
+            // temporary directory (logged) rather than losing imported
+            // resources.
+            let resource_root = crate::t_config::get_app_data_dir()
+                .map(|dir| dir.join("develop-resources"))
+                .unwrap_or_else(|_| {
+                    std::env::temp_dir()
+                        .join(format!("lap-develop-resources-{}", std::process::id()))
+                });
+            let resources = match lap_lib::develop::resources::ResourceStore::open(&resource_root) {
+                Ok(resources) => Some(std::sync::Arc::new(resources)),
+                Err(error) => {
+                    eprintln!(
+                        "develop resource store unavailable at {}: {error}",
+                        resource_root.display()
+                    );
+                    None
+                }
+            };
+            let gpu = std::sync::Arc::new(
+                DevelopGpuPreviewRenderer::new().with_resource_store(resources),
+            );
+            std::sync::Arc::new(DevelopService::with_gpu_and_sidecar_store(
+                DevelopConfig::default(),
+                gpu,
+                store,
+            ))
+        }))
     }
 
     /// The developed-derivative infrastructure (lap-a58): acknowledged-commit
