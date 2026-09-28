@@ -1,0 +1,93 @@
+# Raw-development build/test matrix definition (lap-c0e / TASK-601).
+#
+# IMPORTANT — this file is a DEFINITION, NOT PLATFORM EVIDENCE (spec P5):
+# a CI workflow, however green, never substitutes for executed benchmark and
+# stress runs on named reference hardware. The fail-closed platform release
+# gate (scripts/raw-development/benchmark.mjs) only counts executed result
+# documents under tests/raw-development/platform/runs/ that match the
+# machine/backend identity in tests/raw-development/platform/platform-manifest.json.
+# Linux and macOS platform qualification therefore remains explicitly
+# UNTESTED and BLOCKED until a real reference machine executes the harness.
+#
+# Constraints honored by this definition:
+#   - workflow_dispatch only: nothing here starts automatically, nothing is
+#     published, and no artifact of the extraction leaves the machine.
+#   - The harness consumes engine sources pinned by exact revision
+#     (docs/raw-development/engine-lock.json) from the local isolated
+#     checkout (C:/Users/Thomas/Desktop/RapidRAW-engine). A hosted runner has
+#     NO access to that checkout: the engine-dependency step below is a
+#     deliberate placeholder that FAILS unless a future, separately-approved
+#     CI environment provides the pinned engine sources. This is intentional:
+#     the workflow must not silently run against an unpinned or public mirror.
+#   - Windows uses default cargo features only (never --all-features), with
+#     the rustup toolchain prepended to PATH.
+
+name: raw-development
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Which suite to run"
+        required: true
+        default: "unit"
+        type: choice
+        options:
+          - unit
+          - platform-windows
+      # No push/pull_request/schedule triggers: local development only.
+
+jobs:
+  unit:
+    # Schema/release-gate validator tests and frontend gates: these run where
+    # Node is available and require no GPU and no engine sources.
+    if: ${{ github.event.inputs.suite == 'unit' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Platform results schema + release-gate tests
+        run: node --test tests/raw-development/platform/schema-gate.test.mjs
+
+  platform-windows:
+    # The executed Windows GPU qualification. Runner evidence produced here
+    # WOULD count as platform evidence ONLY for a machine declared
+    # `available` with matching hardware identity in the platform manifest;
+    # hosted-runner GPUs are NOT declared, so results must not be silently
+    # attached to the development host's machine id.
+    if: ${{ github.event.inputs.suite == 'platform-windows' }}
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (pinned 1.98 toolchain, default features only)
+        run: |
+          rustup toolchain install 1.98 --profile minimal
+          rustup default 1.98
+      - name: Engine sources (REQUIRED PINNED CHECKOUT — fails without it by design)
+        run: |
+          # The harness consumes rapidraw-edit-model/rapidraw-develop pinned at
+          # docs/raw-development/engine-lock.json engine.revision from the local
+          # isolated checkout. A CI environment must provide exactly those
+          # sources (same revision) at C:/Users/Thomas/Desktop/RapidRAW-engine
+          # before this job can run. Fail loudly rather than building against
+          # anything else.
+          if (-not (Test-Path 'C:/Users/Thomas/Desktop/RapidRAW-engine')) {
+            Write-Error "pinned engine checkout not available on this runner; platform qualification cannot run here by design"
+          }
+      - name: Platform benchmark and stress suite
+        run: |
+          # MSVC environment + rustup PATH prepend + fake-CRT fix + run +
+          # validate + fail-closed gate (BLOCKED while reference machines are
+          # missing is the expected outcome of the gate stage).
+          powershell -ExecutionPolicy Bypass -File scripts/raw-development/benchmark.ps1
+      - name: Record (never publish) the run summary
+        run: |
+          # Evidence stays machine-local (runs/ is gitignored). This step only
+          # echoes the summary into the job log.
+          Get-ChildItem tests/raw-development/runs -Filter "platform-*" |
+            ForEach-Object { Write-Host $_.FullName }

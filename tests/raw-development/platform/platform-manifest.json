@@ -1,0 +1,55 @@
+{
+  "schema": "lap-raw-platform-manifest/v1",
+  "issue": "lap-c0e",
+  "task": "TASK-601",
+  "created": "2026-09-28",
+  "purpose": "Declares the machines required for raw-development platform qualification (spec P5/A11/A12) and the workloads each available machine must execute. Fail-closed: every machine listed here must eventually carry executed, passing results; machines that do not exist stay explicitly unavailable and keep the platform release gate blocked. CI workflow definitions are not execution and never satisfy this manifest.",
+  "requiredWorkloads": [
+    "cold-decode",
+    "warm-slider-1536",
+    "settled-preview",
+    "export",
+    "thumbnail-throughput-indexing",
+    "navigation-memory-bound",
+    "gpu-failure-modes"
+  ],
+  "provisionalTargets": [
+    {
+      "id": "warm-slider-1536-p95",
+      "workload": "warm-slider-1536",
+      "metric": "p95Ms",
+      "thresholdMs": 150,
+      "provisional": true,
+      "note": "Spec A12 provisional target: warm 1536-pixel preview response p95 below 150 ms. Measured misses are release blockers; final budgets are agreed only after the first measured slice, never by silently redefining this number."
+    }
+  ],
+  "machines": [
+    {
+      "id": "windows-thomas-rtx4060",
+      "status": "available",
+      "os": "windows",
+      "hardware": {
+        "cpu": "AMD Ryzen 7 5700X 8-Core Processor",
+        "ramBytes": 51441393664,
+        "notes": "Development host; the only machine with executed raw-development GPU evidence so far (baseline capture 2026-09-26/27, slice qualification 2026-09-27)."
+      },
+      "gpu": {
+        "adapter": "NVIDIA GeForce RTX 4060",
+        "backends": ["Dx12", "Vulkan", "Gl"],
+        "notes": "Adapter name recorded from wgpu; observed backends for offscreen rendering on this host are Dx12 and Vulkan."
+      }
+    },
+    {
+      "id": "linux-reference",
+      "status": "unavailable",
+      "reason": "No Linux reference machine exists in this development environment. Linux (Vulkan) wgpu qualification is explicitly UNTESTED; this remains a release blocker (spec P5). A CI runner definition, if one existed, would not count as executed evidence.",
+      "requiredFor": "Cross-platform GPU/backend coverage on Linux"
+    },
+    {
+      "id": "macos-reference",
+      "status": "unavailable",
+      "reason": "No macOS reference machine exists in this development environment. macOS (Metal) wgpu qualification is explicitly UNTESTED; this remains a release blocker (spec P5). A CI runner definition, if one existed, would not count as executed evidence.",
+      "requiredFor": "Cross-platform GPU/backend coverage on macOS"
+    }
+  ]
+}
