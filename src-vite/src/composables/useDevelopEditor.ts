@@ -49,7 +49,7 @@ export type DevelopSaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'confli
 /** Debounce window before a dirty recipe edit is committed. */
 export const DEVELOP_COMMIT_DEBOUNCE_MS = 800;
 /** Quick interactive preview tick while controls are being dragged. */
-export const DEVELOP_INTERACTIVE_PREVIEW_MS = 120;
+export const DEVELOP_INTERACTIVE_PREVIEW_MS = 60;
 /** Settled preview tick after the last edit. */
 export const DEVELOP_SETTLED_PREVIEW_MS = 260;
 
@@ -257,7 +257,8 @@ function createDevelopEditor(): DevelopEditor {
     function schedulePreview(kind: 'interactive' | 'settled') {
         const timerKey = kind === 'interactive' ? 'interactive' : 'settled';
         if (timerKey === 'interactive') {
-            if (interactivePreviewTimer) clearTimeout(interactivePreviewTimer);
+            // Throttle using the latest recipe; resetting this timer on every input starves continuous drags.
+            if (interactivePreviewTimer) return;
             interactivePreviewTimer = setTimeout(() => {
                 interactivePreviewTimer = null;
                 void renderPreview('interactive');

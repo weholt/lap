@@ -86,6 +86,22 @@ async function openAssetA(editor: ReturnType<typeof useDevelopEditor>) {
 }
 
 describe('useDevelopEditor', () => {
+    it('renders while input keeps arriving faster than the preview interval', async () => {
+        vi.useFakeTimers();
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+        invokeMock.mockClear();
+        for (let i = 1; i <= 30; i++) {
+            editor.setParamLive('exposure', i / 10);
+            await vi.advanceTimersByTimeAsync(20);
+        }
+        const calls = invokeMock.mock.calls.filter(([cmd]) => cmd === 'develop_render_preview');
+        expect(calls.length).toBeGreaterThanOrEqual(3);
+        expect(calls.length).toBeLessThanOrEqual(12);
+        expect(calls.at(-1)![1].envelope.recipe.exposure).toBeGreaterThan(2);
+        expect(invokeMock.mock.calls.filter(([cmd]) => cmd === 'develop_commit_recipe')).toHaveLength(0);
+    });
+
     beforeEach(() => {
         invokeMock.mockReset();
         invokeMock.mockImplementation(async (command: string) => {

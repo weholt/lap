@@ -479,6 +479,17 @@ pub(crate) fn rasterize_recipe_masks(
 /// the content-addressed store; missing or changed resources fail explicitly
 /// (spec A7) instead of rendering un-LUT-ed pixels. Without a store the
 /// engine's own `ResourceMissing` check remains the backstop.
+// One bounded prepared input, shared by Arc while a render uses it. The weak
+// source identity avoids retaining a full RAW decode after its session closes.
+struct PreparedPreview {
+    source: std::sync::Weak<DecodedOriginal>,
+    session: SessionId,
+    geometry: u64,
+    max_edge: u32,
+    pixels: Arc<image::DynamicImage>,
+}
+const MAX_PREPARED_PREVIEW_BYTES: u64 = 64 * 1024 * 1024;
+
 pub struct GpuPreviewRenderer {
     renderer: OnceLock<Result<OffscreenRenderer, String>>,
     factory: Mutex<Option<GpuContextFactory>>,
@@ -486,9 +497,60 @@ pub struct GpuPreviewRenderer {
     /// Bounded mask-bitmap cache (lap-78d). Keyed by mask geometry content
     /// plus frame; adjustment-only edits never invalidate geometry bitmaps.
     mask_cache: Mutex<rapidraw_develop::BoundedMaskCache>,
+    prepared: Mutex<Option<PreparedPreview>>,
 }
 
 impl GpuPreviewRenderer {
+    fn prepared_base(&self, job: &PreviewJob) -> Result<Arc<image::DynamicImage>, EngineError> {
+        job.cancel.check()?;
+        let geometry = recipe_geometry_hash(&job.envelope.recipe);
+        let source = Arc::downgrade(&job.original);
+        let mut cache = self.prepared.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(entry) = cache.as_ref() {
+            if entry.source.ptr_eq(&source)
+                && entry.session == job.session_id
+                && entry.geometry == geometry
+                && entry.max_edge == job.max_edge
+            {
+                return Ok(Arc::clone(&entry.pixels));
+            }
+        }
+        // Release the old prepared allocation before building its replacement.
+        *cache = None;
+        // Lens correction warp on the full un-cropped frame, matching the
+        // pinned reference order (warp -> coarse rotation -> flip -> crop):
+        // identity lens fields never touch the pixels.
+        let lens_params = rapidraw_develop::LensWarpParams::from_recipe(&job.envelope.recipe);
+        let lens_warped;
+        let lens_corrected: &rapidraw_develop::LinearImage = if lens_params.is_identity() {
+            &job.original.image
+        } else {
+            lens_warped = rapidraw_develop::lens_warp(&job.original.image, &lens_params);
+            &lens_warped
+        };
+
+        // Recipe geometry in the engine's oriented coordinate system, applied
+        // by the SAME helper the export renderer uses (lap-6bc): preview and
+        // export can never diverge on crop/rotation/flip.
+        let oriented = apply_recipe_geometry(lens_corrected, &job.envelope.recipe)?;
+        let (width, height) = oriented.dimensions();
+        let (target_w, target_h) = preview_dimensions(width, height, job.max_edge);
+        let base = preview_base(&oriented, target_w, target_h)?;
+
+        let pixels = Arc::new(base);
+        if u64::from(target_w) * u64::from(target_h) * 16 <= MAX_PREPARED_PREVIEW_BYTES {
+            *cache = Some(PreparedPreview {
+                source,
+                session: job.session_id,
+                geometry,
+                max_edge: job.max_edge,
+                pixels: Arc::clone(&pixels),
+            });
+        }
+        job.cancel.check()?;
+        Ok(pixels)
+    }
+
     /// Production constructor: environment-selected offscreen device.
     pub fn new() -> Self {
         Self::with_context_factory(Box::new(OffscreenGpuContext::new))
@@ -502,6 +564,7 @@ impl GpuPreviewRenderer {
             factory: Mutex::new(Some(factory)),
             resources: None,
             mask_cache: Mutex::new(rapidraw_develop::BoundedMaskCache::new()),
+            prepared: Mutex::new(None),
         }
     }
 
@@ -633,25 +696,8 @@ impl PreviewRenderer for GpuPreviewRenderer {
 
         let renderer = self.renderer()?;
 
-        // Lens correction warp on the full un-cropped frame, matching the
-        // pinned reference order (warp -> coarse rotation -> flip -> crop):
-        // identity lens fields never touch the pixels.
-        let lens_params = rapidraw_develop::LensWarpParams::from_recipe(&job.envelope.recipe);
-        let lens_warped;
-        let lens_corrected: &rapidraw_develop::LinearImage = if lens_params.is_identity() {
-            &job.original.image
-        } else {
-            lens_warped = rapidraw_develop::lens_warp(&job.original.image, &lens_params);
-            &lens_warped
-        };
-
-        // Recipe geometry in the engine's oriented coordinate system, applied
-        // by the SAME helper the export renderer uses (lap-6bc): preview and
-        // export can never diverge on crop/rotation/flip.
-        let oriented = apply_recipe_geometry(lens_corrected, &job.envelope.recipe)?;
-        let (width, height) = oriented.dimensions();
-        let (target_w, target_h) = preview_dimensions(width, height, job.max_edge);
-        let base = preview_base(&oriented, target_w, target_h)?;
+        let base = self.prepared_base(job)?;
+        let (target_w, target_h) = (base.width(), base.height());
 
         let recipe_json = serde_json::to_value(&job.envelope.recipe).map_err(|err| {
             EngineError::InvalidInput(format!("recipe serialization failed: {err}"))
@@ -2536,6 +2582,87 @@ mod tests {
         // A recipe without a LUT reference resolves to no payload.
         let plain = RecipeEnvelope::new("lap-test/0", "asset-a", "default", &"a".repeat(64));
         assert!(renderer.resolve_render_lut(&plain).unwrap().is_none());
+    }
+
+    /// Opt-in measurement on real RAW bytes. Never counted as a mock performance result.
+    #[test]
+    #[ignore = "requires LAP_PREVIEW_BENCH_RAW and a real GPU"]
+    fn measure_warm_preview() {
+        let path = std::env::var("LAP_PREVIEW_BENCH_RAW").expect("RAW path required");
+        let bytes = std::fs::read(&path).unwrap();
+        let decoded = Arc::new(decode_original(&bytes, &DecodeOptions::default()).unwrap());
+        let renderer = GpuPreviewRenderer::new();
+        let (_source, cancel) = CancelToken::pair();
+        let mut job = PreviewJob {
+            session_id: SessionId(700),
+            asset_id: "benchmark".into(),
+            variant_id: "default".into(),
+            generation: 1,
+            quality: PreviewQuality::Interactive,
+            max_edge: 1536,
+            original: decoded,
+            envelope: RecipeEnvelope::new("bench", "benchmark", "default", &fingerprint(&bytes)),
+            cancel,
+        };
+        renderer.render(&job).expect("actual GPU warm-up");
+        let mut samples = Vec::new();
+        for i in 0..6 {
+            job.generation += 1;
+            job.envelope.recipe.exposure = i as f64 / 10.0;
+            let start = std::time::Instant::now();
+            let frame = renderer.render(&job).expect("actual GPU render");
+            assert_eq!(frame.width.max(frame.height), 1536);
+            samples.push(start.elapsed().as_secs_f64() * 1000.0);
+        }
+        eprintln!(
+            "warm_preview_1536_ms={samples:?}; source={path}; device={:?}",
+            renderer.probe()
+        );
+    }
+
+    #[test]
+    fn prepared_preview_reuses_tone_edits_and_invalidates_geometry_source_and_size() {
+        let renderer = GpuPreviewRenderer::new();
+        let bytes = gradient_bytes();
+        let decoded = Arc::new(decode_original(&bytes, &DecodeOptions::default()).unwrap());
+        let (_source, cancel) = CancelToken::pair();
+        let mut job = PreviewJob {
+            session_id: SessionId(7),
+            asset_id: "a".into(),
+            variant_id: "default".into(),
+            generation: 1,
+            quality: PreviewQuality::Settled,
+            max_edge: 48,
+            original: Arc::clone(&decoded),
+            envelope: RecipeEnvelope::new("test", "a", "default", &fingerprint(&bytes)),
+            cancel,
+        };
+        let first = renderer.prepared_base(&job).unwrap();
+        job.envelope.recipe.exposure = 1.0;
+        let tone = renderer.prepared_base(&job).unwrap();
+        assert!(
+            Arc::ptr_eq(&first, &tone),
+            "tone edit must reuse prepared pixels"
+        );
+        job.envelope.recipe.flip_horizontal = true;
+        let flipped = renderer.prepared_base(&job).unwrap();
+        assert!(!Arc::ptr_eq(&tone, &flipped));
+        job.max_edge = 24;
+        let smaller = renderer.prepared_base(&job).unwrap();
+        assert_eq!(smaller.width(), 24);
+        assert!(!Arc::ptr_eq(&flipped, &smaller));
+        job.original = Arc::new(decode_original(&bytes, &DecodeOptions::default()).unwrap());
+        let replaced = renderer.prepared_base(&job).unwrap();
+        assert!(
+            !Arc::ptr_eq(&smaller, &replaced),
+            "new decoded source must invalidate cache"
+        );
+        job.original = decoded;
+        let evicted = renderer.prepared_base(&job).unwrap();
+        assert!(
+            !Arc::ptr_eq(&smaller, &evicted),
+            "only one prepared base is retained"
+        );
     }
 
     #[test]
