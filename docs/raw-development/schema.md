@@ -61,7 +61,9 @@ are validated structurally:
 - `parametricCurve`: darks/shadows/highlights/lights/whiteLevel/blackLevel in
   [-100, 100]; split1/2/3 in [0, 100] (defaults 25/50/75).
 - `colorGrading` (balance [-100, 100] default 0, blending [0, 100] default
-  50, zones with hue/saturation/luminance in [-100, 100]), `hsl` (8 channels),
+  50, zone hue in degrees [-100, 360] with negative legacy values retained;
+  saturation/luminance in [-100, 100]), `hsl` (8 channels with signed
+  component offsets in [-100, 100]),
   `colorCalibration` (7 values in [-100, 100]).
 - Effects/grain/vignette/LUT/lens-blur scalars per the descriptor table;
   `lutSize` ≤ 4096; strings bounded (`lutName` 200, `lutPath` 1024,

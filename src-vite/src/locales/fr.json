@@ -1618,6 +1618,20 @@
     }
   },
   "develop": {
+    "colorBalance": {
+      "title": "Balance des couleurs",
+      "global": "Maître",
+      "threeWay": "3 voies",
+      "shadows": "Ombres",
+      "midtones": "Tons moyens",
+      "highlights": "Hautes lumières",
+      "tint": "Teinte",
+      "resetAll": "Réinitialiser la balance des couleurs",
+      "resetZone": "Réinitialiser {zone}",
+      "help": "Glissez pour teinter. Anneau : teinte. Gauche : saturation. Droite : luminosité. Flèches pour affiner ; double-clic au centre pour neutraliser.",
+      "tonalRanges": "Plages tonales",
+      "bypassed": "La section Couleur est désactivée."
+    },
     "rollbackNotice": "Le développement est désactivé par rollback. Les sidecars enregistrés, les révisions précédentes, les ressources et le catalogue sont conservés ; aucune recette n\u0027est écrite dans vos fichiers originaux. Désactivez le commutateur de rollback pour reprendre la modification.",
     "title": "Développer",
     "exposure": "Exposition",

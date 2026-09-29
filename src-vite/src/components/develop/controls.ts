@@ -244,7 +244,7 @@ function gradingGroupParams(): ParamDescriptor[] {
             params.push(
                 nestedParam(
                     `colorGrading.${zone}.${component}`,
-                    HSL_COMPONENT_RANGE,
+                    component === 'hue' ? { min: -100, max: 360, step: 1 } : HSL_COMPONENT_RANGE,
                     `develop.hslComponents.${component}`,
                 ),
             );

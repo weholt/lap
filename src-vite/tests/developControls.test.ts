@@ -87,14 +87,13 @@ describe('develop control descriptors', () => {
 
     it('bounds nested sliders to the model-validated ranges (validate.rs), not legacy UI guesses', () => {
         const byPath = new Map(allGroupParams().map(({ param }) => [param.path, param]));
-        // The extracted model validates HSL components, color-grading zone
-        // components and calibration values at -100..=100 (the legacy React
-        // color wheel used 0..360 for grading hue; the shared model wins).
+        // Grading uses absolute hue degrees through 360; negative legacy hues
+        // remain valid. HSL offsets and calibration retain their signed bounds.
         for (const zone of ['global', 'shadows', 'midtones', 'highlights']) {
             for (const component of HSL_COMPONENTS) {
                 const param = byPath.get(`colorGrading.${zone}.${component}`);
                 expect(param, `colorGrading.${zone}.${component}`).toBeTruthy();
-                expect(param!.range).toEqual({ min: -100, max: 100, step: 1 });
+                expect(param!.range).toEqual({ min: -100, max: component === 'hue' ? 360 : 100, step: 1 });
             }
         }
         for (const channel of HSL_CHANNELS) {

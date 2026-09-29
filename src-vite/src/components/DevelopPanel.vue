@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -25,6 +25,7 @@ import {
 import DevelopSliderControl from '@/components/develop/DevelopSliderControl.vue';
 import DevelopSection from '@/components/develop/DevelopSection.vue';
 import DevelopCurveEditor from '@/components/develop/DevelopCurveEditor.vue';
+import ColorBalancePanel from '@/components/develop/ColorBalancePanel.vue';
 import DevelopMasksSection from '@/components/develop/masks/MasksSection.vue';
 import LensControls from '@/components/develop/LensControls.vue';
 import VariantsPanel from '@/components/develop/VariantsPanel.vue';
@@ -80,7 +81,7 @@ const expandedSections = ref<Record<SectionId, boolean>>({
     effects: false,
 });
 const selectedHslChannel = ref<string>('reds');
-const selectedGradingZone = ref<string>('global');
+
 const lensExpanded = ref(false);
 const variantsExpanded = ref(false);
 const importDialogOpen = ref(false);
@@ -94,7 +95,7 @@ const groupsBySection = computed<Record<SectionId, ControlGroup[]>>(() => {
         effects: [],
     } as Record<SectionId, ControlGroup[]>;
     for (const group of DEVELOP_CONTROL_GROUPS) {
-        map[group.section].push(group);
+        if (group.id !== 'colorGrading') map[group.section].push(group);
     }
     return map;
 });
@@ -142,18 +143,6 @@ function onSliderReset(path: string) {
 function hslChannelParams(channel: string): ParamDescriptor[] {
     const group = groupsBySection.value.color.find((g) => g.id === 'hsl');
     return group ? group.params.filter((p) => p.path.startsWith(`hsl.${channel}.`)) : [];
-}
-
-function gradingZoneParams(zone: string): ParamDescriptor[] {
-    const group = groupsBySection.value.color.find((g) => g.id === 'colorGrading');
-    return group ? group.params.filter((p) => p.path.startsWith(`colorGrading.${zone}.`)) : [];
-}
-
-function gradingCommonParams(): ParamDescriptor[] {
-    const group = groupsBySection.value.color.find((g) => g.id === 'colorGrading');
-    return group
-        ? group.params.filter((p) => !/^colorGrading\.(global|shadows|midtones|highlights)\./.test(p.path))
-        : [];
 }
 
 function onToggleExpand(section: SectionId) {
@@ -350,9 +339,8 @@ onBeforeUnmount(() => {
             </div>
 
             <!-- First-release global sections -->
+            <template v-for="section in DEVELOP_SECTIONS" :key="section.id">
             <DevelopSection
-                v-for="section in DEVELOP_SECTIONS"
-                :key="section.id"
                 :section-id="section.id"
                 :label-key="section.labelKey"
                 :visible="sectionVisible(section.id)"
@@ -387,44 +375,6 @@ onBeforeUnmount(() => {
                             </div>
                             <DevelopSliderControl
                                 v-for="param in hslChannelParams(selectedHslChannel)"
-                                :key="param.path"
-                                v-bind="sliderProps(param)"
-                                @live="(value) => onSliderLive(param.path, value)"
-                                @settle="onSliderSettle"
-                                @commit="(value) => onSliderCommit(param.path, value)"
-                                @reset="onSliderReset(param.path)"
-                            />
-                        </div>
-
-                        <!-- Color grading: zone selector + selected zone + balance/blending -->
-                        <div v-else-if="group.id === 'colorGrading'" class="px-1 pt-2">
-                            <div class="text-[10px] font-bold uppercase tracking-wide text-base-content/40 mb-1">
-                                {{ $t(group.labelKey) }}
-                            </div>
-                            <div class="flex items-center gap-0.5 mb-1">
-                                <button
-                                    v-for="zone in ['global','shadows','midtones','highlights']"
-                                    :key="zone"
-                                    type="button"
-                                    class="btn btn-ghost btn-xs capitalize"
-                                    :class="selectedGradingZone === zone ? 'text-primary' : 'text-base-content/50'"
-                                    :data-testid="`develop-grading-zone-${zone}`"
-                                    :aria-label="$t('develop.gradingZones.' + zone)"
-                                    :aria-pressed="selectedGradingZone === zone ? 'true' : 'false'"
-                                    @click.stop="selectedGradingZone = zone"
-                                >{{ $t('develop.gradingZones.' + zone) }}</button>
-                            </div>
-                            <DevelopSliderControl
-                                v-for="param in gradingZoneParams(selectedGradingZone)"
-                                :key="param.path"
-                                v-bind="sliderProps(param)"
-                                @live="(value) => onSliderLive(param.path, value)"
-                                @settle="onSliderSettle"
-                                @commit="(value) => onSliderCommit(param.path, value)"
-                                @reset="onSliderReset(param.path)"
-                            />
-                            <DevelopSliderControl
-                                v-for="param in gradingCommonParams()"
                                 :key="param.path"
                                 v-bind="sliderProps(param)"
                                 @live="(value) => onSliderLive(param.path, value)"
@@ -472,6 +422,8 @@ onBeforeUnmount(() => {
                     </template>
                 </div>
             </DevelopSection>
+            <ColorBalancePanel v-if="section.id === 'color'" />
+            </template>
 
             <!-- Local masks (lap-78d): native brush/linear/radial tools;
                  gestures run on the central preview overlay -->

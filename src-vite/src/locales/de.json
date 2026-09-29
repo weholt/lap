@@ -1618,6 +1618,20 @@
     }
   },
   "develop": {
+    "colorBalance": {
+      "title": "Farbbalance",
+      "global": "Master",
+      "threeWay": "3-Wege",
+      "shadows": "Schatten",
+      "midtones": "Mitteltöne",
+      "highlights": "Lichter",
+      "tint": "Farbton",
+      "resetAll": "Farbbalance zurücksetzen",
+      "resetZone": "{zone} zurücksetzen",
+      "help": "Ziehen zum Einfärben. Ring: Farbton. Links: Sättigung. Rechts: Helligkeit. Pfeiltasten zur Feinabstimmung; Doppelklick in die Mitte neutralisiert.",
+      "tonalRanges": "Tonwertbereiche",
+      "bypassed": "Der Abschnitt Farbe ist deaktiviert."
+    },
     "rollbackNotice": "Die Entwicklungs-Funktion ist per Rollback deaktiviert. Gespeicherte Sidecars, frühere Revisionen, Ressourcen und der Katalog bleiben erhalten; kein Rezept wird in Ihre Originaldateien geschrieben. Deaktivieren Sie den Rollback-Schalter, um die Bearbeitung fortzusetzen.",
     "title": "Entwickeln",
     "exposure": "Belichtung",

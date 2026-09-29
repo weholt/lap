@@ -5187,7 +5187,7 @@ checksum = "ca45419789ae5a7899559e9512e58ca889e41f04f1f2445e9f4b290ceccd1d08"
 [[package]]
 name = "rapidraw-develop"
 version = "0.1.0"
-source = "git+file:///C:/Users/Thomas/Desktop/RapidRAW-engine?rev=de4fdbd76723c76145b477a2b8874226512475f1#de4fdbd76723c76145b477a2b8874226512475f1"
+source = "git+file:///C:/Users/Thomas/Desktop/RapidRAW-engine?rev=e754dea8f0ecefc85da7f518ed412567576d85bf#e754dea8f0ecefc85da7f518ed412567576d85bf"
 dependencies = [
  "bytemuck",
  "fuzzy-matcher",
@@ -5208,7 +5208,7 @@ dependencies = [
 [[package]]
 name = "rapidraw-edit-model"
 version = "0.1.0"
-source = "git+file:///C:/Users/Thomas/Desktop/RapidRAW-engine?rev=de4fdbd76723c76145b477a2b8874226512475f1#de4fdbd76723c76145b477a2b8874226512475f1"
+source = "git+file:///C:/Users/Thomas/Desktop/RapidRAW-engine?rev=e754dea8f0ecefc85da7f518ed412567576d85bf#e754dea8f0ecefc85da7f518ed412567576d85bf"
 dependencies = [
  "hex",
  "serde",

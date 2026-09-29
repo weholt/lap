@@ -443,8 +443,9 @@ describe('DevelopPanel', () => {
         const editor = useDevelopEditor();
         await expandSection(wrapper, 'color');
 
+        await expandSection(wrapper, 'color-balance');
         await wrapper.get('[data-testid="develop-grading-zone-shadows"]').trigger('click');
-        await wrapper.get('[data-testid="develop-slider-grading-shadows-saturation"]').setValue('30');
+        await wrapper.get('[data-testid="develop-input-grading-shadows-saturation"]').setValue('30');
         expect(editor.recipe.value?.colorGrading.shadows.saturation).toBe(30);
 
         await wrapper.get('[data-testid="develop-slider-grading-balance"]').setValue('-20');
@@ -453,6 +454,57 @@ describe('DevelopPanel', () => {
         await wrapper.get('[data-testid="develop-slider-calibration-redHue"]').setValue('-10');
         expect(editor.recipe.value?.colorCalibration.redHue).toBe(-10);
         expect(editor.historySize.value).toBe(3);
+    });
+
+    it('keeps 3-Way and individual wheels synchronized, saves full hues and undoes each drag atomically', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        await expandSection(wrapper, 'color-balance');
+        await wrapper.get('[data-testid="develop-grading-zone-threeWay"]').trigger('click');
+        expect(wrapper.findAll('[data-testid^="develop-balance-wheel-"]')).toHaveLength(3);
+        const wheel = wrapper.findAllComponents({ name: 'ColorBalanceWheel' })[0];
+        wheel.vm.$emit('live', { hue: 180, saturation: 20, luminance: 4 });
+        wheel.vm.$emit('live', { hue: 240, saturation: 40, luminance: 4 });
+        wheel.vm.$emit('settle');
+        await flushPromises();
+        expect(editor.historySize.value).toBe(1);
+        expect(editor.recipe.value?.colorGrading.shadows).toEqual({ hue: 240, saturation: 40, luminance: 4 });
+        expect(editor.recipe.value?.colorGrading.global).toEqual(DEFAULT_RECIPE.colorGrading.global);
+        await wrapper.get('[data-testid="develop-grading-zone-shadows"]').trigger('click');
+        expect((wrapper.get('[data-testid="develop-input-grading-shadows-hue"]').element as HTMLInputElement).value).toBe('240');
+        editor.undo();
+        await flushPromises();
+        expect(editor.recipe.value?.colorGrading.shadows).toEqual(DEFAULT_RECIPE.colorGrading.shadows);
+        editor.redo();
+        await flushPromises();
+        invokeMock.mockResolvedValueOnce({ revision: 1 });
+        expect(await editor.flush()).toBe(true);
+        const commit = invokeMock.mock.calls.filter(([command]) => command === 'develop_commit_recipe').at(-1);
+        expect(commit?.[1].envelope.recipe.colorGrading.shadows).toEqual({ hue: 240, saturation: 40, luminance: 4 });
+        await wrapper.get('[data-testid="develop-balance-reset-shadows"]').trigger('click');
+        expect(editor.recipe.value?.colorGrading.shadows).toEqual(DEFAULT_RECIPE.colorGrading.shadows);
+        expect(editor.historySize.value).toBe(2);
+        editor.undo();
+        expect(editor.recipe.value?.colorGrading.shadows.hue).toBe(240);
+        wrapper.unmount();
+    });
+
+    it('exposes localized Color Balance labels and retains legacy values without edits', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        editor.applyRecipePatch({ colorGrading: { ...DEFAULT_RECIPE.colorGrading, global: { hue: -60, saturation: -20, luminance: 8 } } }, 'legacy fixture');
+        await expandSection(wrapper, 'color-balance');
+        expect((wrapper.get('[data-testid="develop-input-grading-global-hue"]').element as HTMLInputElement).value).toBe('300');
+        expect(wrapper.get('[data-testid="develop-input-grading-global-luminance"]').attributes('disabled')).toBeDefined();
+        await wrapper.get('[data-testid="develop-grading-zone-threeWay"]').trigger('click');
+        expect(editor.recipe.value?.colorGrading.global).toEqual({ hue: -60, saturation: -20, luminance: 8 });
+        for (const messages of Object.values(LOCALE_MESSAGES)) {
+            const labels = (messages.develop as any).colorBalance;
+            for (const key of ['title', 'global', 'threeWay', 'shadows', 'midtones', 'highlights', 'resetAll', 'resetZone', 'help', 'tonalRanges', 'bypassed']) {
+                expect(typeof labels[key]).toBe('string');
+            }
+        }
+        wrapper.unmount();
     });
 
     it('changes the tone mapper through the localized select', async () => {

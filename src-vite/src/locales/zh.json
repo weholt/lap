@@ -1618,6 +1618,20 @@
     }
   },
   "develop": {
+    "colorBalance": {
+      "title": "色彩平衡",
+      "global": "主控",
+      "threeWay": "三向",
+      "shadows": "阴影",
+      "midtones": "中间调",
+      "highlights": "高光",
+      "tint": "色调",
+      "resetAll": "重置色彩平衡",
+      "resetZone": "重置{zone}",
+      "help": "拖动调整色调。圆环：色相。左侧：饱和度。右侧：亮度。方向键微调；双击中心恢复中性色。",
+      "tonalRanges": "色调范围",
+      "bypassed": "颜色区域已停用。"
+    },
     "rollbackNotice": "开发功能已因回滚而停用。已保存的 sidecar、历史版本、资源和目录均会保留；任何配方都不会写入原始文件。请关闭回滚开关以继续编辑。",
     "title": "显影",
     "exposure": "曝光",

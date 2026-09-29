@@ -1618,6 +1618,20 @@
     }
   },
   "develop": {
+    "colorBalance": {
+      "title": "Equilíbrio de cores",
+      "global": "Mestre",
+      "threeWay": "3 vias",
+      "shadows": "Sombras",
+      "midtones": "Tons médios",
+      "highlights": "Realces",
+      "tint": "Tonalidade",
+      "resetAll": "Redefinir equilíbrio de cores",
+      "resetZone": "Redefinir {zone}",
+      "help": "Arraste para colorir. Anel: matiz. Esquerda: saturação. Direita: luminosidade. Setas para ajustar; clique duplo no centro para neutralizar.",
+      "tonalRanges": "Faixas tonais",
+      "bypassed": "A seção Cor está desativada."
+    },
     "rollbackNotice": "A revelação está desativada por rollback. Os sidecars guardados, as revisões anteriores, os recursos e o catálogo são mantidos; nenhuma receita é gravada nos ficheiros originais. Desative o interruptor de rollback para retomar a edição.",
     "title": "Revelar",
     "exposure": "Exposição",

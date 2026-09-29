@@ -1618,6 +1618,20 @@
     }
   },
   "develop": {
+    "colorBalance": {
+      "title": "Color Balance",
+      "global": "Master",
+      "threeWay": "3-Way",
+      "shadows": "Shadow",
+      "midtones": "Midtone",
+      "highlights": "Highlight",
+      "tint": "Tint",
+      "resetAll": "Reset Color Balance",
+      "resetZone": "Reset {zone}",
+      "help": "Drag to tint. Rim: hue. Left: saturation. Right: lightness. Arrow keys fine-tune; double-click the center to neutralize.",
+      "tonalRanges": "Tonal ranges",
+      "bypassed": "The Color section is bypassed."
+    },
     "rollbackNotice": "Develop editing is rolled back. Committed sidecars, previous revisions, resources and the catalog are retained; no recipe is written into your original files. Disable the rollback switch to resume editing.",
     "title": "Develop",
     "exposure": "Exposure",

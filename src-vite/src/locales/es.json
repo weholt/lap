@@ -1618,6 +1618,20 @@
     }
   },
   "develop": {
+    "colorBalance": {
+      "title": "Balance de color",
+      "global": "Maestro",
+      "threeWay": "3 vías",
+      "shadows": "Sombras",
+      "midtones": "Tonos medios",
+      "highlights": "Luces",
+      "tint": "Tinte",
+      "resetAll": "Restablecer balance de color",
+      "resetZone": "Restablecer {zone}",
+      "help": "Arrastra para teñir. Anillo: tono. Izquierda: saturación. Derecha: luminosidad. Flechas para afinar; doble clic en el centro para neutralizar.",
+      "tonalRanges": "Rangos tonales",
+      "bypassed": "La sección Color está desactivada."
+    },
     "rollbackNotice": "El revelado está desactivado por rollback. Los sidecars guardados, las revisiones anteriores, los recursos y el catálogo se conservan; ninguna receta se escribe en los archivos originales. Desactive el interruptor de rollback para continuar la edición.",
     "title": "Revelar",
     "exposure": "Exposición",

@@ -29,7 +29,7 @@
 /// `docs/raw-development/engine-lock.json` (`engine.revision`) and the
 /// `rev=` recorded for both engine crates in `src-tauri/Cargo.lock`
 /// (enforced by `cargo_lock_pins_engine_revision`).
-pub const ENGINE_GIT_REVISION: &str = "de4fdbd76723c76145b477a2b8874226512475f1";
+pub const ENGINE_GIT_REVISION: &str = "e754dea8f0ecefc85da7f518ed412567576d85bf";
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;

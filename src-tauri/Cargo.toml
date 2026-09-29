@@ -36,8 +36,8 @@ opt-level = 3
 # TASK-205/lap-517, consumed by lap-a52/TASK-302). Cargo records the exact
 # rev in Cargo.lock; reproduce locally per that lock's `localReproduction`
 # steps. This task also validates `cargo_lock_pins_engine_revision`.
-rapidraw-edit-model = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "de4fdbd76723c76145b477a2b8874226512475f1" }
-rapidraw-develop = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "de4fdbd76723c76145b477a2b8874226512475f1" }
+rapidraw-edit-model = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "e754dea8f0ecefc85da7f518ed412567576d85bf" }
+rapidraw-develop = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "e754dea8f0ecefc85da7f518ed412567576d85bf" }
 tauri = { version = "2", features = [
     "macos-private-api",
     "protocol-asset",
