@@ -1677,7 +1677,7 @@
       "sharpening": "Schärfen und Rauschen",
       "chromaticAberration": "Farbsäume",
       "grain": "Korn",
-      "vignette": "Vignette",
+      "vignette": "Bisherige Vignette",
       "light": "Leuchten"
     },
     "controls": {
@@ -1779,6 +1779,14 @@
       "cropRemove": "Zuschnitt entfernen",
       "cropAria": "Zuschnittrahmen: Rahmen oder Griffe ziehen, Pfeiltasten verschieben, Enter bestätigt, Escape bricht ab",
       "cropHint": "Rahmen ziehen, um ihn zu positionieren, Ecken ziehen, um die Größe zu ändern. Pfeiltasten verschieben (Umschalt: größere Schritte), Escape bricht ab."
+    },
+    "vignetting": {
+      "title": "Vignettierung",
+      "amount": "Stärke (EV)",
+      "method": "Methode",
+      "ellipticOnCrop": "Elliptisch im Ausschnitt",
+      "circularOnCrop": "Kreisförmig im Ausschnitt",
+      "circular": "Kreisförmig"
     },
     "levels": {
       "title": "Tonwerte",

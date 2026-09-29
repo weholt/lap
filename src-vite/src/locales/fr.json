@@ -1677,7 +1677,7 @@
       "sharpening": "Netteté et bruit",
       "chromaticAberration": "Franges chromatiques",
       "grain": "Grain",
-      "vignette": "Vignettage",
+      "vignette": "Vignette historique",
       "light": "Lumière"
     },
     "controls": {
@@ -1779,6 +1779,14 @@
       "cropRemove": "Supprimer le recadrage",
       "cropAria": "Cadre de recadrage : faites glisser le cadre ou les poignées, flèches pour déplacer, Entrée valide, Échap annule",
       "cropHint": "Faites glisser le cadre pour le positionner et ses coins pour le redimensionner. Flèches pour déplacer (Maj : pas plus grands), Échap annule un glissement."
+    },
+    "vignetting": {
+      "title": "Vignettage",
+      "amount": "Intensité (EV)",
+      "method": "Méthode",
+      "ellipticOnCrop": "Elliptique sur recadrage",
+      "circularOnCrop": "Circulaire sur recadrage",
+      "circular": "Circulaire"
     },
     "levels": {
       "title": "Niveaux",

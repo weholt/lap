@@ -25,6 +25,7 @@ import {
 import DevelopSliderControl from '@/components/develop/DevelopSliderControl.vue';
 import DevelopSection from '@/components/develop/DevelopSection.vue';
 import DevelopCurveEditor from '@/components/develop/DevelopCurveEditor.vue';
+import VignettingPanel from '@/components/develop/VignettingPanel.vue';
 import LevelsPanel from '@/components/develop/LevelsPanel.vue';
 import ColorBalancePanel from '@/components/develop/ColorBalancePanel.vue';
 import DevelopMasksSection from '@/components/develop/masks/MasksSection.vue';
@@ -425,6 +426,7 @@ onBeforeUnmount(() => {
             </DevelopSection>
             <LevelsPanel v-if="section.id === 'basic'" :pixels="histogramPixels" />
             <ColorBalancePanel v-if="section.id === 'color'" />
+            <VignettingPanel v-if="section.id === 'effects'" />
             </template>
 
             <!-- Local masks (lap-78d): native brush/linear/radial tools;

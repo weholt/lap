@@ -2,10 +2,10 @@
 //
 // The RECIPE CONTRACT section below is the generated TypeScript contract of
 // rapidraw-edit-model, copied verbatim from the pinned engine revision
-// 271c8d3ff11be4c6bec085d15ca8ea8b377c0ea4 (see
+// bce4801a6f7a8536ba90a629b7999b0133383d6b (see
 // docs/raw-development/engine-lock.json, resource
 // crates/rapidraw-edit-model/gen/recipe.ts,
-// sha256 7761181a24a80030515dae55e8ba461482da7c8a3707e0567ff616d6bccea0c5,
+// sha256 fc39ac527ae4ef841760992d5a2a9e007f22fa1f7d7f6ec4ae41812a9f93e00b,
 // verified against the committed bytes). Regenerate from the engine and
 // re-copy; do not hand-edit the generated part.
 //
@@ -29,6 +29,8 @@ export type LensCorrectionMode = 'auto' | 'manual';
 export type LensBlurShape = 'circle' | 'hexagon' | 'octagon' | 'ring';
 export type SubMaskMode = 'additive' | 'subtractive' | 'intersect';
 
+export type VignettingMethod = "ellipticOnCrop" | "circularOnCrop" | "circular";
+export interface Vignetting { enabled: boolean; amount: number; method: VignettingMethod; }
 export interface LevelsChannel { inputBlack: number; inputWhite: number; outputBlack: number; outputWhite: number; midtone: number; }
 export interface Levels { enabled: boolean; rgb: LevelsChannel; red: LevelsChannel; green: LevelsChannel; blue: LevelsChannel; }
 export interface CurvePoint { x: number; y: number; }
@@ -94,6 +96,7 @@ export interface Recipe {
   exposure: number; brightness: number; contrast: number; highlights: number; shadows: number; whites: number; blacks: number;
   toneMapper: ToneMapper;
   levels: Levels;
+  vignetting: Vignetting;
   curves: Curves; pointCurves: Curves; parametricCurve: ParametricCurve; curveMode: CurveMode;
   temperature: number; tint: number; vibrance: number; saturation: number; hue: number;
   colorGrading: ColorGrading; hsl: Hsl; colorCalibration: ColorCalibration;
@@ -388,6 +391,11 @@ export const DEFAULT_RECIPE: Recipe = {
   "grainAmount": 0.0,
   "grainSize": 25.0,
   "grainRoughness": 50.0,
+  "vignetting": {
+    "enabled": true,
+    "amount": 0.0,
+    "method": "ellipticOnCrop"
+  },
   "vignetteAmount": 0.0,
   "vignetteMidpoint": 50.0,
   "vignetteRoundness": 0.0,

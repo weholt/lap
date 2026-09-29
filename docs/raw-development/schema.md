@@ -264,3 +264,21 @@ channels are exact no-ops. This applies to preview and export. See
 [the Levels specification](levels/spec.md) for mapping, extrapolation,
 histogram semantics and UI acceptance. Older engine versions do not render
 Levels and must not be used to edit recipes containing it.
+
+
+### Vignetting (lap-9bc)
+
+Additive schema-v1 `recipe.vignetting`: `{ enabled: true, amount: 0, method: "ellipticOnCrop" }`.
+Amount is exposure in EV, finite in [-4, 4]. Methods are `ellipticOnCrop`,
+`circularOnCrop`, `circular`; unknown values are rejected. The first two use the
+cropped frame; Circular retains the full oriented-frame center and scale using
+normalized recipe.crop. The GPU input contract is an already oriented/cropped
+texture, matching Lap preview and export. Normalized crops can differ by less
+than a pixel from integer crop rounding at very small preview sizes.
+
+The independent enable flag and zero default preserve all prior recipes. The
+legacy flat Effects vignette fields keep their original rendering and UI under
+Legacy vignette. Global Reset all includes Vignetting; selective Effects
+copy/presets carry the complete block, while older payloads without it leave the
+target's Vignetting unchanged. No mask-local support. See
+[vignetting/spec.md](vignetting/spec.md) for geometry and verification criteria.

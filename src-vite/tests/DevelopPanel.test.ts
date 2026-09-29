@@ -259,6 +259,38 @@ describe('DevelopPanel', () => {
         await flushPromises();
     });
 
+    it('edits independent Vignetting with methods, atomic undo, reset and bypass', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        await wrapper.get('[data-testid="develop-section-toggle-vignetting"]').trigger('click');
+        const original = JSON.parse(JSON.stringify(editor.recipe.value));
+        const slider = wrapper.get('[data-testid="develop-slider-vignetting-amount"]');
+        (slider.element as HTMLInputElement).value = '-1'; await slider.trigger('input');
+        (slider.element as HTMLInputElement).value = '-2'; await slider.trigger('input');
+        await slider.trigger('change');
+        expect(editor.recipe.value?.vignetting.amount).toBe(-2);
+        await wrapper.get('[data-testid="develop-undo"]').trigger('click');
+        expect(editor.recipe.value?.vignetting.amount).toBe(0);
+        for (const method of ['ellipticOnCrop', 'circularOnCrop', 'circular']) {
+            await wrapper.get('[data-testid="vignetting-method"]').setValue(method);
+            expect(editor.recipe.value?.vignetting.method).toBe(method);
+        }
+        await wrapper.get('[data-testid="develop-input-vignetting-amount"]').setValue('2.5');
+        await wrapper.get('[data-testid="develop-bypass-vignetting"]').setValue(false);
+        expect(editor.recipe.value?.vignetting).toMatchObject({ amount:2.5, enabled:false, method:'circular' });
+        await editor.flush();
+        const commit = invokeMock.mock.calls.filter(([command]) => command === 'develop_commit_recipe').at(-1);
+        expect(commit?.[1].envelope.recipe.vignetting).toMatchObject({ amount:2.5, enabled:false, method:'circular' });
+        await wrapper.get('[data-testid="develop-section-reset-vignetting"]').trigger('click');
+        expect(editor.recipe.value?.vignetting).toEqual(DEFAULT_RECIPE.vignetting);
+        expect(editor.recipe.value?.vignetteAmount).toBe(original?.vignetteAmount);
+        expect(editor.recipe.value?.levels).toEqual(original?.levels);
+        await wrapper.get('[data-testid="develop-input-vignetting-amount"]').setValue('-3');
+        editor.resetAll();
+        expect(editor.recipe.value?.vignetting).toEqual(DEFAULT_RECIPE.vignetting);
+        wrapper.unmount();
+    });
+
     it('edits exposure through keyboard/numeric input and Enter', async () => {
         const wrapper = await mountPanel();
         const editor = useDevelopEditor();

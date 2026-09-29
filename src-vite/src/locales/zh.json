@@ -1677,7 +1677,7 @@
       "sharpening": "锐化与降噪",
       "chromaticAberration": "色差",
       "grain": "颗粒",
-      "vignette": "暗角",
+      "vignette": "旧版晕影",
       "light": "光效"
     },
     "controls": {
@@ -1779,6 +1779,14 @@
       "cropRemove": "移除裁剪",
       "cropAria": "裁剪框：拖动框体或手柄，方向键移动，Enter 确认，Esc 取消",
       "cropHint": "拖动框体调整位置，拖动角点调整大小。方向键移动（Shift：更大步长），Esc 取消拖动。"
+    },
+    "vignetting": {
+      "title": "晕影",
+      "amount": "强度 (EV)",
+      "method": "方法",
+      "ellipticOnCrop": "裁剪区域椭圆",
+      "circularOnCrop": "裁剪区域圆形",
+      "circular": "圆形"
     },
     "levels": {
       "title": "色阶",

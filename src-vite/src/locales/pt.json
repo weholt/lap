@@ -1677,7 +1677,7 @@
       "sharpening": "Nitidez e ruído",
       "chromaticAberration": "Aberração cromática",
       "grain": "Granulado",
-      "vignette": "Vinheta",
+      "vignette": "Vinheta anterior",
       "light": "Luz"
     },
     "controls": {
@@ -1779,6 +1779,14 @@
       "cropRemove": "Remover recorte",
       "cropAria": "Moldura de recorte: arraste a moldura ou as alças, setas para mover, Enter confirma, Esc cancela",
       "cropHint": "Arraste a moldura para posicionar e os cantos para redimensionar. Setas para mover (Shift: passos maiores), Esc cancela o arrasto."
+    },
+    "vignetting": {
+      "title": "Vinheta",
+      "amount": "Intensidade (EV)",
+      "method": "Método",
+      "ellipticOnCrop": "Elíptica no recorte",
+      "circularOnCrop": "Circular no recorte",
+      "circular": "Circular"
     },
     "levels": {
       "title": "Níveis",

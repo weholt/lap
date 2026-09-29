@@ -1734,7 +1734,7 @@
       "sharpening": "Sharpening & Noise",
       "chromaticAberration": "Chromatic Aberration",
       "grain": "Grain",
-      "vignette": "Vignette",
+      "vignette": "Legacy vignette",
       "light": "Glow & Flare"
     },
     "controls": {
@@ -1836,6 +1836,14 @@
       "cropRemove": "Remove crop",
       "cropAria": "Crop frame: drag the box or its handles, arrow keys move the crop, Enter confirms, Escape cancels",
       "cropHint": "Drag the box to position the crop and its corners to resize. Arrow keys move it (Shift: larger steps), Escape cancels a drag."
+    },
+    "vignetting": {
+      "title": "Vignetting",
+      "amount": "Amount (EV)",
+      "method": "Method",
+      "ellipticOnCrop": "Elliptic on Crop",
+      "circularOnCrop": "Circular on Crop",
+      "circular": "Circular"
     },
     "levels": {
       "title": "Levels",

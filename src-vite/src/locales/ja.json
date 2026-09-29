@@ -1677,7 +1677,7 @@
       "sharpening": "シャープニングとノイズ",
       "chromaticAberration": "色収差",
       "grain": "グレイン",
-      "vignette": "周辺減光",
+      "vignette": "従来のビネット",
       "light": "光の演出"
     },
     "controls": {
@@ -1779,6 +1779,14 @@
       "cropRemove": "トリミングを解除",
       "cropAria": "トリミング枠: 枠またはハンドルをドラッグ、矢印キーで移動、Enterで確定、Escでキャンセル",
       "cropHint": "枠をドラッグして位置を、角をドラッグしてサイズを調整します。矢印キーで移動（Shiftで大きく）、Escでドラッグをキャンセル。"
+    },
+    "vignetting": {
+      "title": "周辺光量",
+      "amount": "量 (EV)",
+      "method": "方式",
+      "ellipticOnCrop": "切り抜きに合わせた楕円",
+      "circularOnCrop": "切り抜きに合わせた円",
+      "circular": "円形"
     },
     "levels": {
       "title": "レベル",

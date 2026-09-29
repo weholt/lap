@@ -443,6 +443,7 @@ export function fullResetPatch(): Partial<Recipe> {
     // recipe render data: reset-all must restore its defaults too.
     Object.assign(patch, geometryResetPatch());
     patch.levels = structuredClone(DEFAULT_RECIPE.levels);
+    patch.vignetting = { ...DEFAULT_RECIPE.vignetting };
     return patch as Partial<Recipe>;
 }
 

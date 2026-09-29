@@ -244,3 +244,20 @@ describe('preset contract constants', () => {
         expect(PRESET_HOVER_PREVIEW_DELAY_MS).toBeLessThan(5000);
     });
 });
+
+describe('Vignetting selective copy', () => {
+    it('carries the method with the EV amount and rejects invalid imports', () => {
+        const source=recipe();
+        source.vignetting={enabled:true,amount:-2.25,method:'circularOnCrop'};
+        const payload=copySections(source,['effects']);
+        const imported=parseClipboardPayload(serializeClipboard(payload));
+        expect(imported.values.vignetting).toEqual(source.vignetting);
+        const target=recipe(); target.exposure=0.75;
+        const pasted=pasteSections(imported,target);
+        expect(pasted.vignetting).toEqual(source.vignetting);
+        expect(pasted.exposure).toBe(0.75);
+        for (const invalid of [{enabled:true,amount:5,method:'circular'}, {enabled:true,amount:1,method:'bogus'}]) {
+            expect(() => parseClipboardPayload(JSON.stringify({...payload,values:{vignetting:invalid}}))).toThrow();
+        }
+    });
+});

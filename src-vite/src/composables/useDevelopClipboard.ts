@@ -67,7 +67,7 @@ export const SECTION_FIELDS: Record<
     effects: [
         'glowAmount', 'halationAmount', 'flareAmount',
         'grainAmount', 'grainSize', 'grainRoughness',
-        'vignetteAmount', 'vignetteMidpoint', 'vignetteRoundness', 'vignetteFeather',
+        'vignetteAmount', 'vignetteMidpoint', 'vignetteRoundness', 'vignetteFeather', 'vignetting',
         'lutIntensity', 'lutIsSceneReferred', 'lutName', 'lutPath', 'lutSize',
     ],
 };
@@ -251,6 +251,13 @@ function checkColorCalibration(value: unknown): void {
 }
 
 function checkFieldValue(field: string, value: unknown): void {
+    if (field === 'vignetting') {
+        if (!isPlainObject(value)) fail('vignetting must be an object');
+        checkFiniteNumber('vignetting.amount', value.amount, -4, 4);
+        if (typeof value.enabled !== 'boolean') fail('vignetting.enabled must be a boolean');
+        if (typeof value.method !== 'string' || !['ellipticOnCrop', 'circularOnCrop', 'circular'].includes(value.method)) fail('invalid vignetting method');
+        return;
+    }
     if (field === 'toneMapper') {
         if (value !== 'basic' && value !== 'agx') fail(`toneMapper '${String(value)}' is invalid`);
         return;
