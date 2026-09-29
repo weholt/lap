@@ -141,6 +141,39 @@ describe('DevelopPanel', () => {
         vi.restoreAllMocks();
     });
 
+    it('copies to the OS clipboard, applies with one Undo, and exposes Edit Selected', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        let clipboard = '';
+        invokeMock.mockImplementation(async (cmd: string, args: any) => {
+            if (cmd === 'develop_write_adjustment_clipboard') { clipboard = args.text; return; }
+            if (cmd === 'develop_read_adjustment_clipboard') return clipboard;
+            return [];
+        });
+        editor.setParam('exposure', 1.25);
+        await wrapper.get('[data-testid="develop-copy-adjustments"]').trigger('click');
+        await flushPromises();
+        expect(JSON.parse(clipboard).values.exposure).toBe(1.25);
+        editor.setParam('exposure', -0.5);
+        await wrapper.get('[data-testid="develop-apply-adjustments"]').trigger('click');
+        await flushPromises();
+        expect(editor.recipe.value?.exposure).toBe(1.25);
+        editor.undo();
+        expect(editor.recipe.value?.exposure).toBe(-0.5);
+        await wrapper.setProps({ selectedAssetIds: [7, 8] } as any);
+        const toggle = wrapper.get('[data-testid="develop-edit-selected"]');
+        await toggle.trigger('click');
+        expect(toggle.attributes('aria-pressed')).toBe('true');
+        expect(toggle.text()).toContain('2');
+        await toggle.trigger('click');
+        clipboard = 'not a recipe';
+        await wrapper.get('[data-testid="develop-apply-adjustments"]').trigger('click');
+        await flushPromises();
+        expect(editor.recipe.value?.exposure).toBe(-0.5);
+        expect(wrapper.get('[data-testid="develop-adjustment-error"]').text()).toBeTruthy();
+        wrapper.unmount();
+    });
+
     it('edits independent Levels with atomic undo and channel reset', async () => {
         const wrapper = await mountPanel();
         const editor = useDevelopEditor();

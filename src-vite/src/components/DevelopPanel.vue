@@ -25,6 +25,7 @@ import {
 import DevelopSliderControl from '@/components/develop/DevelopSliderControl.vue';
 import DevelopSection from '@/components/develop/DevelopSection.vue';
 import DevelopCurveEditor from '@/components/develop/DevelopCurveEditor.vue';
+import AdjustmentActions from '@/components/develop/AdjustmentActions.vue';
 import VignettingPanel from '@/components/develop/VignettingPanel.vue';
 import LevelsPanel from '@/components/develop/LevelsPanel.vue';
 import ColorBalancePanel from '@/components/develop/ColorBalancePanel.vue';
@@ -54,6 +55,7 @@ import { IconClose } from '@/common/icons';
 
 const props = defineProps<{
     file: Record<string, any> | null;
+    selectedAssetIds?: number[];
 }>();
 
 const emit = defineEmits<{
@@ -62,6 +64,8 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const develop = useDevelopEditor();
+watch(() => props.selectedAssetIds ?? (props.file?.id ? [Number(props.file.id)] : []),
+    ids => develop.selection.setSelection(ids), { immediate: true });
 
 /**
  * Non-destructive rollback switch (lap-63f): while enabled (or while the
@@ -255,6 +259,7 @@ watch(
 );
 
 onBeforeUnmount(() => {
+    develop.selection.enabled.value = false;
     // Awaited commits happen through the panel-mode switching paths; the
     // composable keeps per-asset state if this panel unmounts unexpectedly.
     void develop.flush().catch(() => {});
@@ -304,6 +309,8 @@ onBeforeUnmount(() => {
                 />
             </div>
         </div>
+
+        <AdjustmentActions v-if="file && !rollbackEngaged" />
 
         <div v-if="file" class="mb-2 px-2 flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-1">
             <!-- Rollback engaged (lap-63f): the entry point is disabled; the

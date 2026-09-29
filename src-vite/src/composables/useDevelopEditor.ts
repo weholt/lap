@@ -1,3 +1,6 @@
+import { createDevelopSelection } from './useDevelopSelection';
+import { copySections, pasteSections, parseClipboardPayload } from './useDevelopClipboard';
+import type { DevelopClipboardPayload } from './useDevelopClipboard.types';
 import { computed, ref, shallowRef } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -23,6 +26,7 @@ import {
     type Recipe,
     type SectionId,
     type ToneMapper,
+    CANONICAL_SECTION_ORDER,
     DEFAULT_RECIPE,
     RECIPE_PARAM_RANGES,
 } from './useDevelopSession.types';
@@ -97,6 +101,9 @@ export async function isDevelopedAssetFile(sourcePath: string): Promise<boolean>
 }
 
 export interface DevelopEditor {
+    selection: ReturnType<typeof createDevelopSelection>;
+    copyAdjustments(): DevelopClipboardPayload;
+    applyAdjustments(payload: DevelopClipboardPayload): void;
     activeFileId: ReturnType<typeof ref<number | null>>;
     recipe: ReturnType<typeof shallowRef<Recipe | null>>;
     dirty: { value: boolean };
@@ -191,6 +198,7 @@ function createDevelopEditor(): DevelopEditor {
     const uiStore = useUIStore();
     const session = useDevelopSession();
     const history = useDevelopHistory();
+    const selection = createDevelopSelection(id => hasDirtyStateFor(id));
 
     const activeFileId = ref<number | null>(null);
     const recipe = shallowRef<Recipe | null>(null);
@@ -351,6 +359,9 @@ function createDevelopEditor(): DevelopEditor {
         if (activeFileId.value === assetId && session.session.value) return;
 
         openError.value = null;
+        endEditTransaction();
+        if (selection.pending.value) await selection.idle();
+        selection.clearHistory();
         // Awaited commit on navigation. An explicitly failed commit is not
         // retried automatically: it is retained per asset for retry instead.
         await flush();
@@ -484,7 +495,7 @@ function createDevelopEditor(): DevelopEditor {
         const wasOpen = history.activeLabel.value !== null;
         setParamLive(field, value);
         if (!wasOpen) {
-            history.endTransaction();
+            endEditTransaction();
         }
     }
 
@@ -690,30 +701,70 @@ function createDevelopEditor(): DevelopEditor {
         history.beginTransaction(label);
     }
 
-    function endEditTransaction() {
-        history.endTransaction();
+    function copyAdjustments(): DevelopClipboardPayload {
+        if (!recipe.value) throw new Error('no active image');
+        const envelope = (session.session.value?.envelope ?? {}) as {resources?: any};
+        if (recipe.value.lutPath && !recipe.value.lutPath.startsWith('resource://lut/')) {
+            throw new Error('Import this LUT into the resource library before copying adjustments');
+        }
+        return parseClipboardPayload(copySections(recipe.value, CANONICAL_SECTION_ORDER, {resources: (pendingEnvelopePatch?.resources as any) ?? envelope.resources}));
+    }
+
+    function applyAdjustments(payload: DevelopClipboardPayload) {
+        if (!recipe.value) return;
+        const checked = parseClipboardPayload(payload);
+        endEditTransaction();
+        if (checked.resources) {
+            const current = session.session.value?.envelope.resources ?? {};
+            pendingEnvelopePatch = {...pendingEnvelopePatch, resources: {...current, ...(pendingEnvelopePatch?.resources as object ?? {}), ...checked.resources}};
+        }
+        const next = pasteSections(checked, recipe.value);
+        const unchanged = JSON.stringify(next) === JSON.stringify(recipe.value);
+        beginEditTransaction('apply adjustments');
+        history.record(next);
+        if (!unchanged) afterRecipeReplaced(next);
+        // Applying the same clipboard is still meaningful for selected targets.
+        endEditTransaction(selection.enabled.value);
+        if (pendingEnvelopePatch) { markDirty(true); setSaveState('pending'); scheduleCommit(); }
+    }
+
+    function notifySelection(kind: 'edit' | 'undo' | 'redo', id: number) {
+        if (!activeFileId.value || !recipe.value) return;
+        try { selection.changed({kind, id, assetId: activeFileId.value, payload: copyAdjustments()}); }
+        catch (error) {
+            if (selection.enabled.value) { selection.errors.value = [String(error)]; selection.enabled.value = false; }
+        }
+    }
+
+    function endEditTransaction(force = false) {
+        if (history.endTransaction(force)) notifySelection('edit', history.currentId.value);
     }
 
     function undo(): boolean {
         if (!recipe.value) return false;
         // Close any open gesture first so undo never interleaves with it.
-        history.endTransaction();
+        endEditTransaction();
+        const id = history.currentId.value;
         const restored = history.undo();
         if (!restored) return false;
         afterRecipeReplaced(restored);
+        notifySelection('undo', id);
         return true;
     }
 
     function redo(): boolean {
         if (!recipe.value) return false;
-        history.endTransaction();
+        endEditTransaction();
         const restored = history.redo();
         if (!restored) return false;
         afterRecipeReplaced(restored);
+        notifySelection('redo', history.currentId.value);
         return true;
     }
 
     async function flush(options: { autoRetry?: boolean } = {}): Promise<boolean> {
+        endEditTransaction();
+        if (selection.pending.value) await selection.idle();
         clearTimers();
         if (commitInFlight) {
             const settled = await commitInFlight;
@@ -834,6 +885,9 @@ function createDevelopEditor(): DevelopEditor {
     }
 
     return {
+        selection,
+        copyAdjustments,
+        applyAdjustments,
         activeFileId,
         recipe,
         dirty: computed(() => uiStore.developEditor.dirty),

@@ -3,7 +3,7 @@
 // schema rules in docs/raw-development/schema.md).
 //
 // A clipboard/preset payload carries ONLY validated, portable recipe values:
-//   - the explicitly selected adjustment sections, nothing else;
+//   - explicitly selected global adjustments and their bypass flags;
 //   - never source-specific geometry (crop/orientation/transform) or
 //     per-source lens data;
 //   - never asset identity (assetId/variantId/revisions/fingerprints);

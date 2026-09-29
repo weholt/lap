@@ -5182,6 +5182,102 @@ pub async fn develop_delete_variant(asset_id: i64, variant_id: String) -> Result
     .map_err(|e| format!("develop delete-variant task failed: {e}"))?
 }
 
+/// Explicit Copy/Apply gestures only; no clipboard polling or background reads.
+#[tauri::command]
+pub async fn develop_write_adjustment_clipboard(text: String) -> Result<(), String> {
+    lap_lib::develop::adjustments::AdjustmentPayload::parse(&text)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        arboard::Clipboard::new()
+            .map_err(|e| e.to_string())?
+            .set_text(text)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn develop_read_adjustment_clipboard() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let text = arboard::Clipboard::new()
+            .map_err(|e| e.to_string())?
+            .get_text()
+            .map_err(|e| e.to_string())?;
+        lap_lib::develop::adjustments::AdjustmentPayload::parse(&text)?;
+        Ok(text)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppliedAdjustmentsDto {
+    before: lap_lib::develop::adjustments::AdjustmentPayload,
+    revision: u64,
+}
+
+/// A group's targets are processed sequentially by the editor. Apply only portable
+/// settings to the target's durable envelope, preserving geometry/decode/identity.
+#[tauri::command]
+pub async fn develop_apply_adjustments(
+    state: tauri::State<'_, DevelopAppState>,
+    app_handle: tauri::AppHandle,
+    asset_id: i64,
+    payload: serde_json::Value,
+    expected_revision: Option<u64>,
+) -> Result<AppliedAdjustmentsDto, String> {
+    develop_ensure_editing_available()?;
+    let payload = lap_lib::develop::adjustments::AdjustmentPayload::parse(&payload.to_string())?;
+    if let Some(serde_json::Value::String(uri)) = payload.values.get("lutPath") {
+        let id = uri
+            .strip_prefix("resource://")
+            .ok_or("invalid LUT reference")?;
+        require_resource_store(&state)?
+            .load_lut(id)
+            .map_err(|e| e.to_string())?;
+    }
+    let applied = tauri::async_runtime::spawn_blocking(move || {
+        let source = develop_asset_source_path(asset_id)?;
+        let file = AFile::get_file_info(asset_id)?.ok_or("asset not found")?;
+        if !matches!(file.file_type, Some(1 | 3)) {
+            return Err("selected asset is not an image".to_string());
+        }
+        let conn = t_sqlite::open_conn().map_err(|e| e.to_string())?;
+        lap_lib::develop::adjustments::apply_to_asset(
+            &DevelopRecipeRepository::lap_default(),
+            Some(&conn),
+            &source,
+            &asset_id.to_string(),
+            &payload,
+            expected_revision,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let receipt = lap_lib::develop::sessions::CommitReceiptDto {
+        session_id: 0,
+        revision: applied.receipt.revision,
+        content_hash: Some(applied.receipt.content_hash),
+        sidecar_path: Some(applied.receipt.sidecar_path),
+        projection_applied: applied.receipt.projection_applied,
+        projection_error: applied.receipt.projection_error,
+    };
+    acknowledge_commit_side_effects(
+        &app_handle,
+        state.service(),
+        state.inner(),
+        &asset_id.to_string(),
+        "default",
+        &applied.fingerprint,
+        &receipt,
+    );
+    Ok(AppliedAdjustmentsDto {
+        before: applied.before,
+        revision: receipt.revision,
+    })
+}
+
 /// One batch recipe application request from the frontend.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -116,7 +116,7 @@ describe('useDevelopHistory', () => {
         expect(history.undo()).toEqual(recipeWith({ exposure: 0.5 }));
     });
 
-    it(`caps the stack at ${DEVELOP_HISTORY_LIMIT} entries and keeps the base reachable`, () => {
+    it(`caps the stack at ${DEVELOP_HISTORY_LIMIT} entries and advances the base with evicted entries`, () => {
         const history = useDevelopHistory();
         history.initialize(recipeWith({}));
 
@@ -133,8 +133,8 @@ describe('useDevelopHistory', () => {
         }
         // The 49th undo restores the oldest surviving transaction's state.
         expect(history.undo()).toEqual(recipeWith({ exposure: 11 * 0.01 }));
-        // The 50th undo steps onto the pre-transaction base state.
-        expect(history.undo()).toEqual(recipeWith({}));
+        // The 50th undo restores the state immediately before the retained history.
+        expect(history.undo()).toEqual(recipeWith({ exposure: 10 * 0.01 }));
         expect(history.canUndo.value).toBe(false);
     });
 

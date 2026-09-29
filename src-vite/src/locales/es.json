@@ -1618,6 +1618,20 @@
     }
   },
   "develop": {
+        "actions": {
+            "copy": "Copy",
+            "apply": "Apply",
+            "editSelected": "Edit Selected",
+            "copyHint": "Copy all global adjustments to the clipboard, including Levels, Color Balance and Vignetting. Crop, masks and lens profiles stay with each image.",
+            "applyHint": "Apply clipboard adjustments to the current image. With Edit Selected enabled, apply to the selected images too.",
+            "selectedHint": "Select 2–256 images with Ctrl/Shift or selection mode. When enabled, completed edits apply the current global settings to every selected image.",
+            "copied": "Adjustments copied",
+            "applied": "Adjustments applied",
+            "active": "Editing {count} selected images",
+            "progress": "Applying {done}/{total} · {pending} pending",
+            "failed": "Some images could not be updated. Edit Selected is now off.",
+            "changedImage": "The active image changed while reading the clipboard. Apply again."
+        },
     "colorBalance": {
       "title": "Balance de color",
       "global": "Maestro",

@@ -1,3 +1,4 @@
+pub mod adjustments;
 pub mod asset_operations;
 pub mod batch;
 pub mod cache;

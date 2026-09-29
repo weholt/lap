@@ -69,7 +69,7 @@ describe('copySections', () => {
         expect(payload.values).not.toHaveProperty('lensMaker');
         expect(payload.values).not.toHaveProperty('lensDistortionParams');
         expect(payload.values).not.toHaveProperty('masks');
-        expect(payload.values).not.toHaveProperty('sectionVisibility');
+        expect(payload.values.sectionVisibility).toEqual(source.sectionVisibility);
     });
 
     it('keeps portable resource URIs but strips machine-local LUT paths', () => {
@@ -259,5 +259,34 @@ describe('Vignetting selective copy', () => {
         for (const invalid of [{enabled:true,amount:5,method:'circular'}, {enabled:true,amount:1,method:'bogus'}]) {
             expect(() => parseClipboardPayload(JSON.stringify({...payload,values:{vignetting:invalid}}))).toThrow();
         }
+    });
+});
+
+
+describe('complete portable adjustment clipboard (lap-ffb)', () => {
+    it('round-trips Levels, full-circle grading and bypass without copying geometry', () => {
+        const source = recipe();
+        source.levels.rgb.inputBlack = 24;
+        source.colorGrading.shadows.hue = 275;
+        source.sectionVisibility.basic = false;
+        source.crop = { x: 0.1, y: 0.2, width: 0.7, height: 0.6 } as any;
+        const payload = parseClipboardPayload(serializeClipboard(copySections(source, ['basic', 'curves', 'color', 'details', 'effects'])));
+        const target = recipe();
+        const pasted = pasteSections(payload, target);
+        expect(pasted.levels).toEqual(source.levels);
+        expect(pasted.colorGrading.shadows.hue).toBe(275);
+        expect(pasted.sectionVisibility.basic).toBe(false);
+        expect(pasted.crop).toEqual(target.crop);
+    });
+    it('clears a target LUT when the copied source has none and preserves unrelated bypass flags', () => {
+        const source = recipe();
+        source.sectionVisibility.basic = false;
+        const target = recipe();
+        target.sectionVisibility.color = false;
+        target.lutPath = 'resource://lut/' + 'a'.repeat(64);
+        const light = parseClipboardPayload(serializeClipboard(copySections(source, ['basic'])));
+        expect(pasteSections(light, target).sectionVisibility).toMatchObject({basic:false, color:false});
+        const effects = parseClipboardPayload(serializeClipboard(copySections(source, ['effects'])));
+        expect(pasteSections(effects, target).lutPath).toBeNull();
     });
 });

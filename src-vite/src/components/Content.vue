@@ -542,6 +542,7 @@
             v-else-if="rightPanelContent === 'develop'"
             ref="developPanelRef"
             :file="fileList[selectedItemIndex] ?? null"
+            :selected-asset-ids="developSelectedAssetIds"
             @close="checkUnsavedChanges(() => config.rightPanel.show = false)"
           />
         </div>
@@ -1063,6 +1064,10 @@ const setItemSelected = (index: number, selected: boolean) => {
 };
 const getActionableSelectedItems = () =>
   fileList.value.filter(item => isRealFileItem(item) && (item.isSelected || selectedFileIds.has(Number(item.id))));
+const developSelectedAssetIds = computed(() => {
+  selectedFilesVersion.value;
+  return selectMode.value ? Array.from(selectedFileIds) : [Number(fileList.value[selectedItemIndex.value]?.id || 0)].filter(id => id > 0);
+});
 const selectedFiles = computed(() => {
   selectedFilesVersion.value;
   return selectMode.value ? getActionableSelectedItems() : [];
@@ -2007,6 +2012,7 @@ const isDedupPanelOpen = computed(() => config.rightPanel.show && config.rightPa
 const isInfoPanelOpen = computed(() => config.rightPanel.show && config.rightPanel.mode === 'info');
 const isDevelopPanelOpen = computed(() => config.rightPanel.show && config.rightPanel.mode === 'develop');
 const rightPanelContent = computed<'selection' | 'dedup' | 'info' | 'develop' | null>(() => {
+  if (isDevelopPanelOpen.value) return 'develop';
   if (selectMode.value) return 'selection';
   if (!config.rightPanel.show) return null;
   if (config.rightPanel.mode === 'develop') return 'develop';
@@ -2156,7 +2162,7 @@ void developRollback.refresh().catch(() => {
 // compatibility").
 const checkUnsavedChanges = async (action: () => void) => {
   const currentFile = fileList.value[selectedItemIndex.value];
-  if (currentFile && developEditor.hasDirtyStateFor(currentFile.id)) {
+  if (currentFile && (developEditor.hasDirtyStateFor(currentFile.id) || developEditor.selection.pending.value > 0)) {
     try {
       await developEditor.flush();
     } catch {
@@ -2186,7 +2192,6 @@ const toggleDevelopPanel = () => {
       config.rightPanel.show = false;
       return;
     }
-    handleSelectMode(false);
     config.rightPanel.mode = 'develop';
     config.rightPanel.show = true;
   });
@@ -3744,7 +3749,7 @@ async function selectRangeFromSingleSelection(anchorIndex: number, targetIndex: 
   selectMode.value = true;
   showQuickView.value = false;
   stopSlideShow();
-  config.rightPanel.show = false;
+  if (!isDevelopPanelOpen.value) config.rightPanel.show = false;
 
   for (let i = start; i <= end; i++) {
     if (isRealFileItem(fileList.value[i])) {
@@ -3860,9 +3865,8 @@ async function handleGroupSelectToggled(groupRow: any, selected: boolean) {
     const ids = await getCachedGroupFileIds(groupId);
     if (!ids || ids.length === 0) return;
 
-    // Group selection enters multi-select directly, so close an active right panel
-    // just as the thumbnail selection path does.
-    config.rightPanel.show = false;
+    // Keep Develop available for Edit Selected when entering multi-select.
+    if (!isDevelopPanelOpen.value) config.rightPanel.show = false;
     selectMode.value = true;
     const idSet = new Set(ids.map(id => Number(id)).filter(id => Number.isFinite(id) && id > 0));
     const loadedById = new Map<number, number>();
@@ -9458,7 +9462,7 @@ const handleSelectMode = (value: any) => {
   } else {
     showQuickView.value = false;
     stopSlideShow();
-    config.rightPanel.show = false;
+    if (!isDevelopPanelOpen.value) config.rightPanel.show = false;
   }
 };
 

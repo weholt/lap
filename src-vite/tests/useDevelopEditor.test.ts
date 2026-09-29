@@ -86,6 +86,44 @@ async function openAssetA(editor: ReturnType<typeof useDevelopEditor>) {
 }
 
 describe('useDevelopEditor', () => {
+    it('broadcasts one completed drag and awaits target persistence before opening it', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+        let release!: () => void;
+        queueCommand('develop_apply_adjustments', new Promise(resolve => { release = () => resolve({before: editor.copyAdjustments(), revision:1}); }));
+        editor.selection.setSelection([1,2]); editor.selection.toggle();
+        editor.setParamLive('exposure', 0.5); editor.setParamLive('exposure', 1.5);
+        expect(invokeMock.mock.calls.filter(([c]) => c === 'develop_apply_adjustments')).toHaveLength(0);
+        editor.endEditTransaction();
+        await Promise.resolve();
+        const calls = invokeMock.mock.calls.filter(([c]) => c === 'develop_apply_adjustments');
+        expect(calls).toHaveLength(1);
+        expect(calls[0][1].payload.values.exposure).toBe(1.5);
+        queueCommand('develop_commit_recipe', receipt(1,1));
+        queueCommand('develop_close_edit_session', {});
+        queueCommand('develop_open_edit_session', openedSession(2,1));
+        const opening = editor.openAsset({id:2});
+        await Promise.resolve();
+        expect(editor.activeFileId.value).toBe(1);
+        release(); await opening;
+        expect(editor.activeFileId.value).toBe(2);
+    });
+
+    it('applies an unchanged clipboard to selected targets and makes it undoable', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+        const copied = editor.copyAdjustments();
+        queueCommand('develop_apply_adjustments', {before:{...copied,values:{...copied.values,exposure:2}},revision:1});
+        editor.selection.setSelection([1,2]); editor.selection.toggle();
+        editor.applyAdjustments(copied);
+        await editor.selection.idle();
+        expect(invokeMock.mock.calls.filter(([c]) => c === 'develop_apply_adjustments')).toHaveLength(1);
+        queueCommand('develop_apply_adjustments', {before:copied,revision:2});
+        expect(editor.undo()).toBe(true);
+        await editor.selection.idle();
+        expect(invokeMock.mock.calls.filter(([c]) => c === 'develop_apply_adjustments').at(-1)![1].payload.values.exposure).toBe(2);
+    });
+
     it('reports latency only for the latest input actually drawn', async () => {
         const editor = useDevelopEditor();
         await openAssetA(editor);

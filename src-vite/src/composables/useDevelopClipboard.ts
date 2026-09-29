@@ -44,15 +44,16 @@ export const PRESET_HOVER_PREVIEW_DELAY_MS = 400;
 const RESOURCE_URI_PATTERN = /^resource:\/\/lut\/[0-9a-f]{64}$/;
 
 /** Recipe fields per copyable section (schema.md "Recipe — persisted render
- * data"). Geometry, per-source lens data, lens blur, masks and bypass state
- * are deliberately absent: they are source-specific or non-portable. */
+ * data"). Geometry, per-source lens data, lens blur and masks
+ * are deliberately absent: they are source-specific or non-portable.
+ * Per-section bypass flags travel only for selected sections. */
 export const SECTION_FIELDS: Record<
     DevelopClipboardSection,
     readonly (keyof Recipe & string)[]
 > = {
     basic: [
         'exposure', 'brightness', 'contrast', 'highlights', 'shadows', 'whites', 'blacks',
-        'toneMapper',
+        'toneMapper', 'levels',
     ],
     curves: ['curves', 'pointCurves', 'parametricCurve', 'curveMode'],
     color: [
@@ -121,6 +122,8 @@ export function copySections(
         }
     }
 
+    values.sectionVisibility = Object.fromEntries(unique.map(section => [section, recipe.sectionVisibility[section]]));
+
     const resources: Record<string, ClipboardResourceRef> | undefined = isPortableLutReference(
         values.lutPath,
     )
@@ -130,7 +133,7 @@ export function copySections(
             return entry ? { [id]: clone(entry) } : undefined;
         })()
         : undefined;
-    if (!isPortableLutReference(values.lutPath)) {
+    if (values.lutPath !== null && !isPortableLutReference(values.lutPath)) {
         // Machine-local absolute/relative paths must never travel.
         delete values.lutPath;
     }
@@ -227,7 +230,11 @@ function checkColorGrading(value: unknown): void {
     checkFiniteNumber('colorGrading.balance', value.balance, -100, 100);
     checkFiniteNumber('colorGrading.blending', value.blending, 0, 100);
     for (const zone of ['global', 'shadows', 'midtones', 'highlights']) {
-        checkHueSatLum(`colorGrading.${zone}`, value[zone]);
+        const settings = value[zone];
+        if (!isPlainObject(settings)) fail(`colorGrading.${zone} must be an object`);
+        checkFiniteNumber(`colorGrading.${zone}.hue`, settings.hue, 0, 360);
+        checkFiniteNumber(`colorGrading.${zone}.saturation`, settings.saturation, 0, 100);
+        checkFiniteNumber(`colorGrading.${zone}.luminance`, settings.luminance, -100, 100);
     }
 }
 
@@ -251,6 +258,18 @@ function checkColorCalibration(value: unknown): void {
 }
 
 function checkFieldValue(field: string, value: unknown): void {
+    if (field === 'levels') {
+        if (!isPlainObject(value) || typeof value.enabled !== 'boolean') fail('invalid Levels');
+        for (const channel of ['rgb', 'red', 'green', 'blue']) {
+            const v = value[channel];
+            if (!isPlainObject(v)) fail(`invalid levels.${channel}`);
+            for (const key of ['inputBlack', 'inputWhite', 'outputBlack', 'outputWhite']) checkFiniteNumber(`levels.${channel}.${key}`, v[key], 0, 255);
+            checkFiniteNumber(`levels.${channel}.midtone`, v.midtone, -1, 1);
+            if (Number(v.inputWhite) - Number(v.inputBlack) < 1) fail('Levels input endpoints must increase');
+            if (Number(v.outputWhite) - Number(v.outputBlack) < 1) fail('Levels output endpoints must not decrease');
+        }
+        return;
+    }
     if (field === 'vignetting') {
         if (!isPlainObject(value)) fail('vignetting must be an object');
         checkFiniteNumber('vignetting.amount', value.amount, -4, 4);
@@ -357,7 +376,7 @@ export function parseClipboardPayload(
         fail(`unknown kind '${String(value.kind)}'`);
     }
     if (value.schemaVersion === undefined) fail('missing schemaVersion');
-    if (value.schemaVersion > DEVELOP_CLIPBOARD_SCHEMA_VERSION) {
+    if (typeof value.schemaVersion === 'number' && value.schemaVersion > DEVELOP_CLIPBOARD_SCHEMA_VERSION) {
         fail(
             `payload schemaVersion ${value.schemaVersion} is newer than the supported version ${DEVELOP_CLIPBOARD_SCHEMA_VERSION}`,
         );
@@ -376,10 +395,17 @@ export function parseClipboardPayload(
     }
 
     if (!isPlainObject(value.values)) fail('values must be an object');
-    const allowed = new Set(
+    const allowed = new Set<string>(
         value.sections.flatMap((section: string) => SECTION_FIELDS[section as DevelopClipboardSection]),
     );
     for (const [field, fieldValue] of Object.entries(value.values)) {
+        if (field === 'sectionVisibility') {
+            if (!isPlainObject(fieldValue)) fail('sectionVisibility must be an object');
+            for (const [section, enabled] of Object.entries(fieldValue)) {
+                if (!value.sections.includes(section) || typeof enabled !== 'boolean') fail('invalid sectionVisibility');
+            }
+            continue;
+        }
         if (!allowed.has(field)) {
             fail(
                 `field '${field}' is not part of the selected sections (source-specific geometry, per-source data and asset identity are never copyable)`,
@@ -444,6 +470,9 @@ export function pasteSections(payload: DevelopClipboardPayload, target: Recipe):
     }
     const next = clone(target);
     Object.assign(next as unknown as Record<string, unknown>, pastePatch(payload));
+    if (payload.values.sectionVisibility) {
+        next.sectionVisibility = { ...target.sectionVisibility, ...payload.values.sectionVisibility };
+    }
     return next;
 }
 

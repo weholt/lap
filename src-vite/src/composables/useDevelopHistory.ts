@@ -23,11 +23,13 @@ import { type Recipe } from './useDevelopSession.types';
 export const DEVELOP_HISTORY_LIMIT = 50;
 
 interface HistoryEntry {
+    id: number;
     label: string;
     recipe: Recipe;
 }
 
 export interface DevelopHistory {
+    currentId: Readonly<Ref<number>>;
     canUndo: Readonly<Ref<boolean>>;
     canRedo: Readonly<Ref<boolean>>;
     /** Number of committed transaction entries (diagnostics/tests). */
@@ -39,7 +41,7 @@ export interface DevelopHistory {
     /** Records the newest state of the open transaction (coalesced). */
     record(recipe: Recipe): void;
     /** Commits the pending entry; returns false for no-op transactions. */
-    endTransaction(): boolean;
+    endTransaction(force?: boolean): boolean;
     cancelTransaction(): void;
     /** Returns the state to restore, or null when nothing to undo. */
     undo(): Recipe | null;
@@ -64,6 +66,8 @@ export function useDevelopHistory(): DevelopHistory {
     // points at the present state (entries.length - 1). base is the state
     // the session started from.
     let entries: HistoryEntry[] = [];
+    let sequence = 0;
+    const currentId = ref(0);
     let base: Recipe | null = null;
     let index = -1;
     let pending: Recipe | null = null;
@@ -80,6 +84,7 @@ export function useDevelopHistory(): DevelopHistory {
     }
 
     function sync() {
+        currentId.value = index >= 0 ? entries[index].id : 0;
         canUndo.value = index >= 0;
         canRedo.value = index < entries.length - 1;
         size.value = entries.length;
@@ -112,20 +117,20 @@ export function useDevelopHistory(): DevelopHistory {
         pending = cloneRecipe(recipe);
     }
 
-    function endTransaction(): boolean {
+    function endTransaction(force = false): boolean {
         if (openLabel === null) return false;
         const label = openLabel;
         openLabel = null;
         const next = pending;
         pending = null;
         sync();
-        if (!next || sameRecipe(next, present())) {
+        if (!next || (!force && sameRecipe(next, present()))) {
             return false;
         }
         entries = entries.slice(0, index + 1);
-        entries.push({ label, recipe: next });
+        entries.push({ id: ++sequence, label, recipe: next });
         if (entries.length > DEVELOP_HISTORY_LIMIT) {
-            entries.shift();
+            base = entries.shift()!.recipe;
         }
         index = entries.length - 1;
         sync();
@@ -163,6 +168,7 @@ export function useDevelopHistory(): DevelopHistory {
     }
 
     return {
+        currentId,
         canUndo,
         canRedo,
         size,
