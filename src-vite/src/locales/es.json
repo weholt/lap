@@ -1779,6 +1779,24 @@
       "cropRemove": "Quitar recorte",
       "cropAria": "Marco de recorte: arrastra el marco o las asas, flechas para mover, Intro confirma, Esc cancela",
       "cropHint": "Arrastra el marco para colocarlo y sus esquinas para redimensionarlo. Flechas para mover (Mayús: pasos mayores), Esc cancela un arrastre."
+    },
+    "levels": {
+      "title": "Niveles",
+      "rgb": "RGB",
+      "red": "Rojo",
+      "green": "Verde",
+      "blue": "Azul",
+      "inputBlack": "Negro de entrada",
+      "inputWhite": "Blanco de entrada",
+      "outputBlack": "Negro de salida",
+      "outputWhite": "Blanco de salida",
+      "midtone": "Punto medio",
+      "enabled": "Activar niveles",
+      "bypassed": "Niveles desactivados",
+      "resetAll": "Restablecer todos los niveles",
+      "resetChannel": "Restablecer canal",
+      "histogram": "Histograma de la vista previa",
+      "waiting": "Esperando vista previa"
     }
   }
 }

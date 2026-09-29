@@ -1779,6 +1779,24 @@
       "cropRemove": "Supprimer le recadrage",
       "cropAria": "Cadre de recadrage : faites glisser le cadre ou les poignées, flèches pour déplacer, Entrée valide, Échap annule",
       "cropHint": "Faites glisser le cadre pour le positionner et ses coins pour le redimensionner. Flèches pour déplacer (Maj : pas plus grands), Échap annule un glissement."
+    },
+    "levels": {
+      "title": "Niveaux",
+      "rgb": "RVB",
+      "red": "Rouge",
+      "green": "Vert",
+      "blue": "Bleu",
+      "inputBlack": "Noir en entrée",
+      "inputWhite": "Blanc en entrée",
+      "outputBlack": "Noir en sortie",
+      "outputWhite": "Blanc en sortie",
+      "midtone": "Point médian",
+      "enabled": "Activer les niveaux",
+      "bypassed": "Niveaux désactivés",
+      "resetAll": "Réinitialiser tous les niveaux",
+      "resetChannel": "Réinitialiser le canal",
+      "histogram": "Histogramme de l’aperçu rendu",
+      "waiting": "Aperçu en attente"
     }
   }
 }

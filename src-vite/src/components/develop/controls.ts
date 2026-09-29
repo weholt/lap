@@ -442,6 +442,7 @@ export function fullResetPatch(): Partial<Recipe> {
     // Geometry (crop/orientation) has no section of its own but is still
     // recipe render data: reset-all must restore its defaults too.
     Object.assign(patch, geometryResetPatch());
+    patch.levels = structuredClone(DEFAULT_RECIPE.levels);
     return patch as Partial<Recipe>;
 }
 

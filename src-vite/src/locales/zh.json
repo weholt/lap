@@ -1779,6 +1779,24 @@
       "cropRemove": "移除裁剪",
       "cropAria": "裁剪框：拖动框体或手柄，方向键移动，Enter 确认，Esc 取消",
       "cropHint": "拖动框体调整位置，拖动角点调整大小。方向键移动（Shift：更大步长），Esc 取消拖动。"
+    },
+    "levels": {
+      "title": "色阶",
+      "rgb": "RGB",
+      "red": "红",
+      "green": "绿",
+      "blue": "蓝",
+      "inputBlack": "输入黑场",
+      "inputWhite": "输入白场",
+      "outputBlack": "输出黑场",
+      "outputWhite": "输出白场",
+      "midtone": "中间调",
+      "enabled": "启用色阶",
+      "bypassed": "色阶已禁用",
+      "resetAll": "重置所有色阶通道",
+      "resetChannel": "重置通道",
+      "histogram": "渲染预览直方图",
+      "waiting": "等待预览"
     }
   }
 }

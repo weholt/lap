@@ -244,3 +244,23 @@ and by the standalone crate build itself).
 Not claimed here: RAW decode/render parity (spec P4/A6 — needs real
 fixtures), GPU behavior, read-only-library storage behavior (later tasks),
 and any publication/distribution decision (spec P3).
+
+
+## Independent Levels (lap-fcd / rapidraw-ae7)
+
+`recipe.levels` is an additive schema-v1 object with neutral defaults for old
+recipes. It contains `enabled` (default true) and `rgb`, `red`, `green`, `blue`
+channels. Each channel has `inputBlack` / `outputBlack` default 0,
+`inputWhite` / `outputWhite` default 255, and `midtone` default 0. Endpoints
+are finite 0..255; each white endpoint must exceed its corresponding black by
+at least 1. Midtone is finite -1..1; positive brightens. Invalid values are
+rejected even when bypassed. The channel object may be partial on read;
+missing fields use neutral defaults, matching other additive recipe blocks.
+
+Levels are independent of curves and the five historical section bypasses;
+`levels.enabled` bypasses only Levels. The shared GPU pipeline applies RGB,
+then individual channels in display-referred space before curves. Neutral
+channels are exact no-ops. This applies to preview and export. See
+[the Levels specification](levels/spec.md) for mapping, extrapolation,
+histogram semantics and UI acceptance. Older engine versions do not render
+Levels and must not be used to edit recipes containing it.

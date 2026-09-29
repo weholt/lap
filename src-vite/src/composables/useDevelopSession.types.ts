@@ -2,10 +2,10 @@
 //
 // The RECIPE CONTRACT section below is the generated TypeScript contract of
 // rapidraw-edit-model, copied verbatim from the pinned engine revision
-// de4fdbd76723c76145b477a2b8874226512475f1 (see
+// 271c8d3ff11be4c6bec085d15ca8ea8b377c0ea4 (see
 // docs/raw-development/engine-lock.json, resource
 // crates/rapidraw-edit-model/gen/recipe.ts,
-// sha256 979e18db893b4302102b2912cef64d638b7bcfce4ff222ec9a116b2a85ad2318,
+// sha256 7761181a24a80030515dae55e8ba461482da7c8a3707e0567ff616d6bccea0c5,
 // verified against the committed bytes). Regenerate from the engine and
 // re-copy; do not hand-edit the generated part.
 //
@@ -29,6 +29,8 @@ export type LensCorrectionMode = 'auto' | 'manual';
 export type LensBlurShape = 'circle' | 'hexagon' | 'octagon' | 'ring';
 export type SubMaskMode = 'additive' | 'subtractive' | 'intersect';
 
+export interface LevelsChannel { inputBlack: number; inputWhite: number; outputBlack: number; outputWhite: number; midtone: number; }
+export interface Levels { enabled: boolean; rgb: LevelsChannel; red: LevelsChannel; green: LevelsChannel; blue: LevelsChannel; }
 export interface CurvePoint { x: number; y: number; }
 export interface Curves { [channel: string]: CurvePoint[]; luma: CurvePoint[]; red: CurvePoint[]; green: CurvePoint[]; blue: CurvePoint[]; }
 export interface ParametricCurveSettings { darks: number; shadows: number; highlights: number; lights: number; whiteLevel: number; blackLevel: number; split1: number; split2: number; split3: number; }
@@ -91,6 +93,7 @@ export interface MaskContainer {
 export interface Recipe {
   exposure: number; brightness: number; contrast: number; highlights: number; shadows: number; whites: number; blacks: number;
   toneMapper: ToneMapper;
+  levels: Levels;
   curves: Curves; pointCurves: Curves; parametricCurve: ParametricCurve; curveMode: CurveMode;
   temperature: number; tint: number; vibrance: number; saturation: number; hue: number;
   colorGrading: ColorGrading; hsl: Hsl; colorCalibration: ColorCalibration;
@@ -127,6 +130,37 @@ export const DEFAULT_RECIPE: Recipe = {
   "whites": 0.0,
   "blacks": 0.0,
   "toneMapper": "basic",
+  "levels": {
+    "enabled": true,
+    "rgb": {
+      "inputBlack": 0.0,
+      "inputWhite": 255.0,
+      "outputBlack": 0.0,
+      "outputWhite": 255.0,
+      "midtone": 0.0
+    },
+    "red": {
+      "inputBlack": 0.0,
+      "inputWhite": 255.0,
+      "outputBlack": 0.0,
+      "outputWhite": 255.0,
+      "midtone": 0.0
+    },
+    "green": {
+      "inputBlack": 0.0,
+      "inputWhite": 255.0,
+      "outputBlack": 0.0,
+      "outputWhite": 255.0,
+      "midtone": 0.0
+    },
+    "blue": {
+      "inputBlack": 0.0,
+      "inputWhite": 255.0,
+      "outputBlack": 0.0,
+      "outputWhite": 255.0,
+      "midtone": 0.0
+    }
+  },
   "curves": {
     "luma": [
       {

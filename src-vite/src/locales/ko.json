@@ -1779,6 +1779,24 @@
       "cropRemove": "자르기 제거",
       "cropAria": "자르기 프레임: 상자나 핸들을 드래그하고, 화살표 키로 이동, Enter로 확정, Esc로 취소",
       "cropHint": "상자를 드래그해 위치를 정하고 모서리를 드래그해 크기를 조절합니다. 화살표 키로 이동(Shift: 더 큰 폭), Esc로 드래그 취소."
+    },
+    "levels": {
+      "title": "레벨",
+      "rgb": "RGB",
+      "red": "빨강",
+      "green": "초록",
+      "blue": "파랑",
+      "inputBlack": "입력 검정",
+      "inputWhite": "입력 흰색",
+      "outputBlack": "출력 검정",
+      "outputWhite": "출력 흰색",
+      "midtone": "중간점",
+      "enabled": "레벨 활성화",
+      "bypassed": "레벨 비활성화",
+      "resetAll": "모든 레벨 초기화",
+      "resetChannel": "채널 초기화",
+      "histogram": "렌더링된 미리보기 히스토그램",
+      "waiting": "미리보기 대기 중"
     }
   }
 }

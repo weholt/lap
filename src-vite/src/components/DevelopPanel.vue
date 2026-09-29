@@ -25,6 +25,7 @@ import {
 import DevelopSliderControl from '@/components/develop/DevelopSliderControl.vue';
 import DevelopSection from '@/components/develop/DevelopSection.vue';
 import DevelopCurveEditor from '@/components/develop/DevelopCurveEditor.vue';
+import LevelsPanel from '@/components/develop/LevelsPanel.vue';
 import ColorBalancePanel from '@/components/develop/ColorBalancePanel.vue';
 import DevelopMasksSection from '@/components/develop/masks/MasksSection.vue';
 import LensControls from '@/components/develop/LensControls.vue';
@@ -422,6 +423,7 @@ onBeforeUnmount(() => {
                     </template>
                 </div>
             </DevelopSection>
+            <LevelsPanel v-if="section.id === 'basic'" :pixels="histogramPixels" />
             <ColorBalancePanel v-if="section.id === 'color'" />
             </template>
 

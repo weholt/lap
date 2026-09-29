@@ -1779,6 +1779,24 @@
       "cropRemove": "Zuschnitt entfernen",
       "cropAria": "Zuschnittrahmen: Rahmen oder Griffe ziehen, Pfeiltasten verschieben, Enter bestätigt, Escape bricht ab",
       "cropHint": "Rahmen ziehen, um ihn zu positionieren, Ecken ziehen, um die Größe zu ändern. Pfeiltasten verschieben (Umschalt: größere Schritte), Escape bricht ab."
+    },
+    "levels": {
+      "title": "Tonwerte",
+      "rgb": "RGB",
+      "red": "Rot",
+      "green": "Grün",
+      "blue": "Blau",
+      "inputBlack": "Eingang Schwarz",
+      "inputWhite": "Eingang Weiß",
+      "outputBlack": "Ausgang Schwarz",
+      "outputWhite": "Ausgang Weiß",
+      "midtone": "Mittelpunkt",
+      "enabled": "Tonwerte aktivieren",
+      "bypassed": "Tonwerte deaktiviert",
+      "resetAll": "Alle Tonwertkanäle zurücksetzen",
+      "resetChannel": "Kanal zurücksetzen",
+      "histogram": "Histogramm der Vorschau",
+      "waiting": "Warte auf Vorschau"
     }
   }
 }

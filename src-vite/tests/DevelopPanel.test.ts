@@ -141,6 +141,59 @@ describe('DevelopPanel', () => {
         vi.restoreAllMocks();
     });
 
+    it('edits independent Levels with atomic undo and channel reset', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        const curves = JSON.stringify(editor.recipe.value?.curves);
+        await expandSection(wrapper, 'levels');
+        const black = wrapper.get('[data-testid="levels-number-inputBlack"]');
+        await black.setValue('30');
+        await black.trigger('change');
+        expect(editor.recipe.value?.levels.rgb.inputBlack).toBe(30);
+        expect(JSON.stringify(editor.recipe.value?.curves)).toBe(curves);
+        editor.undo();
+        expect(editor.recipe.value?.levels.rgb.inputBlack).toBe(0);
+        editor.redo();
+        expect(editor.recipe.value?.levels.rgb.inputBlack).toBe(30);
+        await wrapper.get('[data-testid="levels-tab-red"]').trigger('click');
+        await wrapper.get('[data-testid="levels-number-outputBlack"]').setValue('15');
+        await wrapper.get('[data-testid="levels-number-outputBlack"]').trigger('change');
+        expect(editor.recipe.value?.levels.red.outputBlack).toBe(15);
+        await wrapper.get('[data-testid="levels-reset-channel"]').trigger('click');
+        expect(editor.recipe.value?.levels.red.outputBlack).toBe(0);
+        expect(editor.recipe.value?.levels.rgb.inputBlack).toBe(30);
+        await wrapper.get('[data-testid="levels-enabled"]').setValue(false);
+        expect(editor.recipe.value?.levels.enabled).toBe(false);
+        await wrapper.get('[data-testid="levels-reset-all"]').trigger('click');
+        expect(editor.recipe.value?.levels).toEqual(DEFAULT_RECIPE.levels);
+        wrapper.unmount();
+    });
+
+    it('records an entire Levels drag as one undo step and saves its final recipe', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        await expandSection(wrapper, 'levels');
+        const svg = wrapper.get('[data-testid="levels-chart"]');
+        vi.spyOn(svg.element, 'getBoundingClientRect').mockReturnValue({ left: 0, width: 280 } as DOMRect);
+        const before = editor.historySize.value;
+        await wrapper.get('[data-testid="levels-handle-inputBlack"]').trigger('pointerdown', { button: 0, pointerId: 7, clientX: 12 });
+        await svg.trigger('pointermove', { pointerId: 7, clientX: 42 });
+        await svg.trigger('pointermove', { pointerId: 7, clientX: 62 });
+        await svg.trigger('pointerup', { pointerId: 7 });
+        expect(editor.recipe.value?.levels.rgb.inputBlack).toBe(50);
+        expect(editor.historySize.value).toBe(before + 1);
+        await editor.flush();
+        const commit = invokeMock.mock.calls.filter(([command]) => command === 'develop_commit_recipe').at(-1);
+        expect(commit?.[1].envelope.recipe.levels.rgb.inputBlack).toBe(50);
+        editor.undo();
+        expect(editor.recipe.value?.levels.rgb.inputBlack).toBe(0);
+        editor.redo();
+        expect(editor.recipe.value?.levels.rgb.inputBlack).toBe(50);
+        editor.resetAll();
+        expect(editor.recipe.value?.levels).toEqual(DEFAULT_RECIPE.levels);
+        wrapper.unmount();
+    });
+
     it('shows preview failures next to the Develop controls', async () => {
         const wrapper = await mountPanel();
         useDevelopEditor().previewError.value = 'GPU preview unavailable';

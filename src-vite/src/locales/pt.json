@@ -1779,6 +1779,24 @@
       "cropRemove": "Remover recorte",
       "cropAria": "Moldura de recorte: arraste a moldura ou as alças, setas para mover, Enter confirma, Esc cancela",
       "cropHint": "Arraste a moldura para posicionar e os cantos para redimensionar. Setas para mover (Shift: passos maiores), Esc cancela o arrasto."
+    },
+    "levels": {
+      "title": "Níveis",
+      "rgb": "RGB",
+      "red": "Vermelho",
+      "green": "Verde",
+      "blue": "Azul",
+      "inputBlack": "Preto de entrada",
+      "inputWhite": "Branco de entrada",
+      "outputBlack": "Preto de saída",
+      "outputWhite": "Branco de saída",
+      "midtone": "Ponto médio",
+      "enabled": "Ativar níveis",
+      "bypassed": "Níveis desativados",
+      "resetAll": "Redefinir todos os níveis",
+      "resetChannel": "Redefinir canal",
+      "histogram": "Histograma da prévia renderizada",
+      "waiting": "Aguardando prévia"
     }
   }
 }

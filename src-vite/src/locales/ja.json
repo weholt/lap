@@ -1779,6 +1779,24 @@
       "cropRemove": "トリミングを解除",
       "cropAria": "トリミング枠: 枠またはハンドルをドラッグ、矢印キーで移動、Enterで確定、Escでキャンセル",
       "cropHint": "枠をドラッグして位置を、角をドラッグしてサイズを調整します。矢印キーで移動（Shiftで大きく）、Escでドラッグをキャンセル。"
+    },
+    "levels": {
+      "title": "レベル",
+      "rgb": "RGB",
+      "red": "赤",
+      "green": "緑",
+      "blue": "青",
+      "inputBlack": "入力黒点",
+      "inputWhite": "入力白点",
+      "outputBlack": "出力黒点",
+      "outputWhite": "出力白点",
+      "midtone": "中間点",
+      "enabled": "レベルを有効化",
+      "bypassed": "レベル無効",
+      "resetAll": "すべてのレベルをリセット",
+      "resetChannel": "チャンネルをリセット",
+      "histogram": "描画済みプレビューのヒストグラム",
+      "waiting": "プレビューを待機中"
     }
   }
 }

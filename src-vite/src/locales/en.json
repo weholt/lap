@@ -1836,6 +1836,24 @@
       "cropRemove": "Remove crop",
       "cropAria": "Crop frame: drag the box or its handles, arrow keys move the crop, Enter confirms, Escape cancels",
       "cropHint": "Drag the box to position the crop and its corners to resize. Arrow keys move it (Shift: larger steps), Escape cancels a drag."
+    },
+    "levels": {
+      "title": "Levels",
+      "rgb": "RGB",
+      "red": "Red",
+      "green": "Green",
+      "blue": "Blue",
+      "inputBlack": "Input black",
+      "inputWhite": "Input white",
+      "outputBlack": "Output black",
+      "outputWhite": "Output white",
+      "midtone": "Midpoint",
+      "enabled": "Enable Levels",
+      "bypassed": "Levels bypassed",
+      "resetAll": "Reset all Levels channels",
+      "resetChannel": "Reset channel",
+      "histogram": "Rendered preview histogram",
+      "waiting": "Waiting for preview"
     }
   }
 }
