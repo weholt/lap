@@ -333,15 +333,11 @@
                     :style="backgroundStyle"
                     data-testid="develop-central-preview"
                   >
-                    <div class="relative inline-flex max-w-full max-h-full">
-                      <canvas
-                        ref="developPreviewCanvasRef"
-                        class="max-w-full max-h-full object-contain"
-                      ></canvas>
-                      <!-- Native mask tools overlay (lap-78d): mirrors the canvas
-                           box; gestures form one develop history transaction each -->
-                      <DevelopMaskOverlay :target="developPreviewCanvasRef" />
-                    </div>
+                    <DevelopPreviewSurface
+                      :frame="developEditor.preview.value"
+                      @presented="developEditor.markPreviewPresented"
+                      @error="developEditor.previewError.value = $event"
+                    />
                     <div
                       v-if="developEditor.rendering.value && !developEditor.preview.value"
                       class="absolute inset-0 flex items-center justify-center"
@@ -813,7 +809,7 @@ import AddToCollectionDialog from '@/components/AddToCollectionDialog.vue';
 import ExternalAppsDialog from '@/components/ExternalAppsDialog.vue';
 import FileInfo from '@/components/FileInfo.vue';
 import DevelopPanel from '@/components/DevelopPanel.vue';
-import DevelopMaskOverlay from '@/components/develop/masks/DevelopMaskOverlay.vue';
+import DevelopPreviewSurface from '@/components/develop/DevelopPreviewSurface.vue';
 import { useDevelopEditor } from '@/composables/useDevelopEditor';
 import { useDevelopRollback } from '@/composables/useDevelopRollback';
 import Breadcrumb from '@/components/Breadcrumb.vue';
@@ -2199,35 +2195,12 @@ const toggleDevelopPanel = () => {
 // Central develop preview: while the Develop panel is open, the filmstrip
 // preview area shows the engine-rendered image instead of the untouched
 // source. "View original" in the panel hides the rendered overlay.
-const developPreviewCanvasRef = ref<HTMLCanvasElement | null>(null);
 const isDevelopCentralPreviewVisible = computed(() => {
   if (!isDevelopPanelOpen.value || developEditor.showOriginal.value) return false;
   const currentFile = fileList.value[selectedItemIndex.value];
   if (!currentFile) return false;
   return developEditor.activeFileId.value === Number(currentFile.id || 0);
 });
-
-watch(
-  [() => developEditor.preview.value, isDevelopCentralPreviewVisible],
-  async ([frame]) => {
-    await nextTick();
-    const canvas = developPreviewCanvasRef.value;
-    if (!canvas || !frame) return;
-    canvas.width = frame.width;
-    canvas.height = frame.height;
-    const context = canvas.getContext('2d');
-    if (!context) {
-      developEditor.previewError.value = 'canvas 2d context unavailable';
-      return;
-    }
-    context.putImageData(
-      new ImageData(new Uint8ClampedArray(frame.bytes), frame.width, frame.height),
-      0,
-      0,
-    );
-    requestAnimationFrame(() => developEditor.markPreviewPresented(frame));
-  },
-);
 
 // Open the currently selected file in a new image viewer window (from FileInfo preview click).
 function openSelectedInViewer() {
