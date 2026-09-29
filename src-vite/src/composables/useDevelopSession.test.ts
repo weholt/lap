@@ -309,3 +309,17 @@ describe('overlapping open and close', () => {
         expect(session.session.value?.sessionId).toBe(22);
     });
 });
+
+describe('interactive preview quality', () => {
+    it('uses a smaller interactive transport and preserves settled resolution', async () => {
+        invokeMock.mockReset();
+        invokeMock.mockResolvedValueOnce(openedSession()).mockResolvedValue({ status: 'cancelled' });
+        const session = useDevelopSession();
+        await session.openEditSession(42);
+        await session.renderPreview(structuredClone(DEFAULT_RECIPE), { quality: 'interactive' });
+        await session.renderPreview(structuredClone(DEFAULT_RECIPE), { quality: 'settled' });
+        const calls = invokeMock.mock.calls.filter(([cmd]) => cmd === 'develop_render_preview');
+        expect(calls[0][1].maxEdge).toBe(768);
+        expect(calls[1][1].maxEdge).toBe(1536);
+    });
+});

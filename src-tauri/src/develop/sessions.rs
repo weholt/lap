@@ -69,7 +69,12 @@ pub struct DevelopConfig {
 impl Default for DevelopConfig {
     fn default() -> Self {
         Self {
-            sessions: SessionManagerConfig::default(),
+            // One worker may prepare a committed thumbnail while the other
+            // serves the latest editor input. GPU submission remains serialized.
+            sessions: SessionManagerConfig {
+                preview_workers: 2,
+                ..SessionManagerConfig::default()
+            },
             max_preview_edge: 4096,
             max_cached_preview_bytes: 128 * 1024 * 1024,
         }
@@ -479,13 +484,14 @@ pub(crate) fn rasterize_recipe_masks(
 /// the content-addressed store; missing or changed resources fail explicitly
 /// (spec A7) instead of rendering un-LUT-ed pixels. Without a store the
 /// engine's own `ResourceMissing` check remains the backstop.
-// One bounded prepared input, shared by Arc while a render uses it. The weak
+// Bounded LRU of prepared inputs, shared by Arc while a render uses them. The weak
 // source identity avoids retaining a full RAW decode after its session closes.
 struct PreparedPreview {
     source: std::sync::Weak<DecodedOriginal>,
     session: SessionId,
     geometry: u64,
     max_edge: u32,
+    derived: bool,
     pixels: Arc<image::DynamicImage>,
 }
 const MAX_PREPARED_PREVIEW_BYTES: u64 = 64 * 1024 * 1024;
@@ -497,7 +503,7 @@ pub struct GpuPreviewRenderer {
     /// Bounded mask-bitmap cache (lap-78d). Keyed by mask geometry content
     /// plus frame; adjustment-only edits never invalidate geometry bitmaps.
     mask_cache: Mutex<rapidraw_develop::BoundedMaskCache>,
-    prepared: Mutex<Option<PreparedPreview>>,
+    prepared: Mutex<std::collections::VecDeque<PreparedPreview>>,
 }
 
 impl GpuPreviewRenderer {
@@ -506,44 +512,90 @@ impl GpuPreviewRenderer {
         let geometry = recipe_geometry_hash(&job.envelope.recipe);
         let source = Arc::downgrade(&job.original);
         let mut cache = self.prepared.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(entry) = cache.as_ref() {
-            if entry.source.ptr_eq(&source)
+        // A cancelled job may have waited behind another preparation.
+        job.cancel.check()?;
+        cache.retain(|entry| {
+            entry.source.strong_count() > 0
+                && (entry.session != job.session_id
+                    || (entry.source.ptr_eq(&source) && entry.geometry == geometry))
+        });
+        if let Some(index) = cache.iter().position(|entry| {
+            entry.source.ptr_eq(&source)
                 && entry.session == job.session_id
                 && entry.geometry == geometry
                 && entry.max_edge == job.max_edge
-            {
-                return Ok(Arc::clone(&entry.pixels));
-            }
+                && (job.quality == PreviewQuality::Interactive || !entry.derived)
+        }) {
+            let entry = cache.remove(index).unwrap();
+            let pixels = Arc::clone(&entry.pixels);
+            cache.push_back(entry);
+            return Ok(pixels);
         }
-        // Release the old prepared allocation before building its replacement.
-        *cache = None;
-        // Lens correction warp on the full un-cropped frame, matching the
-        // pinned reference order (warp -> coarse rotation -> flip -> crop):
-        // identity lens fields never touch the pixels.
-        let lens_params = rapidraw_develop::LensWarpParams::from_recipe(&job.envelope.recipe);
-        let lens_warped;
-        let lens_corrected: &rapidraw_develop::LinearImage = if lens_params.is_identity() {
-            &job.original.image
+        // Drafts can downsample the cached full preview. Settled renders always
+        // originate at the full decoded source, preserving their previous quality.
+        let larger = if job.quality == PreviewQuality::Interactive {
+            cache
+                .iter()
+                .find(|entry| {
+                    entry.source.ptr_eq(&source)
+                        && entry.session == job.session_id
+                        && entry.geometry == geometry
+                        && entry.max_edge > job.max_edge
+                })
+                .map(|entry| Arc::clone(&entry.pixels))
         } else {
-            lens_warped = rapidraw_develop::lens_warp(&job.original.image, &lens_params);
-            &lens_warped
+            None
         };
+        // Preparing another session's thumbnail must not hold the cache lock:
+        // it otherwise blocks an editor cache hit behind full-RAW resampling.
+        drop(cache);
+        let derived = larger.is_some();
+        let base = if let Some(larger) = larger {
+            let (w, h) = preview_dimensions(larger.width(), larger.height(), job.max_edge);
+            larger.resize_exact(w, h, image::imageops::FilterType::Triangle)
+        } else {
+            // Lens correction warp on the full un-cropped frame, matching the
+            // pinned reference order (warp -> coarse rotation -> flip -> crop):
+            // identity lens fields never touch the pixels.
+            let lens_params = rapidraw_develop::LensWarpParams::from_recipe(&job.envelope.recipe);
+            let lens_warped;
+            let lens_corrected: &rapidraw_develop::LinearImage = if lens_params.is_identity() {
+                &job.original.image
+            } else {
+                lens_warped = rapidraw_develop::lens_warp(&job.original.image, &lens_params);
+                &lens_warped
+            };
 
-        // Recipe geometry in the engine's oriented coordinate system, applied
-        // by the SAME helper the export renderer uses (lap-6bc): preview and
-        // export can never diverge on crop/rotation/flip.
-        let oriented = apply_recipe_geometry(lens_corrected, &job.envelope.recipe)?;
-        let (width, height) = oriented.dimensions();
-        let (target_w, target_h) = preview_dimensions(width, height, job.max_edge);
-        let base = preview_base(&oriented, target_w, target_h)?;
-
+            // Recipe geometry in the engine's oriented coordinate system, applied
+            // by the SAME helper the export renderer uses (lap-6bc): preview and
+            // export can never diverge on crop/rotation/flip.
+            job.cancel.check()?;
+            let oriented = apply_recipe_geometry(lens_corrected, &job.envelope.recipe)?;
+            let (width, height) = oriented.dimensions();
+            let (target_w, target_h) = preview_dimensions(width, height, job.max_edge);
+            job.cancel.check()?;
+            preview_base(&oriented, target_w, target_h)?
+        };
         let pixels = Arc::new(base);
-        if u64::from(target_w) * u64::from(target_h) * 16 <= MAX_PREPARED_PREVIEW_BYTES {
-            *cache = Some(PreparedPreview {
+        let mut cache = self.prepared.lock().unwrap_or_else(|e| e.into_inner());
+        let bytes = u64::from(pixels.width()) * u64::from(pixels.height()) * 16;
+        if bytes <= MAX_PREPARED_PREVIEW_BYTES {
+            while cache.len() >= 4
+                || cache
+                    .iter()
+                    .map(|e| u64::from(e.pixels.width()) * u64::from(e.pixels.height()) * 16)
+                    .sum::<u64>()
+                    + bytes
+                    > MAX_PREPARED_PREVIEW_BYTES
+            {
+                cache.pop_front();
+            }
+            cache.push_back(PreparedPreview {
                 source,
                 session: job.session_id,
                 geometry,
                 max_edge: job.max_edge,
+                derived,
                 pixels: Arc::clone(&pixels),
             });
         }
@@ -564,7 +616,7 @@ impl GpuPreviewRenderer {
             factory: Mutex::new(Some(factory)),
             resources: None,
             mask_cache: Mutex::new(rapidraw_develop::BoundedMaskCache::new()),
-            prepared: Mutex::new(None),
+            prepared: Mutex::new(std::collections::VecDeque::new()),
         }
     }
 
@@ -740,7 +792,12 @@ impl PreviewRenderer for GpuPreviewRenderer {
         let transform_hash = job.session_id.0.wrapping_mul(0x9E37_79B9_7F4A_7C15)
             ^ ((target_w as u64) << 32)
             ^ target_h as u64
-            ^ recipe_geometry_hash(&job.envelope.recipe);
+            ^ recipe_geometry_hash(&job.envelope.recipe)
+            ^ if job.quality == PreviewQuality::Interactive {
+                1_u64 << 63
+            } else {
+                0
+            };
 
         let request = RenderRequest {
             adjustments,
@@ -752,9 +809,11 @@ impl PreviewRenderer for GpuPreviewRenderer {
             lut: self.resolve_render_lut(&job.envelope)?,
             roi: None,
         };
+        job.cancel.check()?;
         let pixels = renderer
             .render(&base, transform_hash, request, OutputTarget::CpuPixels)
             .map_err(|err| EngineError::Unsupported(err.to_string()))?;
+        job.cancel.check()?;
         Ok(PreviewFrame {
             width: pixels.width,
             height: pixels.height,
@@ -2625,7 +2684,7 @@ mod tests {
         let renderer = GpuPreviewRenderer::new();
         let bytes = gradient_bytes();
         let decoded = Arc::new(decode_original(&bytes, &DecodeOptions::default()).unwrap());
-        let (_source, cancel) = CancelToken::pair();
+        let (cancel_source, cancel) = CancelToken::pair();
         let mut job = PreviewJob {
             session_id: SessionId(7),
             asset_id: "a".into(),
@@ -2651,6 +2710,23 @@ mod tests {
         let smaller = renderer.prepared_base(&job).unwrap();
         assert_eq!(smaller.width(), 24);
         assert!(!Arc::ptr_eq(&flipped, &smaller));
+        job.max_edge = 48;
+        let restored_full = renderer.prepared_base(&job).unwrap();
+        assert!(
+            Arc::ptr_eq(&flipped, &restored_full),
+            "draft must not evict settled base"
+        );
+        job.max_edge = 24;
+        job.quality = PreviewQuality::Interactive;
+        job.session_id = SessionId(8);
+        let thumbnail = renderer.prepared_base(&job).unwrap();
+        assert!(!Arc::ptr_eq(&smaller, &thumbnail));
+        job.session_id = SessionId(7);
+        assert!(
+            Arc::ptr_eq(&smaller, &renderer.prepared_base(&job).unwrap()),
+            "another session must not evict the editor base"
+        );
+
         job.original = Arc::new(decode_original(&bytes, &DecodeOptions::default()).unwrap());
         let replaced = renderer.prepared_base(&job).unwrap();
         assert!(
@@ -2661,7 +2737,21 @@ mod tests {
         let evicted = renderer.prepared_base(&job).unwrap();
         assert!(
             !Arc::ptr_eq(&smaller, &evicted),
-            "only one prepared base is retained"
+            "replaced source must not reuse stale pixels"
+        );
+        job.max_edge = 12;
+        let draft = renderer.prepared_base(&job).unwrap();
+        job.quality = PreviewQuality::Settled;
+        let exact = renderer.prepared_base(&job).unwrap();
+        assert!(
+            !Arc::ptr_eq(&draft, &exact),
+            "settled quality must not reuse a resampled draft at the same edge"
+        );
+        assert!(renderer.prepared.lock().unwrap().len() <= 4);
+        cancel_source.cancel();
+        assert!(
+            renderer.prepared_base(&job).is_err(),
+            "cancelled cache hit must not render"
         );
     }
 

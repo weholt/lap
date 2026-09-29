@@ -301,6 +301,7 @@
             >
               <MediaViewer
                 ref="filmStripMediaRef"
+                :external-preview="isDevelopPanelOpen"
                 :mode="1"
                 :isFullScreen="false"
                 :file="fileList[selectedItemIndex]"
@@ -2224,6 +2225,7 @@ watch(
       0,
       0,
     );
+    requestAnimationFrame(() => developEditor.markPreviewPresented(frame));
   },
 );
 

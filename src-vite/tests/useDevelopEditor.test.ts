@@ -86,6 +86,28 @@ async function openAssetA(editor: ReturnType<typeof useDevelopEditor>) {
 }
 
 describe('useDevelopEditor', () => {
+    it('reports latency only for the latest input actually drawn', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+        vi.spyOn(performance, 'now').mockReturnValue(100);
+        editor.setParamLive('exposure', 1);
+        const frame = { handle: 'x', width: 1, height: 1, generation: 5, bytes: new ArrayBuffer(4), inputAt: 100, quality: 'interactive' as const };
+        editor.preview.value = frame;
+        vi.mocked(performance.now).mockReturnValue(150);
+        editor.markPreviewPresented(frame);
+        expect(editor.previewLatencyMs.value).toBe(50);
+        const settled = { ...frame, quality: 'settled' as const };
+        editor.preview.value = settled;
+        vi.mocked(performance.now).mockReturnValue(400);
+        editor.markPreviewPresented(settled);
+        expect(editor.previewLatencyMs.value).toBe(50);
+        expect(editor.presentedQuality.value).toBe('settled');
+        editor.setParamLive('exposure', 2);
+        vi.mocked(performance.now).mockReturnValue(200);
+        editor.markPreviewPresented(frame);
+        expect(editor.previewLatencyMs.value).toBe(50);
+    });
+
     it('renders while input keeps arriving faster than the preview interval', async () => {
         vi.useFakeTimers();
         const editor = useDevelopEditor();
@@ -97,7 +119,7 @@ describe('useDevelopEditor', () => {
         }
         const calls = invokeMock.mock.calls.filter(([cmd]) => cmd === 'develop_render_preview');
         expect(calls.length).toBeGreaterThanOrEqual(3);
-        expect(calls.length).toBeLessThanOrEqual(12);
+        expect(calls.length).toBeLessThanOrEqual(20);
         expect(calls.at(-1)![1].envelope.recipe.exposure).toBeGreaterThan(2);
         expect(invokeMock.mock.calls.filter(([cmd]) => cmd === 'develop_commit_recipe')).toHaveLength(0);
     });

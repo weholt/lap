@@ -27,6 +27,8 @@ import {
  */
 
 export interface DevelopPreviewState {
+    inputAt?: number;
+    quality?: 'interactive' | 'settled';
     handle: string;
     width: number;
     height: number;
@@ -35,13 +37,14 @@ export interface DevelopPreviewState {
 }
 
 export interface RenderOptions {
+    inputAt?: number;
     /** Fast draft while dragging (default: settled full quality). */
     quality?: 'interactive' | 'settled';
     /** Maximum preview edge length; bounded by the backend transport. */
     maxEdge?: number;
 }
 
-/** Default interactive preview edge (backend clamps to its own bound). */
+/** Settled preview edge; draft uses half the edge (one quarter the pixels). */
 const DEFAULT_PREVIEW_EDGE = 1536;
 
 export function useDevelopSession() {
@@ -98,7 +101,7 @@ export function useDevelopSession() {
             generation,
             envelope,
             quality: options.quality ?? 'settled',
-            maxEdge: options.maxEdge ?? DEFAULT_PREVIEW_EDGE,
+            maxEdge: options.maxEdge ?? (options.quality === 'interactive' ? 768 : DEFAULT_PREVIEW_EDGE),
         });
 
         // Stale guard, part 1: the session must still be the one this request
@@ -138,6 +141,8 @@ export function useDevelopSession() {
             session.value?.sessionId !== current.sessionId ||
             generation !== latestGeneration.value) return null;
         const state: DevelopPreviewState = {
+            inputAt: options.inputAt,
+            quality: options.quality ?? 'settled',
             handle: ticket.handle,
             width: ticket.width,
             height: ticket.height,

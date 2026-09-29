@@ -1628,6 +1628,12 @@
     "resetAll": "Reset all",
     "viewOriginal": "View original",
     "viewDeveloped": "View developed",
+    "previewUpdating": "Updating preview",
+    "previewReady": "Preview ready",
+    "previewFailed": "Preview failed",
+    "previewOpening": "Opening image",
+    "previewWaiting": "Waiting for preview",
+    "previewLatencyHelp": "Latest input to first preview, including canvas upload; excludes monitor scanout",
     "retry": "Retry",
     "save": {
       "idle": "Up to date",

@@ -547,6 +547,12 @@ onBeforeUnmount(() => {
             </template>
         </div>
 
+        <div v-if="file" class="px-3 py-1 text-xs flex items-center gap-2 shrink-0" data-testid="develop-preview-status" :aria-busy="develop.rendering.value">
+            <span class="w-2 h-2 rounded-full" :class="develop.previewError.value ? 'bg-error' : develop.rendering.value || develop.opening.value ? 'bg-primary animate-pulse' : develop.preview.value ? 'bg-success' : 'bg-base-content/30'" aria-hidden="true"></span>
+            <span>{{ develop.previewError.value ? $t('develop.previewFailed') : develop.opening.value ? $t('develop.previewOpening') : develop.rendering.value ? $t('develop.previewUpdating') : develop.preview.value ? $t('develop.previewReady') : $t('develop.previewWaiting') }}</span>
+            <span v-if="develop.previewLatencyMs.value !== null" class="tabular-nums text-base-content/50" :title="$t('develop.previewLatencyHelp')">{{ develop.previewLatencyMs.value }} ms</span>
+        </div>
+
         <!-- Footer: original comparison + save status -->
         <div
             v-if="file"

@@ -146,6 +146,8 @@ describe('DevelopPanel', () => {
         useDevelopEditor().previewError.value = 'GPU preview unavailable';
         await flushPromises();
         expect(wrapper.get('[data-testid="develop-preview-error"]').text()).toContain('GPU preview unavailable');
+        expect(wrapper.get('[data-testid="develop-preview-status"]').text()).toContain('Preview failed');
+        expect(wrapper.get('[data-testid="develop-preview-status"]').text()).not.toContain('Preview ready');
         wrapper.unmount();
     });
 

@@ -520,6 +520,7 @@ import { useFileMenuItems } from '@/common/fileMenu';
 const Video = defineAsyncComponent(() => import('@/components/Video.vue'));
 
 const props = defineProps({
+  externalPreview: { type: Boolean, default: false },
   // 0: quick view, 1: filmstrip, 2: image viewer
   mode: {
     type: Number,
@@ -667,12 +668,12 @@ const inWindowDevelopedPixels = computed(() => {
   return developEditor.preview.value;
 });
 const viewerShowsDeveloped = computed(
-  () => isDevelopedFile.value && !viewerShowOriginal.value && viewerDevelopedPixels.value !== null,
+  () => !props.externalPreview && isDevelopedFile.value && !viewerShowOriginal.value && viewerDevelopedPixels.value !== null,
 );
 
 watch(inWindowDevelopedPixels, (pixels) => {
   // The develop editor re-renders live while its session is open; follow it.
-  if (pixels && isDevelopedFile.value && !viewerShowOriginal.value) {
+  if (!props.externalPreview && pixels && isDevelopedFile.value && !viewerShowOriginal.value) {
     viewerDevelopedPixels.value = pixels;
   }
 });
@@ -703,7 +704,7 @@ function drawDevelopedOverlay() {  const canvas = developedCanvasRef.value;
 }
 
 async function ensureViewerDevelopedPixels(requestSeq: number) {
-  if (viewerShowOriginal.value) return;
+  if (props.externalPreview || viewerShowOriginal.value) return;
   const fileId = developedFileId.value;
   if (!fileId) return;
 
@@ -719,6 +720,10 @@ async function ensureViewerDevelopedPixels(requestSeq: number) {
   viewerDevelopedLoading.value = true;
   try {
     const opened = await viewerDevelopSession.openEditSession(fileId, 'default');
+    if (requestSeq !== viewerDevelopRequestId || props.externalPreview) {
+      await viewerDevelopSession.closeEditSession().catch(() => null);
+      return;
+    }
     const frame = await viewerDevelopSession.renderPreview(opened.envelope.recipe as Recipe, { quality: 'settled' });
     const stale = requestSeq !== viewerDevelopRequestId;
     await viewerDevelopSession.closeEditSession().catch(() => null);
@@ -738,6 +743,17 @@ async function ensureViewerDevelopedPixels(requestSeq: number) {
     }
   }
 }
+
+watch(() => props.externalPreview, (external) => {
+  if (external) {
+    ++viewerDevelopRequestId;
+    viewerDevelopedPixels.value = null;
+    viewerDevelopedLoading.value = false;
+    void viewerDevelopSession.closeEditSession().catch(() => null);
+  } else if (isDevelopedFile.value) {
+    void ensureViewerDevelopedPixels(viewerDevelopRequestId);
+  }
+});
 
 function toggleViewerOriginal() {
   viewerShowOriginal.value = !viewerShowOriginal.value;

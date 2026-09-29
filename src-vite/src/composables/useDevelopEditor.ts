@@ -49,7 +49,7 @@ export type DevelopSaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'confli
 /** Debounce window before a dirty recipe edit is committed. */
 export const DEVELOP_COMMIT_DEBOUNCE_MS = 800;
 /** Quick interactive preview tick while controls are being dragged. */
-export const DEVELOP_INTERACTIVE_PREVIEW_MS = 60;
+export const DEVELOP_INTERACTIVE_PREVIEW_MS = 32;
 /** Settled preview tick after the last edit. */
 export const DEVELOP_SETTLED_PREVIEW_MS = 260;
 
@@ -104,6 +104,9 @@ export interface DevelopEditor {
     lastError: ReturnType<typeof ref<string | null>>;
     showOriginal: ReturnType<typeof ref<boolean>>;
     rendering: ReturnType<typeof ref<boolean>>;
+    previewLatencyMs: ReturnType<typeof ref<number | null>>;
+    presentedQuality: ReturnType<typeof ref<string>>;
+    markPreviewPresented(frame: DevelopPreviewState): void;
     previewError: ReturnType<typeof ref<string | null>>;
     openError: ReturnType<typeof ref<string | null>>;
     opening: ReturnType<typeof ref<boolean>>;
@@ -239,18 +242,32 @@ function createDevelopEditor(): DevelopEditor {
     }
 
     let previewRequest = 0;
+    let latestInputAt: number | undefined;
+    let presentedInputAt: number | undefined;
+    const previewLatencyMs = ref<number | null>(null);
+    const presentedQuality = ref('settled');
+    function markPreviewPresented(frame: DevelopPreviewState) {
+        if (frame !== session.preview.value || frame.inputAt === undefined || frame.inputAt !== latestInputAt) return;
+        if (presentedInputAt !== frame.inputAt) {
+            previewLatencyMs.value = Math.round(performance.now() - frame.inputAt);
+            presentedInputAt = frame.inputAt;
+        }
+        presentedQuality.value = frame.quality ?? 'settled';
+    }
+
 
     async function renderPreview(quality: 'interactive' | 'settled') {
         if (!recipe.value) return;
         const request = ++previewRequest;
         rendering.value = true;
         try {
-            await session.renderPreview(recipe.value, { quality });
+            await session.renderPreview(recipe.value, { quality, inputAt: latestInputAt });
             if (request === previewRequest) previewError.value = null;
         } catch (error) {
             if (request === previewRequest) previewError.value = String(error);
         } finally {
-            if (request === previewRequest) rendering.value = false;
+            // Keep the activity indicator on between draft and settled quality.
+            if (request === previewRequest && (quality === 'settled' || previewError.value)) rendering.value = false;
         }
     }
 
@@ -340,6 +357,8 @@ function createDevelopEditor(): DevelopEditor {
         retainActiveState();
         pendingEnvelopePatch = null;
         ++previewRequest;
+        latestInputAt = undefined;
+        previewLatencyMs.value = null;
         rendering.value = false;
         recipe.value = null;
 
@@ -390,6 +409,12 @@ function createDevelopEditor(): DevelopEditor {
      * are rescheduled. Never records a history entry by itself.
      */
     function afterRecipeReplaced(next: Recipe) {
+        latestInputAt = performance.now();
+        // Invalidate immediately, including the throttle interval before dispatch.
+        ++previewRequest;
+        ++session.latestGeneration.value;
+        rendering.value = true;
+        previewError.value = null;
         recipe.value = next;
         const matchesCommitted = JSON.stringify(recipe.value) === JSON.stringify(session.session.value && (session.session.value as { envelope: { recipe: Recipe } }).envelope.recipe);
         if (matchesCommitted && !pendingEnvelopePatch && !commitInFlight) {
@@ -767,6 +792,8 @@ function createDevelopEditor(): DevelopEditor {
         }
         clearTimers();
         ++previewRequest;
+        latestInputAt = undefined;
+        previewLatencyMs.value = null;
         rendering.value = false;
         pendingEnvelopePatch = null;
         activeFileId.value = null;
@@ -814,6 +841,9 @@ function createDevelopEditor(): DevelopEditor {
         lastError,
         showOriginal,
         rendering,
+        previewLatencyMs,
+        presentedQuality,
+        markPreviewPresented,
         previewError,
         openError,
         opening,
