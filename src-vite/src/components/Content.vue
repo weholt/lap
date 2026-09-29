@@ -322,36 +322,40 @@
                 @item-action="handleItemAction"
                 @view-background-change="setPreviewViewBackground"
                 @slideshow-next="handleSlideshowNext"
-              />
+              >
+                <template #media-overlay="{ backgroundStyle }">
+                  <!-- develop central preview: rendered engine output for the
+                       developed asset currently open in the Develop panel -->
+                  <div
+                    v-if="isDevelopCentralPreviewVisible"
+                    class="absolute inset-0 z-40 flex items-center justify-center overflow-hidden"
+                    :style="backgroundStyle"
+                    data-testid="develop-central-preview"
+                  >
+                    <div class="relative inline-flex max-w-full max-h-full">
+                      <canvas
+                        ref="developPreviewCanvasRef"
+                        class="max-w-full max-h-full object-contain"
+                      ></canvas>
+                      <!-- Native mask tools overlay (lap-78d): mirrors the canvas
+                           box; gestures form one develop history transaction each -->
+                      <DevelopMaskOverlay :target="developPreviewCanvasRef" />
+                    </div>
+                    <div
+                      v-if="developEditor.rendering.value && !developEditor.preview.value"
+                      class="absolute inset-0 flex items-center justify-center"
+                    >
+                      <span class="loading loading-dots text-primary"></span>
+                    </div>
+                    <div
+                      v-if="developEditor.previewError.value"
+                      class="absolute bottom-2 left-1/2 -translate-x-1/2 px-2 py-1 rounded-box bg-error/10 text-error text-xs max-w-[90%] break-words"
+                    >{{ developEditor.previewError.value }}</div>
+                  </div>
+                </template>
+              </MediaViewer>
             </div>
 
-            <!-- develop central preview: rendered engine output for the
-                 developed asset currently open in the Develop panel -->
-            <div
-              v-if="isDevelopCentralPreviewVisible"
-              class="absolute inset-0 z-20 flex items-center justify-center"
-              data-testid="develop-central-preview"
-            >
-              <div class="relative inline-flex max-w-full max-h-full">
-                <canvas
-                  ref="developPreviewCanvasRef"
-                  class="max-w-full max-h-full object-contain"
-                ></canvas>
-                <!-- Native mask tools overlay (lap-78d): mirrors the canvas
-                     box; gestures form one develop history transaction each -->
-                <DevelopMaskOverlay :target="developPreviewCanvasRef" />
-              </div>
-              <div
-                v-if="developEditor.rendering.value && !developEditor.preview.value"
-                class="absolute inset-0 flex items-center justify-center"
-              >
-                <span class="loading loading-dots text-primary"></span>
-              </div>
-              <div
-                v-if="developEditor.previewError.value"
-                class="absolute bottom-2 left-1/2 -translate-x-1/2 px-2 py-1 rounded-box bg-error/10 text-error text-xs max-w-[90%] break-words"
-              >{{ developEditor.previewError.value }}</div>
-            </div>
           </div> <!-- film strip preview -->
         </div> <!-- grid view -->
 
@@ -2203,8 +2207,8 @@ const isDevelopCentralPreviewVisible = computed(() => {
 });
 
 watch(
-  () => developEditor.preview.value,
-  async (frame) => {
+  [() => developEditor.preview.value, isDevelopCentralPreviewVisible],
+  async ([frame]) => {
     await nextTick();
     const canvas = developPreviewCanvasRef.value;
     if (!canvas || !frame) return;

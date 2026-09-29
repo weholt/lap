@@ -300,6 +300,9 @@
         </div>
       </div>
 
+      <!-- Editing overlays share the image viewport, excluding pinned toolbar space. -->
+      <slot name="media-overlay" :background-style="viewBackgroundStyle" />
+
       <!-- Previous Button (Overlay, media-area anchored) -->
       <button
         v-if="!isSlideShow && showOverlayNav"
