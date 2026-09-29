@@ -141,6 +141,14 @@ describe('DevelopPanel', () => {
         vi.restoreAllMocks();
     });
 
+    it('shows preview failures next to the Develop controls', async () => {
+        const wrapper = await mountPanel();
+        useDevelopEditor().previewError.value = 'GPU preview unavailable';
+        await flushPromises();
+        expect(wrapper.get('[data-testid="develop-preview-error"]').text()).toContain('GPU preview unavailable');
+        wrapper.unmount();
+    });
+
     it('uses the generated engine descriptors for exposure and white balance ranges', async () => {
         const wrapper = await mountPanel();
 

@@ -243,3 +243,69 @@ describe('useDevelopSession', () => {
         expect(develop.preview.value?.handle).toBe('handle-gen-1');
     });
 });
+
+
+describe('async session lifetime regressions', () => {
+    beforeEach(() => invokeMock.mockReset());
+    it('discards frame bytes if a newer generation finishes during transfer', async () => {
+        let release!: (value: ArrayBuffer) => void;
+        invokeMock.mockResolvedValueOnce(openedSession())
+            .mockResolvedValueOnce(completedTicket())
+            .mockImplementationOnce(() => new Promise(resolve => { release = resolve; }))
+            .mockResolvedValueOnce(completedTicket({ ticket: { generation: 2, handle: 'new' } }))
+            .mockResolvedValueOnce(new ArrayBuffer(4));
+        const session = useDevelopSession();
+        await session.openEditSession(42);
+        const old = session.renderPreview(structuredClone(DEFAULT_RECIPE));
+        await vi.waitFor(() => expect(release).toBeDefined());
+        await session.renderPreview(structuredClone(DEFAULT_RECIPE));
+        release(new ArrayBuffer(4));
+        expect(await old).toBeNull();
+        expect(session.preview.value?.generation).toBe(2);
+    });
+    it('does not resurrect a closed session after commit acknowledgement', async () => {
+        let release!: (value: unknown) => void;
+        invokeMock.mockResolvedValueOnce(openedSession())
+            .mockImplementationOnce(() => new Promise(resolve => { release = resolve; }))
+            .mockResolvedValueOnce({sessionId: 11, revision: 4});
+        const session = useDevelopSession();
+        await session.openEditSession(42);
+        const commit = session.commitRecipe(structuredClone(DEFAULT_RECIPE));
+        await session.closeEditSession();
+        release({sessionId: 11, revision: 4});
+        await commit;
+        expect(session.session.value).toBeNull();
+    });
+});
+
+
+describe('overlapping open and close', () => {
+    beforeEach(() => invokeMock.mockReset());
+    it('closes a superseded backend open instead of replacing the latest asset', async () => {
+        let release!: (value: unknown) => void;
+        invokeMock.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }))
+            .mockResolvedValueOnce(openedSession({sessionId: 22, assetId: '77'}))
+            .mockResolvedValueOnce({sessionId: 11, revision: 3});
+        const session = useDevelopSession();
+        const first = session.openEditSession(42);
+        const rejected = expect(first).rejects.toThrow('superseded');
+        await session.openEditSession(77);
+        release(openedSession());
+        await rejected;
+        expect(session.session.value?.sessionId).toBe(22);
+        expect(invokeMock).toHaveBeenLastCalledWith('develop_close_edit_session', {sessionId: 11});
+    });
+    it('does not clear a new session when an old close completes late', async () => {
+        let release!: (value: unknown) => void;
+        invokeMock.mockResolvedValueOnce(openedSession())
+            .mockImplementationOnce(() => new Promise(resolve => { release = resolve; }))
+            .mockResolvedValueOnce(openedSession({sessionId: 22, assetId: '77'}));
+        const session = useDevelopSession();
+        await session.openEditSession(42);
+        const closing = session.closeEditSession();
+        await session.openEditSession(77);
+        release({sessionId: 11, revision: 3});
+        await closing;
+        expect(session.session.value?.sessionId).toBe(22);
+    });
+});

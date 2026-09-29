@@ -4379,8 +4379,7 @@ pub fn develop_set_rollback(enabled: bool) -> Result<bool, String> {
 fn develop_parse_envelope(
     envelope: serde_json::Value,
 ) -> Result<rapidraw_edit_model::RecipeEnvelope, String> {
-    rapidraw_edit_model::migrate::parse_envelope_value(envelope)
-        .map_err(|e| format!("invalid develop envelope: {e}"))
+    lap_lib::develop::wire::parse_session_envelope(envelope)
 }
 
 fn develop_quality(quality: &str) -> Result<rapidraw_develop::session::PreviewQuality, String> {

@@ -105,6 +105,94 @@ describe('useDevelopEditor', () => {
         vi.restoreAllMocks();
     });
 
+    it('saves edits made while an earlier commit is still in flight', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+        let release!: (value: unknown) => void;
+        queueCommand('develop_commit_recipe', new Promise(resolve => { release = resolve; }));
+        queueCommand('develop_commit_recipe', receipt(1, 2));
+        editor.setParam('exposure', 1);
+        const saving = editor.flush();
+        editor.setParam('exposure', 2);
+        release(receipt(1, 1));
+        await saving;
+        await editor.flush();
+        expect(lastCommitArgs()?.envelope.recipe.exposure).toBe(2);
+        expect(lastCommitArgs()?.expectedRevision).toBe(1);
+        expect(editor.dirty.value).toBe(false);
+    });
+
+    it('preserves failed import metadata per asset across navigation and retry', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+        queueCommand('develop_commit_recipe', new Error('disk read only'));
+        const imported = structuredClone(DEFAULT_RECIPE);
+        imported.exposure = 1;
+        expect(await editor.applyImportedRecipe(imported, { originalPayload: 'keep me' })).toBe(false);
+        queueCommand('develop_open_edit_session', openedSession(2));
+        await editor.openAsset({id: 2});
+        editor.setParam('exposure', 2);
+        queueCommand('develop_commit_recipe', receipt(2, 1));
+        await editor.flush();
+        expect(lastCommitArgs()?.envelope.unsupported).not.toHaveProperty('originalPayload');
+        queueCommand('develop_open_edit_session', openedSession(1));
+        await editor.openAsset({id: 1});
+        queueCommand('develop_commit_recipe', receipt(1, 1));
+        expect(await editor.retry()).toBe(true);
+        expect(lastCommitArgs()?.envelope.unsupported.originalPayload).toBe('keep me');
+    });
+
+    it('keeps retained state if reopening an asset fails', async () => {
+        const editor = useDevelopEditor();
+        const store = useUIStore();
+        const recipe = structuredClone(DEFAULT_RECIPE);
+        recipe.exposure = 2;
+        store.retainDevelopState(1, {recipe, saveState: 'failed', lastError: 'read only'});
+        queueCommand('develop_open_edit_session', new Error('decode failed'));
+        await expect(editor.openAsset({id: 1})).rejects.toThrow('decode failed');
+        expect(store.peekRetainedDevelopState(1)?.recipe.exposure).toBe(2);
+    });
+
+    it('resets nested color controls without adding dotted recipe keys', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+        editor.setParam('colorCalibration.redHue', 25);
+        editor.resetParam('colorCalibration.redHue');
+        expect(editor.recipe.value?.colorCalibration.redHue).toBe(0);
+        expect(editor.recipe.value).not.toHaveProperty(['colorCalibration.redHue']);
+    });
+
+    it('serializes rapid navigation and ends on the most recently requested asset', async () => {
+        const editor = useDevelopEditor();
+        let release!: (value: unknown) => void;
+        queueCommand('develop_open_edit_session', new Promise(resolve => { release = resolve; }));
+        queueCommand('develop_open_edit_session', openedSession(2));
+        const first = editor.openAsset({id: 1});
+        const second = editor.openAsset({id: 2});
+        await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledWith('develop_open_edit_session', {assetId: 1, variantId: 'default'}));
+        expect(invokeMock.mock.calls.filter(([name]) => name === 'develop_open_edit_session')).toHaveLength(1);
+        release(openedSession(1));
+        await Promise.all([first, second]);
+        expect(editor.activeFileId.value).toBe(2);
+    });
+
+    it('keeps the latest preview error when an older request completes', async () => {
+        vi.useFakeTimers();
+        try {
+            const editor = useDevelopEditor();
+            await openAssetA(editor);
+            let release!: (value: unknown) => void;
+            queueCommand('develop_render_preview', new Promise(resolve => { release = resolve; }));
+            queueCommand('develop_render_preview', new Error('new GPU failure'));
+            editor.setParam('exposure', 1);
+            await vi.advanceTimersByTimeAsync(260);
+            expect(editor.previewError.value).toContain('new GPU failure');
+            release({status: 'cancelled'});
+            await vi.advanceTimersByTimeAsync(0);
+            expect(editor.previewError.value).toContain('new GPU failure');
+        } finally { vi.useRealTimers(); }
+    });
+
     it('marks edits pending and commits them after the debounce window', async () => {
         vi.useFakeTimers();
         try {

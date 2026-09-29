@@ -486,6 +486,11 @@ pub fn check_and_migrate(conn: &Connection) -> Result<(), String> {
         }
     }
 
+    // Catalogs created by another/newer Lap branch may already have a
+    // user_version beyond migration 18 but lack this additive projection.
+    // Verify the idempotent schema independently; never downgrade user_version.
+    ensure_develop_projection(conn)?;
+
     if new_version > current_version {
         let update_version_sql = format!("PRAGMA user_version = {};", new_version);
         conn.execute_batch(&update_version_sql)
@@ -560,4 +565,30 @@ pub fn ensure_develop_projection(conn: &Connection) -> Result<(), String> {
     .map_err(|e| format!("Develop projection migration failed: {}", e))?;
     tx.commit()
         .map_err(|e| format!("Develop projection migration failed committing transaction: {}", e))
+}
+
+#[cfg(test)]
+mod develop_schema_regressions {
+    use super::*;
+    #[test]
+    fn newer_existing_catalog_gets_projection_without_version_downgrade() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE afiles(id INTEGER PRIMARY KEY); INSERT INTO afiles VALUES (42); PRAGMA user_version = 19;").unwrap();
+        check_and_migrate(&conn).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM adevelop_recipes", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        check_and_migrate(&conn).unwrap();
+        assert_eq!(
+            conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            19
+        );
+        assert_eq!(
+            conn.query_row("SELECT id FROM afiles", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            42
+        );
+    }
 }

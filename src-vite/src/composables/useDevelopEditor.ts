@@ -55,6 +55,7 @@ export const DEVELOP_SETTLED_PREVIEW_MS = 260;
 
 export interface RetainedDevelopState {
     recipe: Recipe;
+    envelopePatch?: Record<string, unknown> | null;
     saveState: DevelopSaveState;
     lastError: string | null;
 }
@@ -237,16 +238,19 @@ function createDevelopEditor(): DevelopEditor {
         }, DEVELOP_COMMIT_DEBOUNCE_MS);
     }
 
+    let previewRequest = 0;
+
     async function renderPreview(quality: 'interactive' | 'settled') {
         if (!recipe.value) return;
+        const request = ++previewRequest;
         rendering.value = true;
         try {
             await session.renderPreview(recipe.value, { quality });
-            previewError.value = null;
+            if (request === previewRequest) previewError.value = null;
         } catch (error) {
-            previewError.value = String(error);
+            if (request === previewRequest) previewError.value = String(error);
         } finally {
-            rendering.value = false;
+            if (request === previewRequest) rendering.value = false;
         }
     }
 
@@ -270,23 +274,27 @@ function createDevelopEditor(): DevelopEditor {
     async function commitNow(): Promise<boolean> {
         if (commitInFlight) return commitInFlight;
         if (!isDirty() || !recipe.value || !session.session.value) return true;
-        setSaveState('saving');
         commitInFlight = (async () => {
             try {
-                await session.commitRecipe(
-                    cloneRecipe(recipe.value as Recipe),
-                    pendingEnvelopePatch ?? undefined,
-                );
-                pendingEnvelopePatch = null;
-                markDirty(false);
-                setSaveState('saved');
-                uiStore.clearRetainedDevelopState(activeFileId.value ?? 0);
+                // Drain edits arriving during a disk write. A receipt only
+                // acknowledges its captured snapshot, never newer UI edits.
+                while (isDirty() && recipe.value && session.session.value) {
+                    const snapshot = cloneRecipe(recipe.value);
+                    const patch = pendingEnvelopePatch;
+                    setSaveState('saving');
+                    await session.commitRecipe(snapshot, patch ?? undefined);
+                    if (pendingEnvelopePatch === patch) pendingEnvelopePatch = null;
+                    const changed = JSON.stringify(recipe.value) !== JSON.stringify(snapshot)
+                        || pendingEnvelopePatch !== null;
+                    markDirty(changed);
+                    if (!changed) {
+                        setSaveState('saved');
+                        uiStore.clearRetainedDevelopState(activeFileId.value ?? 0);
+                    }
+                }
                 return true;
             } catch (error) {
-                setSaveState(
-                    isRevisionConflict(error) ? 'conflict' : 'failed',
-                    String(error),
-                );
+                setSaveState(isRevisionConflict(error) ? 'conflict' : 'failed', String(error));
                 return false;
             } finally {
                 commitInFlight = null;
@@ -304,12 +312,22 @@ function createDevelopEditor(): DevelopEditor {
         }
         uiStore.retainDevelopState(assetId, {
             recipe: cloneRecipe(recipe.value),
+            envelopePatch: pendingEnvelopePatch ? JSON.parse(JSON.stringify(pendingEnvelopePatch)) : null,
             saveState: saveState.value,
             lastError: lastError.value,
         });
     }
 
-    async function openAsset(file: DevelopEditorFileInput): Promise<void> {
+    // Serialize navigation and close so overlapping opens cannot mix asset
+    // identity, retained recipes, or a pending commit from different assets.
+    let navigation: Promise<unknown> = Promise.resolve();
+    function openAsset(file: DevelopEditorFileInput): Promise<void> {
+        const next = navigation.then(() => openAssetNow(file));
+        navigation = next.catch(() => undefined);
+        return next;
+    }
+
+    async function openAssetNow(file: DevelopEditorFileInput): Promise<void> {
         const assetId = Number(file?.id || 0);
         if (!assetId || !Number.isFinite(assetId)) return;
         if (activeFileId.value === assetId && session.session.value) return;
@@ -319,6 +337,10 @@ function createDevelopEditor(): DevelopEditor {
         // retried automatically: it is retained per asset for retry instead.
         await flush();
         retainActiveState();
+        pendingEnvelopePatch = null;
+        ++previewRequest;
+        rendering.value = false;
+        recipe.value = null;
 
         const previousAssetId = activeFileId.value;
         activeFileId.value = null;
@@ -336,8 +358,10 @@ function createDevelopEditor(): DevelopEditor {
 
         opening.value = true;
         try {
-            const retained = uiStore.takeRetainedDevelopState(assetId);
+            const retained = uiStore.peekRetainedDevelopState(assetId);
             const opened = await session.openEditSession(assetId, 'default');
+            uiStore.takeRetainedDevelopState(assetId);
+            pendingEnvelopePatch = retained?.envelopePatch ?? null;
             activeFileId.value = assetId;
             uiStore.setDevelopActive(assetId);
             recipe.value = retained ? retained.recipe : cloneRecipe(opened.envelope.recipe);
@@ -367,7 +391,7 @@ function createDevelopEditor(): DevelopEditor {
     function afterRecipeReplaced(next: Recipe) {
         recipe.value = next;
         const matchesCommitted = JSON.stringify(recipe.value) === JSON.stringify(session.session.value && (session.session.value as { envelope: { recipe: Recipe } }).envelope.recipe);
-        if (matchesCommitted) {
+        if (matchesCommitted && !pendingEnvelopePatch && !commitInFlight) {
             if (commitTimer) { clearTimeout(commitTimer); commitTimer = null; }
             markDirty(false);
             setSaveState('idle');
@@ -460,7 +484,12 @@ function createDevelopEditor(): DevelopEditor {
         } catch {
             return;
         }
-        applyResetPatch({ [field]: def }, `reset ${field}`);
+        const next = cloneRecipe(recipe.value);
+        setRecipeValue(next as unknown as Record<string, unknown>, field, def);
+        beginEditTransaction(`reset ${field}`);
+        history.record(next);
+        afterRecipeReplaced(next);
+        endEditTransaction();
     }
 
     function resetSection(section: SectionId) {
@@ -697,13 +726,14 @@ function createDevelopEditor(): DevelopEditor {
         const tempSession = useDevelopSession();
         try {
             const opened = await tempSession.openEditSession(id, 'default');
-            await tempSession.commitRecipe(retained.recipe);
+            await tempSession.commitRecipe(retained.recipe, retained.envelopePatch ?? undefined);
             uiStore.takeRetainedDevelopState(id);
             void opened;
             return true;
         } catch (error) {
             uiStore.retainDevelopState(id, {
                 recipe: retained.recipe,
+                envelopePatch: retained.envelopePatch,
                 saveState: isRevisionConflict(error) ? 'conflict' : 'failed',
                 lastError: String(error),
             });
@@ -717,7 +747,13 @@ function createDevelopEditor(): DevelopEditor {
         }
     }
 
-    async function close(options: { flush?: boolean } = {}): Promise<boolean> {
+    function close(options: { flush?: boolean } = {}): Promise<boolean> {
+        const next = navigation.then(() => closeNow(options));
+        navigation = next.catch(() => undefined);
+        return next;
+    }
+
+    async function closeNow(options: { flush?: boolean }): Promise<boolean> {
         let ok = true;
         if (options.flush !== false) {
             ok = await flush();
@@ -729,6 +765,9 @@ function createDevelopEditor(): DevelopEditor {
             // Best effort; the backend reaps stale sessions.
         }
         clearTimers();
+        ++previewRequest;
+        rendering.value = false;
+        pendingEnvelopePatch = null;
         activeFileId.value = null;
         uiStore.setDevelopActive(null);
         recipe.value = null;

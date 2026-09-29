@@ -50,6 +50,7 @@ export function useDevelopSession() {
     /** Strictly increasing per open session; older replies are dropped. */
     const latestGeneration = ref(0);
     let closed = false;
+    let lifetime = 0;
 
     /**
      * Opens the edit session for one catalog asset. The returned session
@@ -59,10 +60,15 @@ export function useDevelopSession() {
         assetId: number | string,
         variantId = 'default',
     ): Promise<OpenedEditSession> {
+        const opening = ++lifetime;
         const opened = await invoke<OpenedEditSession>('develop_open_edit_session', {
             assetId,
             variantId,
         });
+        if (opening !== lifetime) {
+            await invoke('develop_close_edit_session', { sessionId: opened.sessionId });
+            throw new Error('develop session open superseded');
+        }
         session.value = opened;
         preview.value = null;
         latestGeneration.value = 0;
@@ -83,6 +89,7 @@ export function useDevelopSession() {
         if (!current || closed) {
             throw new Error('no open develop session');
         }
+        const requestLifetime = lifetime;
         const generation = latestGeneration.value + 1;
         latestGeneration.value = generation;
         const envelope: RecipeEnvelopeValue = { ...current.envelope, recipe };
@@ -97,7 +104,7 @@ export function useDevelopSession() {
         // Stale guard, part 1: the session must still be the one this request
         // belongs to (asset switches or closes invalidate in-flight replies).
         const still = session.value;
-        if (!still || closed) {
+        if (!still || closed || requestLifetime !== lifetime) {
             return null;
         }
         if (still.sessionId !== current.sessionId || still.assetId !== current.assetId) {
@@ -125,6 +132,11 @@ export function useDevelopSession() {
         const bytes = await invoke<ArrayBuffer>('develop_take_preview_frame', {
             handle: ticket.handle,
         });
+        // Fetching the pixels is another asynchronous boundary: the earlier
+        // ticket check cannot protect against a switch/close/new render here.
+        if (closed || requestLifetime !== lifetime ||
+            session.value?.sessionId !== current.sessionId ||
+            generation !== latestGeneration.value) return null;
         const state: DevelopPreviewState = {
             handle: ticket.handle,
             width: ticket.width,
@@ -164,6 +176,7 @@ export function useDevelopSession() {
             expectedRevision: current.revision,
             envelope,
         });
+        if (closed || session.value?.sessionId !== current.sessionId) return receipt;
         current.revision = receipt.revision;
         current.envelope = { ...current.envelope, ...envelopePatch, revision: receipt.revision, recipe };
         session.value = { ...current };
@@ -176,6 +189,7 @@ export function useDevelopSession() {
      * work on this composable is rejected.
      */
     async function closeEditSession(): Promise<ClosedEditSession | null> {
+        ++lifetime;
         const current = session.value;
         if (!current) {
             return null;
@@ -186,9 +200,11 @@ export function useDevelopSession() {
                 sessionId: current.sessionId,
             });
         } finally {
-            session.value = null;
-            preview.value = null;
-            latestGeneration.value = 0;
+            if (session.value?.sessionId === current.sessionId) {
+                session.value = null;
+                preview.value = null;
+                latestGeneration.value = 0;
+            }
         }
     }
 

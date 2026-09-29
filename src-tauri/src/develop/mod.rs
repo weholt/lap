@@ -11,3 +11,5 @@ pub mod variants;
 
 pub use recipe_repository::RecipeRepository;
 pub use rollback::RollbackFlag;
+
+pub mod wire;

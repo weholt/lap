@@ -1951,6 +1951,39 @@ mod tests {
     }
 
     #[test]
+    fn fresh_frontend_envelope_previews_and_commits_through_ipc_parser() {
+        let bytes = gradient_bytes();
+        let dir = tmp_dir("wire-first-save");
+        let source = write_source(&dir, "photo.dng", &bytes);
+        let service = service_with(Arc::new(GateRenderer::new(&[]).0), Arc::new(NullStore));
+        let opened = open_ok(&service, "asset-wire", &source, &bytes);
+        let mut wire = opened.envelope;
+        assert_eq!(wire["revision"], 0);
+        wire["recipe"]["exposure"] = serde_json::json!(1.25);
+        let envelope = crate::develop::wire::parse_session_envelope(wire.clone()).unwrap();
+        assert!(matches!(
+            service
+                .render_preview(opened.session_id, 1, envelope, PreviewQuality::Settled, 64)
+                .unwrap(),
+            PreviewWait::Completed { .. }
+        ));
+        let envelope = crate::develop::wire::parse_session_envelope(wire).unwrap();
+        let receipt = service
+            .commit_recipe(opened.session_id, 0, envelope)
+            .unwrap();
+        assert_eq!(receipt.revision, 1);
+        assert_eq!(
+            service
+                .session_envelope(opened.session_id)
+                .unwrap()
+                .recipe
+                .exposure,
+            1.25
+        );
+        service.close_session(opened.session_id).unwrap();
+    }
+
+    #[test]
     fn source_replacement_is_reported_explicitly() {
         let bytes = gradient_bytes();
         let dir = tmp_dir("replaced");

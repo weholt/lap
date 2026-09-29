@@ -331,6 +331,13 @@ onBeforeUnmount(() => {
                 data-testid="develop-open-error"
             >{{ develop.openError.value }}</div>
 
+            <div
+                v-if="develop.previewError.value"
+                class="px-2 py-1.5 rounded-box bg-error/10 text-error text-xs break-words"
+                data-testid="develop-preview-error"
+                role="alert"
+            >{{ develop.previewError.value }}</div>
+
             <!-- Histogram of the displayed generation -->
             <div class="px-1 pt-1">
                 <div class="text-[10px] uppercase tracking-wide text-base-content/40 mb-0.5">
