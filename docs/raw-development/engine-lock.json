@@ -5,7 +5,7 @@
   "plan": "PLAN-CONTROL-E47134A0CB19-001",
   "created": "2026-09-30",
   "engine": {
-    "repository": "C:/Users/Thomas/Desktop/RapidRAW-engine",
+    "repository": "https://github.com/weholt/RapidRAW.git",
     "branch": "feature/lap-engine-extraction",
     "revision": "e43646df6e75aabc771bac72458c51e5aef7734a",
     "revisionSubject": "rapidraw-845 Correct generated monochrome recipe contract",
@@ -93,12 +93,12 @@
     "hashCorrection": "2026-09-28 lap-da3 (TASK-603): the two gen-file hashes recorded by lap-d52 did not match the committed content at the pin (neither LF nor CRLF form); they were re-derived with cmd-level git show + certutil and cross-checked byte-identical against the cargo-resolved checkout under a fresh CARGO_HOME. All other entries re-verified unchanged."
   },
   "consumption": {
-    "method": "Git dependency pinned by an exact revision from the local isolated clone. Never a floating branch, never an uncommitted path, no publication and no shared remote.",
-    "cargoDependency": "rapidraw-develop = { git = \"file:///C:/Users/Thomas/Desktop/RapidRAW-engine\", rev = \"e43646df6e75aabc771bac72458c51e5aef7734a\" }",
+    "method": "Git dependency pinned by an exact revision published on the weholt/RapidRAW feature/lap-engine-extraction branch. Never a floating branch or an uncommitted path.",
+    "cargoDependency": "rapidraw-develop = { git = \"https://github.com/weholt/RapidRAW.git\", rev = \"e43646df6e75aabc771bac72458c51e5aef7734a\" }",
     "localReproduction": [
-      "1. Keep the isolated engine clone at C:/Users/Thomas/Desktop/RapidRAW-engine on branch feature/lap-engine-extraction (no publication, no remote creation; C:/Users/Thomas/Desktop/RapidRAW stays reference-only).",
-      "2. To rebuild or extend the engine locally: git -C C:/Users/Thomas/Desktop/RapidRAW-engine checkout e43646df6e75aabc771bac72458c51e5aef7734a, then apply the toolchain PATH prepend and build with cargo as usual. Engine changes require a new pinned revision plus a new lock entry here before any host adopts them.",
-      "3. Lap src-tauri references rapidraw-develop and rapidraw-edit-model at the cargoDependency revision above; Cargo records the exact rev in the consumer Cargo.lock, making consumption reproducible without network services, credentials, or model downloads.",
+      "1. Clone https://github.com/weholt/RapidRAW.git and fetch feature/lap-engine-extraction; the pinned revision is e43646df6e75aabc771bac72458c51e5aef7734a. The original C:/Users/Thomas/Desktop/RapidRAW checkout is not required for Lap builds.",
+      "2. To rebuild or extend the engine locally, use the rustup 1.98/MSVC toolchain and build the cloned feature branch. Engine changes require a new pinned revision and updated lock entry before Lap adopts them.",
+      "3. Lap src-tauri references rapidraw-develop and rapidraw-edit-model at the exact revision above; Cargo records the remote URL and rev in its lockfile. A network fetch is needed on a fresh machine, but no local engine path or model download is required.",
       "4. Windows MAX_PATH caution: rawler's git checkout contains deeply nested testdata paths. A fresh dependency cache must live under a short path (the verification below used C:/Users/Thomas/.cg1, 20 characters, deleted afterwards); deeper CARGO_HOME roots fail cargo fetch with 'path too long'."
     ]
   },
@@ -125,5 +125,5 @@
       "hashComparison": "The cargo-resolved checkout at the historical e1035c38 revision was compared against committed content: workspace manifest, workspace lock, both crate manifests, rapidraw-develop lib.rs, all three WGSL shaders, and both generated contract files were byte-identical (10/10). Initial working-tree DIFFERs were autocrlf artifacts of the local engine checkout, not content drift."
     }
   },
-  "lapIntegration": "Lap src-tauri Cargo dependencies consume this exact local engine revision. The generated TypeScript contract in src-vite/src/composables/useDevelopSession.types.ts must match the committed recipe.ts resource."
+  "lapIntegration": "Lap src-tauri Cargo dependencies consume this exact published engine revision. The generated TypeScript contract in src-vite/src/composables/useDevelopSession.types.ts must match the committed recipe.ts resource."
 }

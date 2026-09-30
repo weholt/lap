@@ -2005,6 +2005,42 @@ mod tests {
     }
 
     #[test]
+    fn engine_cargo_sources_use_published_repository() {
+        const ENGINE_REPOSITORY: &str = "https://github.com/weholt/RapidRAW.git";
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        for relative in [
+            "src-tauri",
+            "tests/raw-development/platform",
+            "tests/raw-development/e2e",
+        ] {
+            let manifest = fs::read_to_string(repo_root.join(relative).join("Cargo.toml"))
+                .unwrap_or_else(|err| panic!("cannot read {relative}: {err}"));
+            let lock = fs::read_to_string(repo_root.join(relative).join("Cargo.lock"))
+                .unwrap_or_else(|err| panic!("cannot read {relative} lock: {err}"));
+            for crate_name in ["rapidraw-develop", "rapidraw-edit-model"] {
+                let line = manifest
+                    .lines()
+                    .find(|line| line.starts_with(&format!("{crate_name} = ")))
+                    .unwrap_or_else(|| panic!("{crate_name} missing from {relative}"));
+                assert!(
+                    line.contains(ENGINE_REPOSITORY) && line.contains(ENGINE_GIT_REVISION),
+                    "{crate_name} in {relative} still uses a machine-local source: {line}"
+                );
+                assert!(
+                    lock.contains(&format!(
+                        "git+{ENGINE_REPOSITORY}?rev={ENGINE_GIT_REVISION}"
+                    )),
+                    "{relative} Cargo.lock does not pin the published engine revision"
+                );
+            }
+        }
+        let engine_lock =
+            fs::read_to_string(repo_root.join("docs/raw-development/engine-lock.json"))
+                .expect("engine lock present");
+        assert!(engine_lock.contains(ENGINE_REPOSITORY));
+    }
+
+    #[test]
     fn engine_revision_constant_matches_engine_lock() {
         let lock_text = fs::read_to_string(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/raw-development/engine-lock.json"),

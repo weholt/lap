@@ -11,10 +11,10 @@ publish = false
 lap_lib = { package = "Lap", path = "../../../src-tauri" }
 # Same pinned engine revision the application consumes
 # (docs/raw-development/engine-lock.json consumption.cargoDependency;
-# aligned with src-tauri/Cargo.toml at lap-63f so the harness graph holds
+# aligned with src-tauri/Cargo.toml so the harness graph holds
 # exactly one copy of each engine crate).
-rapidraw-edit-model = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "de4fdbd76723c76145b477a2b8874226512475f1" }
-rapidraw-develop = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "de4fdbd76723c76145b477a2b8874226512475f1" }
+rapidraw-edit-model = { git = "https://github.com/weholt/RapidRAW.git", rev = "e43646df6e75aabc771bac72458c51e5aef7734a" }
+rapidraw-develop = { git = "https://github.com/weholt/RapidRAW.git", rev = "e43646df6e75aabc771bac72458c51e5aef7734a" }
 # Matching versions from the application graph so the unified build resolves
 # one shared compile of each.
 rusqlite = { version = "0.32.1", features = ["bundled"] }
@@ -34,4 +34,3 @@ opt-level = 3
 # same opt-level the unit tests use.
 [profile.dev.package.Lap]
 opt-level = 0
-

@@ -33,7 +33,7 @@ use rapidraw_edit_model::sha256_hex;
 use crate::quantile::summarize;
 
 /// The engine revision Lap consumes (docs/raw-development/engine-lock.json).
-pub const ENGINE_REVISION: &str = "de4fdbd76723c76145b477a2b8874226512475f1";
+pub const ENGINE_REVISION: &str = "e43646df6e75aabc771bac72458c51e5aef7734a";
 /// Spec A12 provisional warm-preview budget. Reported, never redefined.
 pub const PROVISIONAL_WARM_TARGET_MS: f64 = 150.0;
 /// Provisional bound for repeated-navigation private-commit growth.

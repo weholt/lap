@@ -30,14 +30,14 @@ strip = true
 opt-level = 3
 
 [dependencies]
-# Engine consumption is pinned to an exact revision of the isolated local
-# engine clone (never a floating branch, never an uncommitted path) per
+# Engine consumption is pinned to an exact revision published on the RapidRAW
+# feature branch (never a floating branch or an uncommitted path) per
 # docs/raw-development/engine-lock.json (`consumption.cargoDependency`,
 # TASK-205/lap-517, consumed by lap-a52/TASK-302). Cargo records the exact
-# rev in Cargo.lock; reproduce locally per that lock's `localReproduction`
+# rev in Cargo.lock; reproduce per that lock's `localReproduction`
 # steps. This task also validates `cargo_lock_pins_engine_revision`.
-rapidraw-edit-model = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "e43646df6e75aabc771bac72458c51e5aef7734a" }
-rapidraw-develop = { git = "file:///C:/Users/Thomas/Desktop/RapidRAW-engine", rev = "e43646df6e75aabc771bac72458c51e5aef7734a" }
+rapidraw-edit-model = { git = "https://github.com/weholt/RapidRAW.git", rev = "e43646df6e75aabc771bac72458c51e5aef7734a" }
+rapidraw-develop = { git = "https://github.com/weholt/RapidRAW.git", rev = "e43646df6e75aabc771bac72458c51e5aef7734a" }
 tauri = { version = "2", features = [
     "macos-private-api",
     "protocol-asset",
