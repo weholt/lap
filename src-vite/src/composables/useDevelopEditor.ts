@@ -288,6 +288,7 @@ function createDevelopEditor(): DevelopEditor {
                 quality,
                 inputAt: latestInputAt,
                 maxEdge: previewEdgeForViewport(),
+                envelopePatch: pendingEnvelopePatch ?? undefined,
             });
             if (request === previewRequest) previewError.value = null;
         } catch (error) {

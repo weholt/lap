@@ -200,6 +200,25 @@ describe('useDevelopEditor', () => {
         expect(invokeMock.mock.calls.filter(([cmd]) => cmd === 'develop_commit_recipe')).toHaveLength(0);
     });
 
+    it('includes a newly selected LUT resource in previews before the sidecar commit', async () => {
+        const editor = useDevelopEditor();
+        await openAssetA(editor);
+        vi.useFakeTimers();
+        invokeMock.mockClear();
+        const digest = 'a'.repeat(64);
+        const id = `lut/${digest}`;
+        const payload = editor.copyAdjustments();
+        payload.values.lutPath = `resource://${id}`;
+        payload.values.lutName = 'Test LUT';
+        payload.values.lutSize = 2;
+        payload.resources = { [id]: { algorithm: 'sha256', digest, sizeBytes: 128 } };
+        editor.applyAdjustments(payload);
+        await vi.advanceTimersByTimeAsync(40);
+        const preview = invokeMock.mock.calls.find(([cmd]) => cmd === 'develop_render_preview')?.[1];
+        expect(preview?.envelope.resources?.[id]).toEqual(payload.resources[id]);
+        expect(invokeMock.mock.calls.filter(([cmd]) => cmd === 'develop_commit_recipe')).toHaveLength(0);
+    });
+
     beforeEach(() => {
         invokeMock.mockReset();
         invokeMock.mockImplementation(async (command: string) => {

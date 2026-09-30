@@ -38,6 +38,8 @@ export interface DevelopPreviewState {
 
 export interface RenderOptions {
     inputAt?: number;
+    /** Uncommitted host-managed fields (such as a newly imported LUT resource). */
+    envelopePatch?: Record<string, unknown>;
     /** Fast draft while dragging (default: settled full quality). */
     quality?: 'interactive' | 'settled';
     /** Maximum preview edge length; bounded by the backend transport. */
@@ -95,7 +97,11 @@ export function useDevelopSession() {
         const requestLifetime = lifetime;
         const generation = latestGeneration.value + 1;
         latestGeneration.value = generation;
-        const envelope: RecipeEnvelopeValue = { ...current.envelope, recipe };
+        const envelope: RecipeEnvelopeValue = {
+            ...current.envelope,
+            ...(options.envelopePatch ?? {}),
+            recipe,
+        };
         const outcome = await invoke<PreviewWait>('develop_render_preview', {
             sessionId: current.sessionId,
             generation,
