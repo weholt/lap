@@ -59,6 +59,7 @@ export const SECTION_FIELDS: Record<
     color: [
         'temperature', 'tint', 'vibrance', 'saturation', 'hue',
         'colorGrading', 'hsl', 'colorCalibration',
+        'blackWhiteEnabled', 'blackWhiteMix',
     ],
     details: [
         'clarity', 'structure', 'dehaze', 'centré', 'sharpness', 'sharpnessThreshold',
@@ -258,6 +259,15 @@ function checkColorCalibration(value: unknown): void {
 }
 
 function checkFieldValue(field: string, value: unknown): void {
+    if (field === 'blackWhiteEnabled') {
+        if (typeof value !== 'boolean') fail('blackWhiteEnabled must be a boolean');
+        return;
+    }
+    if (field === 'blackWhiteMix') {
+        if (!Array.isArray(value) || value.length !== 8) fail('blackWhiteMix must contain eight values');
+        value.forEach((mix, index) => checkFiniteNumber(`blackWhiteMix[${index}]`, mix, -100, 100));
+        return;
+    }
     if (field === 'levels') {
         if (!isPlainObject(value) || typeof value.enabled !== 'boolean') fail('invalid Levels');
         for (const channel of ['rgb', 'red', 'green', 'blue']) {

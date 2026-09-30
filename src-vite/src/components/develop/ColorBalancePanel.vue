@@ -45,9 +45,9 @@ function tabKey(e: KeyboardEvent, index: number) {
 <template>
     <section class="color-balance border-t border-base-content/5" data-testid="develop-section-color-balance">
         <div class="flex items-center gap-1 px-1 pt-2 pb-1">
-            <button class="flex-1 text-left text-[11px] font-bold uppercase text-base-content/60" type="button"
+            <button class="flex-1 flex items-center gap-1 text-left text-[11px] font-bold uppercase text-base-content/60" type="button"
                 data-testid="develop-section-toggle-color-balance" :aria-expanded="expanded" :aria-controls="`${id}-body`"
-                @click="expanded = !expanded">{{ t('develop.colorBalance.title') }}</button>
+                @click="expanded = !expanded"><svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><path d="M12 3a9 9 0 0 1 8 13M4 17a9 9 0 0 1 3-12"/></svg>{{ t('develop.colorBalance.title') }}</button>
             <button type="button" class="btn btn-ghost btn-xs text-base-content/50" :disabled="!editor.session.value"
                 :title="t('develop.colorBalance.resetAll')" :aria-label="t('develop.colorBalance.resetAll')"
                 data-testid="develop-balance-reset-all" @click="reset()"><IconRestore class="w-3 h-3" /></button>

@@ -3876,6 +3876,7 @@ pub struct DevelopAppState {
     derivatives: std::sync::OnceLock<std::sync::Arc<DevelopDerivativeParts>>,
     resources:
         std::sync::OnceLock<Option<std::sync::Arc<lap_lib::develop::resources::ResourceStore>>>,
+    lut_catalog_lock: std::sync::Arc<Mutex<()>>,
 }
 
 impl DevelopAppState {
@@ -3976,6 +3977,9 @@ impl DevelopAppState {
                 gate: std::sync::Arc::new(lap_lib::develop::cache::RenderGate::new(
                     DERIVATIVE_REFRESH_PERMITS,
                 )),
+                refresh_slots: std::sync::Arc::new(tokio::sync::Semaphore::new(
+                    DERIVATIVE_REFRESH_PERMITS,
+                )),
                 refresh_in_flight: Mutex::new(HashSet::new()),
             })
         }))
@@ -3997,6 +4001,7 @@ pub struct DevelopDerivativeParts {
     bus: std::sync::Arc<lap_lib::develop::cache::DevelopCommitBus>,
     store: std::sync::Arc<lap_lib::develop::cache::DevelopedDerivativeStore>,
     gate: std::sync::Arc<lap_lib::develop::cache::RenderGate>,
+    refresh_slots: std::sync::Arc<tokio::sync::Semaphore>,
     refresh_in_flight: Mutex<HashSet<i64>>,
 }
 
@@ -4058,16 +4063,6 @@ fn acknowledge_commit_side_effects(
         return;
     }
 
-    // Invalidate the cached (undeveloped) thumbnail row and cache file so the
-    // next request regenerates with the developed preference.
-    let thumbnail_invalidated = match AThumb::delete(file_id) {
-        Ok(_) => true,
-        Err(error) => {
-            eprintln!("develop commit: thumbnail invalidation failed for file {file_id}: {error}");
-            false
-        }
-    };
-
     let album_id = AFile::get_file_info(file_id)
         .ok()
         .flatten()
@@ -4084,24 +4079,13 @@ fn acknowledge_commit_side_effects(
             "variantId": variant_id,
             "revision": receipt.revision,
             "contentHash": receipt.content_hash,
-            "thumbnailInvalidated": thumbnail_invalidated,
+            "thumbnailInvalidated": false,
         }),
     );
 
-    // Reuse the existing catalog refresh contract so every open grid/central
-    // view repaints the invalidated thumbnails (same payload shape the
-    // indexing worker emits).
-    if album_id > 0 {
-        let _ = app_handle.emit(
-            "thumbnail_ready",
-            serde_json::json!({
-                "album_id": album_id,
-                "file_ids": [file_id],
-                "invalidate": true,
-            }),
-        );
-    }
-
+    // Keep the old thumbnail visible until the developed derivative is ready.
+    // Publishing an invalidation here made the UI briefly fetch the untouched
+    // source and show a different image from the live Develop preview.
     schedule_developed_thumbnail_refresh(
         app_handle.clone(),
         service,
@@ -4131,14 +4115,33 @@ fn schedule_developed_thumbnail_refresh(
             return;
         }
     }
-    tauri::async_runtime::spawn_blocking(move || {
-        let result = render_developed_thumbnail(&service, &parts, file_id);
+    tauri::async_runtime::spawn(async move {
+        // A queue of lightweight futures, with only two blocking RAW decodes.
+        // The old try_acquire-only path silently dropped all but two images
+        // when Edit Selected committed many assets together.
+        let Ok(_slot) = std::sync::Arc::clone(&parts.refresh_slots).acquire_owned().await else {
+            return;
+        };
+        let worker_parts = std::sync::Arc::clone(&parts);
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            loop {
+                let before = worker_parts.bus.stamp(&file_id.to_string());
+                let result = render_developed_thumbnail(&service, &worker_parts, file_id);
+                // Commits arriving during a render supersede its result. The
+                // worker already owns this file's queue slot, so retry with
+                // the latest durable recipe instead of dropping that commit.
+                if worker_parts.bus.stamp(&file_id.to_string()) == before {
+                    break result;
+                }
+            }
+        })
+        .await;
         parts
             .refresh_in_flight
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .remove(&file_id);
-        match result {
+        match result.unwrap_or_else(|error| Err(error.to_string())) {
             Ok(true) => {
                 if album_id > 0 {
                     let _ = app_handle.emit(
@@ -4599,6 +4602,103 @@ fn require_resource_store(
         "develop resource store is unavailable; lens profiles cannot be imported or verified"
             .to_string()
     })
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevelopLutEntry {
+    id: String,
+    name: String,
+    cube_size: u32,
+    size_bytes: u64,
+}
+
+fn lut_catalog_file(root: &std::path::Path, id: &str) -> Result<std::path::PathBuf, String> {
+    let digest = id.strip_prefix("lut/").ok_or("invalid LUT id")?;
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    {
+        return Err("invalid LUT id".to_string());
+    }
+    Ok(root.join("lut-library").join(format!("{digest}.json")))
+}
+
+/// The catalog contains names and UI order only. Content-addressed objects
+/// remain available to existing non-destructive recipes after removal.
+#[tauri::command]
+pub async fn develop_list_luts(
+    state: tauri::State<'_, DevelopAppState>,
+) -> Result<Vec<DevelopLutEntry>, String> {
+    let store = require_resource_store(&state)?;
+    let lock = std::sync::Arc::clone(&state.lut_catalog_lock);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut entries = Vec::new();
+        let dir = store.root().join("lut-library");
+        if let Ok(files) = std::fs::read_dir(dir) {
+            for file in files.flatten() {
+                if let Ok(bytes) = std::fs::read(file.path()) {
+                    if let Ok(entry) = serde_json::from_slice::<DevelopLutEntry>(&bytes) {
+                        if lut_catalog_file(store.root(), &entry.id).ok().as_deref()
+                            == Some(file.path().as_path())
+                        {
+                            entries.push(entry);
+                        }
+                    }
+                }
+            }
+        }
+        entries.sort_by(|a, b| {
+            a.name
+                .to_lowercase()
+                .cmp(&b.name.to_lowercase())
+                .then(a.id.cmp(&b.id))
+        });
+        Ok(entries)
+    }).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn develop_import_lut(
+    state: tauri::State<'_, DevelopAppState>,
+    path: String,
+) -> Result<DevelopLutEntry, String> {
+    let store = require_resource_store(&state)?;
+    let lock = std::sync::Arc::clone(&state.lut_catalog_lock);
+    tauri::async_runtime::spawn_blocking(move || {
+        let imported = store
+            .import_lut_file(std::path::Path::new(&path))
+            .map_err(|error| error.to_string())?;
+        let entry = DevelopLutEntry {
+            id: imported.id.clone(),
+            name: imported.name.unwrap_or_else(|| "Imported LUT".to_string()),
+            cube_size: imported.cube_size,
+            size_bytes: imported.size_bytes,
+        };
+        let file = lut_catalog_file(store.root(), &entry.id)?;
+        let _guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::fs::create_dir_all(file.parent().ok_or("invalid LUT catalog path")?)
+            .map_err(|error| error.to_string())?;
+        let bytes = serde_json::to_vec(&entry).map_err(|error| error.to_string())?;
+        std::fs::write(file, bytes).map_err(|error| error.to_string())?;
+        Ok(entry)
+    }).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn develop_remove_lut(
+    state: tauri::State<'_, DevelopAppState>,
+    id: String,
+) -> Result<(), String> {
+    let store = require_resource_store(&state)?;
+    let lock = std::sync::Arc::clone(&state.lut_catalog_lock);
+    tauri::async_runtime::spawn_blocking(move || {
+        let file = lut_catalog_file(store.root(), &id)?;
+        let _guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::fs::remove_file(file).map_err(|error| error.to_string())
+    }).await.map_err(|error| error.to_string())?
 }
 
 /// Imports lensfun XML files as versioned lens-profile resources. `version`

@@ -47,6 +47,8 @@ fn fields(section: &str) -> Option<&'static [&'static str]> {
             "colorGrading",
             "hsl",
             "colorCalibration",
+            "blackWhiteEnabled",
+            "blackWhiteMix",
         ],
         "details" => &[
             "clarity",

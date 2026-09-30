@@ -42,8 +42,8 @@ function tabKey(e: KeyboardEvent, index: number) {
         <div class="flex items-center gap-1 px-1 pt-2 pb-1">
             <input type="checkbox" class="checkbox checkbox-primary checkbox-xs" :checked="levels.enabled" :disabled="!editor.session.value"
                 :aria-label="t('develop.levels.enabled')" data-testid="levels-enabled" @change="enable" />
-            <button type="button" class="flex-1 text-left text-[11px] font-bold uppercase text-base-content/60"
-                :aria-expanded="expanded" :aria-controls="`${id}-body`" data-testid="develop-section-toggle-levels" @click="toggle">{{ t('develop.levels.title') }}</button>
+            <button type="button" class="flex-1 flex items-center gap-1 text-left text-[11px] font-bold uppercase text-base-content/60"
+                :aria-expanded="expanded" :aria-controls="`${id}-body`" data-testid="develop-section-toggle-levels" @click="toggle"><svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 21V3M3 21h18M6 17h3v-5H6zm5 0h3V7h-3zm5 0h3V4h-3z"/></svg>{{ t('develop.levels.title') }}</button>
             <button type="button" class="btn btn-ghost btn-xs text-base-content/50" :disabled="!editor.session.value"
                 :title="t('develop.levels.resetAll')" :aria-label="t('develop.levels.resetAll')" data-testid="levels-reset-all" @click="reset(true)"><IconRestore class="w-3 h-3" /></button>
         </div>

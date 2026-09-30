@@ -334,12 +334,12 @@
                     data-testid="develop-central-preview"
                   >
                     <DevelopPreviewSurface
-                      :frame="developEditor.preview.value"
-                      @presented="developEditor.markPreviewPresented"
+                      :frame="currentDevelopPreviewFrame"
+                      @presented="onDevelopPreviewPresented"
                       @error="developEditor.previewError.value = $event"
                     />
                     <div
-                      v-if="developEditor.rendering.value && !developEditor.preview.value"
+                      v-if="!currentDevelopPreviewFrame && !developEditor.previewError.value"
                       class="absolute inset-0 flex items-center justify-center"
                     >
                       <span class="loading loading-dots text-primary"></span>
@@ -812,6 +812,9 @@ import FileInfo from '@/components/FileInfo.vue';
 import DevelopPanel from '@/components/DevelopPanel.vue';
 import DevelopPreviewSurface from '@/components/develop/DevelopPreviewSurface.vue';
 import { useDevelopEditor } from '@/composables/useDevelopEditor';
+import { developPreviewPresentation } from '@/composables/developPreviewPresentation';
+import { createDevelopThumbnailGuard } from '@/composables/developThumbnailGuard';
+import type { DevelopPreviewState } from '@/composables/useDevelopSession';
 import { useDevelopRollback } from '@/composables/useDevelopRollback';
 import Breadcrumb from '@/components/Breadcrumb.vue';
 import DedupPane from '@/components/DedupPane.vue';
@@ -2200,12 +2203,45 @@ const toggleDevelopPanel = () => {
 // Central develop preview: while the Develop panel is open, the filmstrip
 // preview area shows the engine-rendered image instead of the untouched
 // source. "View original" in the panel hides the rendered overlay.
-const isDevelopCentralPreviewVisible = computed(() => {
-  if (!isDevelopPanelOpen.value || developEditor.showOriginal.value) return false;
-  const currentFile = fileList.value[selectedItemIndex.value];
-  if (!currentFile) return false;
-  return developEditor.activeFileId.value === Number(currentFile.id || 0);
-});
+const developPreviewPresentationState = computed(() => developPreviewPresentation(
+  isDevelopPanelOpen.value,
+  developEditor.showOriginal.value,
+  Number(fileList.value[selectedItemIndex.value]?.id || 0) || null,
+  developEditor.activeFileId.value,
+));
+const isDevelopCentralPreviewVisible = computed(() => developPreviewPresentationState.value.showOverlay);
+const currentDevelopPreviewFrame = computed(() =>
+  developPreviewPresentationState.value.useCurrentFrame ? developEditor.preview.value : null,
+);
+
+function onDevelopPreviewPresented(frame: DevelopPreviewState) {
+  developEditor.markPreviewPresented(frame);
+  if (frame !== developEditor.preview.value || frame.quality !== 'settled') return;
+  const file = fileList.value[selectedItemIndex.value];
+  if (!file || Number(file.id) !== developEditor.activeFileId.value) return;
+
+  // The filmstrip shows pixels from the very same completed frame as the
+  // central view. The durable 1024px derivative still renders in the
+  // background and replaces this temporary, view-local thumbnail later.
+  const source = document.createElement('canvas');
+  source.width = frame.width;
+  source.height = frame.height;
+  const sourceContext = source.getContext('2d');
+  if (!sourceContext) return;
+  sourceContext.putImageData(
+    new ImageData(new Uint8ClampedArray(frame.bytes), frame.width, frame.height), 0, 0,
+  );
+  const scale = Math.min(1, 512 / Math.max(frame.width, frame.height));
+  const target = document.createElement('canvas');
+  target.width = Math.max(1, Math.round(frame.width * scale));
+  target.height = Math.max(1, Math.round(frame.height * scale));
+  const targetContext = target.getContext('2d');
+  if (!targetContext) return;
+  targetContext.drawImage(source, 0, 0, target.width, target.height);
+  if (frame === developEditor.preview.value && Number(file.id) === developEditor.activeFileId.value) {
+    file.thumbnail = target.toDataURL('image/jpeg', 0.86);
+  }
+}
 
 // Open the currently selected file in a new image viewer window (from FileInfo preview click).
 function openSelectedInViewer() {
@@ -3618,16 +3654,21 @@ async function refreshImportedAlbumContent(albumId: number) {
 }
 
 // New event handlers for GridView
+let latestImageSelectionIntent = 0;
 function handleItemClicked(
   index: number,
   modifiers: { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean } = {}
 ) {
   if (!ensureGroupedFileAtIndex(index)) return;
+  const intent = ++latestImageSelectionIntent;
+  const fileId = fileList.value[index]?.id;
+  const stillCurrent = () => intent === latestImageSelectionIntent && fileList.value[index]?.id === fileId;
   const shiftKey = !!modifiers.shiftKey;
   const toggleSelection = !!(modifiers.metaKey || modifiers.ctrlKey);
 
   if (!selectMode.value && shiftKey && selectedItemIndex.value >= 0 && selectedItemIndex.value !== index) {
     checkUnsavedChanges(() => {
+      if (!stillCurrent()) return;
       void selectRangeFromSingleSelection(selectedItemIndex.value, index);
     });
     return;
@@ -3635,6 +3676,7 @@ function handleItemClicked(
 
   if (!selectMode.value && toggleSelection && selectedItemIndex.value >= 0) {
     checkUnsavedChanges(() => {
+      if (!stillCurrent()) return;
       const anchorIndex = selectedItemIndex.value;
       handleSelectMode(true);
       setItemSelected(anchorIndex, true);
@@ -3655,6 +3697,7 @@ function handleItemClicked(
   }
   
   checkUnsavedChanges(() => {
+    if (!stillCurrent()) return;
     selectedItemIndex.value = index;
     if (selectMode.value) {
       void handleItemSelectToggled(index, shiftKey);
@@ -3670,6 +3713,9 @@ function handleItemDblClicked(
   modifiers: { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean } = {}
 ) {
   if (!ensureGroupedFileAtIndex(index)) return;
+  const intent = ++latestImageSelectionIntent;
+  const fileId = fileList.value[index]?.id;
+  const stillCurrent = () => intent === latestImageSelectionIntent && fileList.value[index]?.id === fileId;
   const file = fileList.value[index];
   const isMedia = file?.file_type === 1 || file?.file_type === 2 || file?.file_type === 3;
   const openInNewWindow = !!(
@@ -3680,6 +3726,7 @@ function handleItemDblClicked(
   );
   if (openInNewWindow) {
     checkUnsavedChanges(() => {
+      if (!stillCurrent()) return;
       selectedItemIndex.value = index;
       openImageViewer(index, true);
     });
@@ -3696,6 +3743,7 @@ function handleItemDblClicked(
   }
   
   checkUnsavedChanges(() => {
+    if (!stillCurrent()) return;
     selectedItemIndex.value = index;
 
     if (!isFilmstripView.value) {
@@ -4734,6 +4782,7 @@ const handleKeyDown = (e: any) => {
 let unlistenIndexProgress: (() => void) | undefined;
 let unlistenIndexFinished: (() => void) | undefined;
 let unlistenThumbnailReady: (() => void) | undefined;
+const developThumbnailGuard = createDevelopThumbnailGuard();
 let unlistenTriggerNextAlbum: (() => void) | undefined;
 let unlistenRefreshContent: (() => void) | undefined;
 let unlistenFilesDeleted: (() => void) | undefined;
@@ -5534,6 +5583,10 @@ onMounted( async() => {
     );
     if (readyIds.size === 0) return;
 
+    const refreshEpochs = invalidate
+      ? new Map([...readyIds].map(id => [id, developThumbnailGuard.markReady(id)]))
+      : undefined;
+
     // A normal scan emits this event when the thumbnail first becomes ready.
     // The streaming list is already fetching that image, so clearing it here
     // would turn a successful first paint into a second, visible load. Only
@@ -5564,26 +5617,19 @@ onMounted( async() => {
     // persistent cache version for this file's contents.
     await Promise.all(loadedFiles.map(async (file: any) => {
       const refreshed = await getFileInfo(Number(file.id));
-      if (refreshed && fileList.value.includes(file)) Object.assign(file, refreshed);
+      if (refreshed && fileList.value.includes(file)) {
+        // Metadata can arrive before the replacement thumbnail. Keep the old
+        // pixels visible until getFileListThumb installs the completed one.
+        const oldThumbnail = file.thumbnail;
+        Object.assign(file, refreshed);
+        file.thumbnail = oldThumbnail;
+      }
     }));
 
-    // Reload the regenerated thumbnails instead of retaining the old values
-    // that arrived with the refreshed file list.
-    for (const file of loadedFiles) {
-      file.thumbnail = '';
-    }
-
-    // Match Refresh file info: changing filePath makes Image.vue reload the
-    // currently displayed file after its on-disk contents have changed.
-    const activeFile = fileList.value[selectedItemIndex.value];
-    if (activeFile && readyIds.has(Number(activeFile.id || 0)) && activeFile.file_path) {
-      const activePath = activeFile.file_path;
-      activeFile.file_path = '';
-      await nextTick();
-      activeFile.file_path = activePath;
-    }
-
-    getFileListThumb(loadedFiles, 0, 8, true);
+    // The event is emitted only after the developed derivative is ready.
+    // Retain the old thumbnail until its replacement has arrived; clearing it
+    // here flashes a placeholder and briefly exposes the untouched RAW.
+    getFileListThumb(loadedFiles, 0, 8, true, refreshEpochs);
   });
 
   // listen for external refresh requests (e.g. from folder context menu)
@@ -10023,7 +10069,7 @@ function preserveLoadedThumbnails(files: any[]) {
 
 // Get the thumbnail for the files (non-blocking, runs in background)
 // Automatically cancels when a new request starts (e.g., switching folders)
-async function getFileListThumb(files: any[], offset = 0, concurrencyLimit = 4, bustCache = false) {
+async function getFileListThumb(files: any[], offset = 0, concurrencyLimit = 4, bustCache = false, refreshEpochs?: Map<number, number>) {
   // Use current request ID to check for cancellation
   const requestId = currentThumbRequestId;
   const thumbnailSize = config.settings.thumbnailSize;
@@ -10031,6 +10077,8 @@ async function getFileListThumb(files: any[], offset = 0, concurrencyLimit = 4, 
 
   const applyThumbToFile = (file: any, thumb: any) => {
     if (!thumb) return;
+    const epoch = refreshEpochs?.get(Number(file.id));
+    if (epoch !== undefined && !developThumbnailGuard.isCurrent(Number(file.id), epoch)) return;
 
     if (thumb.error_code === 0 || thumb.error_code === 2) {
       file.thumbnail = getThumbnailDataUrl(thumb, thumbnailPlaceholder, bustCache, thumbnailSize, file.file_path, Number(file.modified_at || 0));
@@ -10047,11 +10095,17 @@ async function getFileListThumb(files: any[], offset = 0, concurrencyLimit = 4, 
 
     for (let i = startIndex; i < endIndex; i++) {
       const file = files[i];
-      if (!file || file.thumbnail) continue;
+      if (!file || (file.thumbnail && !bustCache)) continue;
 
-      const cached = getCachedThumbnailDataUrl(file.id, thumbnailSize);
+      // A committed develop derivative can race with an older list fetch.
+      // Forced refreshes must ask the backend for the latest pixels, even if
+      // an earlier request has repopulated the in-memory cache in the interim.
+      const cached = bustCache ? '' : getCachedThumbnailDataUrl(file.id, thumbnailSize);
       if (cached) {
-        file.thumbnail = cached;
+        const epoch = refreshEpochs?.get(Number(file.id));
+        if (epoch === undefined || developThumbnailGuard.isCurrent(Number(file.id), epoch)) {
+          file.thumbnail = cached;
+        }
         continue;
       }
 

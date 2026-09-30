@@ -1,7 +1,7 @@
 import { createDevelopSelection } from './useDevelopSelection';
 import { copySections, pasteSections, parseClipboardPayload } from './useDevelopClipboard';
 import type { DevelopClipboardPayload } from './useDevelopClipboard.types';
-import { computed, ref, shallowRef } from 'vue';
+import { computed, nextTick, ref, shallowRef } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 
 import { useUIStore } from '@/stores/uiStore';
@@ -254,6 +254,21 @@ function createDevelopEditor(): DevelopEditor {
     let presentedInputAt: number | undefined;
     const previewLatencyMs = ref<number | null>(null);
     const presentedQuality = ref('settled');
+    function previewEdgeForViewport(): number {
+        if (typeof document === 'undefined') return 1536;
+        const viewport = document.querySelector('[data-testid="develop-central-preview"]');
+        const rect = viewport?.getBoundingClientRect();
+        if (!rect?.width || !rect?.height) return 1536;
+        // Render the pixels the frame can actually show. The interactive and
+        // settled tiers use the same dimensions, so a quality handoff never
+        // changes the displayed image box or uploads four times the pixels.
+        const [sourceWidth, sourceHeight] = session.session.value?.dimensions ?? [0, 0];
+        if (!sourceWidth || !sourceHeight) return 1536;
+        const fittedScale = Math.min(rect.width / sourceWidth, rect.height / sourceHeight);
+        const fittedEdge = Math.max(sourceWidth, sourceHeight) * fittedScale;
+        const displayScale = Math.min(window.devicePixelRatio || 1, 1.5);
+        return Math.max(256, Math.min(2048, Math.ceil(fittedEdge * displayScale)));
+    }
     function markPreviewPresented(frame: DevelopPreviewState) {
         if (frame !== session.preview.value || frame.inputAt === undefined || frame.inputAt !== latestInputAt) return;
         if (presentedInputAt !== frame.inputAt) {
@@ -269,7 +284,11 @@ function createDevelopEditor(): DevelopEditor {
         const request = ++previewRequest;
         rendering.value = true;
         try {
-            await session.renderPreview(recipe.value, { quality, inputAt: latestInputAt });
+            await session.renderPreview(recipe.value, {
+                quality,
+                inputAt: latestInputAt,
+                maxEdge: previewEdgeForViewport(),
+            });
             if (request === previewRequest) previewError.value = null;
         } catch (error) {
             if (request === previewRequest) previewError.value = String(error);
@@ -347,13 +366,15 @@ function createDevelopEditor(): DevelopEditor {
     // Serialize navigation and close so overlapping opens cannot mix asset
     // identity, retained recipes, or a pending commit from different assets.
     let navigation: Promise<unknown> = Promise.resolve();
+    let latestOpenIntent = 0;
     function openAsset(file: DevelopEditorFileInput): Promise<void> {
-        const next = navigation.then(() => openAssetNow(file));
+        const intent = ++latestOpenIntent;
+        const next = navigation.then(() => intent === latestOpenIntent ? openAssetNow(file, intent) : undefined);
         navigation = next.catch(() => undefined);
         return next;
     }
 
-    async function openAssetNow(file: DevelopEditorFileInput): Promise<void> {
+    async function openAssetNow(file: DevelopEditorFileInput, intent: number): Promise<void> {
         const assetId = Number(file?.id || 0);
         if (!assetId || !Number.isFinite(assetId)) return;
         if (activeFileId.value === assetId && session.session.value) return;
@@ -361,10 +382,12 @@ function createDevelopEditor(): DevelopEditor {
         openError.value = null;
         endEditTransaction();
         if (selection.pending.value) await selection.idle();
+        if (intent !== latestOpenIntent) return;
         selection.clearHistory();
         // Awaited commit on navigation. An explicitly failed commit is not
         // retried automatically: it is retained per asset for retry instead.
         await flush();
+        if (intent !== latestOpenIntent) return;
         retainActiveState();
         pendingEnvelopePatch = null;
         ++previewRequest;
@@ -391,6 +414,10 @@ function createDevelopEditor(): DevelopEditor {
         try {
             const retained = uiStore.peekRetainedDevelopState(assetId);
             const opened = await session.openEditSession(assetId, 'default');
+            if (intent !== latestOpenIntent) {
+                await session.closeEditSession();
+                return;
+            }
             uiStore.takeRetainedDevelopState(assetId);
             pendingEnvelopePatch = retained?.envelopePatch ?? null;
             activeFileId.value = assetId;
@@ -398,13 +425,19 @@ function createDevelopEditor(): DevelopEditor {
             recipe.value = retained ? retained.recipe : cloneRecipe(opened.envelope.recipe);
             // Session history restarts per asset: persisted edits never
             // imply persisted undo history.
-            history.initialize(recipe.value);
+            history.initialize(recipe.value!);
             markDirty(Boolean(retained));
             setSaveState(retained ? retained.saveState : 'idle', retained ? retained.lastError : null);
             if (retained && retained.saveState !== 'failed' && retained.saveState !== 'conflict') {
                 scheduleCommit();
             }
-            await renderPreview('settled');
+            // Opening a large RAF must not keep later navigation or clipboard
+            // actions queued behind its GPU preview. Session generations
+            // discard its late pixels when another asset opens. Let Vue mount
+            // the central viewport first so the initial and later renders
+            // share one cached preparation at the actual displayed size.
+            await nextTick();
+            if (intent === latestOpenIntent) void renderPreview('settled');
         } catch (error) {
             openError.value = String(error);
             throw error;

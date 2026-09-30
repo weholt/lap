@@ -12,10 +12,12 @@ import { createPinia, setActivePinia } from 'pinia';
 // (RECIPE_PARAM_RANGES), not from hand-copied panel constants.
 
 const invokeMock = vi.fn();
+const openMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@tauri-apps/api/core', () => ({
     invoke: (...args: unknown[]) => invokeMock(...args),
 }));
+vi.mock('@tauri-apps/plugin-dialog', () => ({ open: openMock }));
 
 import DevelopPanel from '@/components/DevelopPanel.vue';
 import ImageHistogram from '@/components/ImageHistogram.vue';
@@ -97,13 +99,14 @@ function completedTicket(assetId: number) {
 }
 
 function queueSuccessfulOpen(assetId: number) {
-    invokeMock
-        // The rollback-switch refresh (lap-63f) is the panel's first IPC
-        // call during setup; it must not consume the session queue.
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(openedSession(assetId))
-        .mockResolvedValueOnce(completedTicket(assetId))
-        .mockResolvedValueOnce(new Uint8Array(8 * 8 * 4).buffer);
+    invokeMock.mockImplementation(async (command: string) => {
+        if (command === 'develop_get_rollback') return false;
+        if (command === 'develop_open_edit_session') return openedSession(assetId);
+        if (command === 'develop_render_preview') return completedTicket(assetId);
+        if (command === 'develop_take_preview_frame') return new Uint8Array(8 * 8 * 4).buffer;
+        if (command === 'develop_list_luts' || command === 'develop_lens_catalog') return [];
+        return [];
+    });
 }
 
 async function mountPanel(locale = 'en', fileOverride: Record<string, unknown> = {}) {
@@ -125,6 +128,8 @@ async function expandSection(wrapper: any, section: string) {
 describe('DevelopPanel', () => {
     beforeEach(() => {
         invokeMock.mockReset();
+        openMock.mockReset();
+        localStorage.clear();
         // Default for non-queued commands (e.g. the lens-profile catalog of
         // lap-d52, the rollback switch of lap-63f); queued
         // mockResolvedValueOnce responses still win.
@@ -202,6 +207,75 @@ describe('DevelopPanel', () => {
         wrapper.unmount();
     });
 
+    it('imports a content-addressed LUT and removes it from the library without losing the edit', async () => {
+        const wrapper = await mountPanel();
+        const entry = { id: `lut/${'a'.repeat(64)}`, name: 'Test film', cubeSize: 17, sizeBytes: 128 };
+        openMock.mockResolvedValue('C:/test-film.cube');
+        invokeMock.mockImplementation(async (command: string) => {
+            if (command === 'develop_import_lut') return entry;
+            if (command === 'develop_list_luts') return [entry];
+            if (command === 'develop_remove_lut') return;
+            if (command === 'develop_render_preview') return completedTicket(7);
+            if (command === 'develop_take_preview_frame') return new Uint8Array(8 * 8 * 4).buffer;
+            return [];
+        });
+        await wrapper.get('[data-testid="develop-section-lut"] button').trigger('click');
+        expect((wrapper.get('[data-testid="develop-lut-select"]').element as HTMLSelectElement).value).toBe('');
+        await wrapper.get('[data-testid="develop-lut-import"]').trigger('click');
+        await flushPromises();
+        expect(useDevelopEditor().recipe.value?.lutPath).toBe(`resource://${entry.id}`);
+        await wrapper.get('[data-testid="develop-lut-manage"]').trigger('click');
+        await wrapper.get(`[aria-label="Remove ${entry.name}"]`).trigger('click');
+        await wrapper.get('[data-testid="develop-lut-confirm-remove"]').trigger('click');
+        await flushPromises();
+        expect(invokeMock).toHaveBeenCalledWith('develop_remove_lut', { id: entry.id });
+        expect(useDevelopEditor().recipe.value?.lutPath).toBe(`resource://${entry.id}`);
+        wrapper.unmount();
+    });
+
+    it('saves reusable presets and applies them to the current image', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        editor.setParam('exposure', 1.5);
+        await wrapper.get('[data-testid="develop-section-presets"] button').trigger('click');
+        await wrapper.get('[data-testid="develop-preset-name"]').setValue('Bright portrait');
+        await wrapper.get('[data-testid="develop-preset-save"]').trigger('click');
+        const stored = JSON.parse(localStorage.getItem('lap.develop.presets.v1') || '[]');
+        expect(stored).toHaveLength(1);
+        expect(stored[0].payload.values.exposure).toBe(1.5);
+        editor.setParam('exposure', -0.5);
+        await wrapper.get('[data-testid="develop-preset-apply"]').trigger('click');
+        expect(editor.recipe.value?.exposure).toBe(1.5);
+        wrapper.unmount();
+    });
+
+    it('persists black and white conversion independently of color adjustments', async () => {
+        const wrapper = await mountPanel();
+        const editor = useDevelopEditor();
+        const originalSaturation = editor.recipe.value?.saturation;
+        await wrapper.get('[data-testid="develop-section-toggle-black-white"]').trigger('click');
+        await wrapper.get('[data-testid="develop-black-white-enabled"]').setValue(true);
+        expect(editor.recipe.value?.blackWhiteEnabled).toBe(true);
+        await wrapper.get('[data-testid="develop-slider-develop-bw-reds"]').setValue('40');
+        expect(editor.recipe.value?.blackWhiteMix[0]).toBe(40);
+        expect(editor.recipe.value?.saturation).toBe(originalSaturation);
+        await editor.flush();
+        const commit = invokeMock.mock.calls.filter(([command]) => command === 'develop_commit_recipe').at(-1);
+        expect(commit?.[1].envelope.recipe.blackWhiteEnabled).toBe(true);
+        wrapper.unmount();
+    });
+
+    it('places input Levels handles above the histogram and output handles below it', async () => {
+        const wrapper = await mountPanel();
+        await expandSection(wrapper, 'levels');
+        const controls = wrapper.get('[data-testid="levels-controls"]');
+        expect(controls.get('.levels-numbers:first-child [data-testid="levels-number-inputBlack"]').exists()).toBe(true);
+        expect(controls.get('.levels-numbers:last-of-type [data-testid="levels-number-outputBlack"]').exists()).toBe(true);
+        expect(controls.get('[data-testid="levels-handle-inputBlack"] path').attributes('d')).toContain('M-5 6');
+        expect(controls.get('[data-testid="levels-handle-outputBlack"] path').attributes('d')).toContain('M0 126');
+        wrapper.unmount();
+    });
+
     it('records an entire Levels drag as one undo step and saves its final recipe', async () => {
         const wrapper = await mountPanel();
         const editor = useDevelopEditor();
@@ -212,7 +286,7 @@ describe('DevelopPanel', () => {
         await wrapper.get('[data-testid="levels-handle-inputBlack"]').trigger('pointerdown', { button: 0, pointerId: 7, clientX: 12 });
         await svg.trigger('pointermove', { pointerId: 7, clientX: 42 });
         await svg.trigger('pointermove', { pointerId: 7, clientX: 62 });
-        await svg.trigger('pointerup', { pointerId: 7 });
+        await svg.trigger('pointerup', { pointerId: 7, clientX: 62 });
         expect(editor.recipe.value?.levels.rgb.inputBlack).toBe(50);
         expect(editor.historySize.value).toBe(before + 1);
         await editor.flush();

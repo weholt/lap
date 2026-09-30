@@ -55,8 +55,10 @@ export const useFileMenuItems = (
     String(localeMsg.value.menu.file[key] || fallback);
 
   const externalAppMenu = (kind?: ExternalAppKind) => {
-    const apps = kind ? config.externalAppsFor(kind) : [];
-    const defaultApp = kind ? config.defaultExternalApp(kind) : null;
+    const group = kind ? config.settings.externalApps?.[kind] : null;
+    const apps: Array<{ id: string; name?: string; path?: string }> = group?.apps ?? [];
+    const defaultId = String(group?.defaultId ?? '');
+    const defaultApp = apps.find(app => app.id === defaultId) ?? apps[0] ?? null;
     return {
       label: menuLabel(OPEN_IN_APP_LABELS.generic),
       icon: markRaw(IconExternal),

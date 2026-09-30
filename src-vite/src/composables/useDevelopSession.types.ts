@@ -2,10 +2,10 @@
 //
 // The RECIPE CONTRACT section below is the generated TypeScript contract of
 // rapidraw-edit-model, copied verbatim from the pinned engine revision
-// bce4801a6f7a8536ba90a629b7999b0133383d6b (see
+// e43646df6e75aabc771bac72458c51e5aef7734a (see
 // docs/raw-development/engine-lock.json, resource
 // crates/rapidraw-edit-model/gen/recipe.ts,
-// sha256 fc39ac527ae4ef841760992d5a2a9e007f22fa1f7d7f6ec4ae41812a9f93e00b,
+// sha256 3ec9d6e1938490f3160d6f423c1b0ffc0df323529d113b66432031143eb41af4,
 // verified against the committed bytes). Regenerate from the engine and
 // re-copy; do not hand-edit the generated part.
 //
@@ -100,6 +100,7 @@ export interface Recipe {
   curves: Curves; pointCurves: Curves; parametricCurve: ParametricCurve; curveMode: CurveMode;
   temperature: number; tint: number; vibrance: number; saturation: number; hue: number;
   colorGrading: ColorGrading; hsl: Hsl; colorCalibration: ColorCalibration;
+  blackWhiteEnabled: boolean; blackWhiteMix: [number, number, number, number, number, number, number, number];
   clarity: number; structure: number; dehaze: number; "centré": number;
   sharpness: number; sharpnessThreshold: number; lumaNoiseReduction: number; colorNoiseReduction: number;
   chromaticAberrationRedCyan: number; chromaticAberrationBlueYellow: number;
@@ -375,6 +376,17 @@ export const DEFAULT_RECIPE: Recipe = {
     "blueHue": 0.0,
     "blueSaturation": 0.0
   },
+  "blackWhiteEnabled": false,
+  "blackWhiteMix": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
   "clarity": 0.0,
   "structure": 0.0,
   "dehaze": 0.0,
@@ -783,7 +795,6 @@ export function saturationFromLapLegacy(legacy: number): number {
 export function saturationToLapLegacy(recipe: number): number {
   return clamp(recipe, -100, 100) + 100;
 }
-
 // LAP IPC CONTRACT (mirrors src-tauri/src/develop/sessions.rs serde DTOs)
 // ---------------------------------------------------------------------------
 
@@ -801,8 +812,27 @@ export interface OpenedEditSession {
   envelope: RecipeEnvelopeValue;
 }
 
-/** The durable envelope as JSON (schema-validated by the Rust host). */
-export type RecipeEnvelopeValue = RecipeEnvelope;
+/** Lap's IPC view of the durable engine envelope. */
+export interface RecipeEnvelopeValue {
+  schemaVersion: number;
+  engineVersion: string;
+  assetId: string;
+  variantId: string;
+  revision: number;
+  sourceFingerprint: string;
+  decode: {
+    isRaw: boolean;
+    fastDemosaic: boolean;
+    highlightCompression: number;
+    linearRawMode: 'auto' | 'gamma' | 'skip_calib' | 'gamma_skip_calib';
+    rawColorNoiseReduction: number;
+    rawSharpening: number;
+    tonemapperOverride: ToneMapper | null;
+  };
+  recipe: Recipe;
+  resources: Record<string, { algorithm: 'sha256'; digest: string; sizeBytes: number | null }>;
+  unsupported: Record<string, unknown>;
+}
 
 /** Preview quality tiers (engine session contract). */
 export type PreviewQuality = 'Interactive' | 'Settled';

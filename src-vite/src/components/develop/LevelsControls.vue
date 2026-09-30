@@ -50,6 +50,7 @@ function start(e: PointerEvent, key: LevelsKey) {
 }
 function finish(e?: PointerEvent) {
     if (!gesture || (e && gesture.pointer !== e.pointerId)) return;
+    if (e) move(e);
     const pointer = gesture.pointer;
     gesture = null;
     if (svg.value?.hasPointerCapture?.(pointer)) svg.value.releasePointerCapture(pointer);
@@ -58,7 +59,7 @@ function finish(e?: PointerEvent) {
 function cancel(e?: PointerEvent) {
     if (!gesture || (e && gesture.pointer !== e.pointerId)) return;
     emit('live', gesture.start);
-    finish(e);
+    finish();
 }
 function keydown(e: KeyboardEvent, key: LevelsKey) {
     if (props.disabled) return;
@@ -76,10 +77,10 @@ onBeforeUnmount(() => finish());
 
 <template>
     <div class="levels-controls" :class="{ disabled }" data-testid="levels-controls">
-        <div class="levels-numbers output-numbers">
-            <label v-for="key in outputKeys" :key="key"><span>{{ label(key) }}</span>
+        <div class="levels-numbers input-numbers">
+            <label v-for="key in inputKeys" :key="key"><span>{{ label(key) }}</span>
                 <input type="number" :data-testid="`levels-number-${key}`" :aria-label="label(key)" :value="value[key]"
-                    :min="levelsBounds(value, key)[0]" :max="levelsBounds(value, key)[1]" step="1" :disabled="disabled"
+                    :min="levelsBounds(value, key)[0]" :max="levelsBounds(value, key)[1]" :step="key === 'midtone' ? 0.01 : 1" :disabled="disabled"
                     @change="numeric($event, key)" @keydown.stop @keydown.enter="($event.target as HTMLInputElement).blur()" />
             </label>
         </div>
@@ -95,15 +96,15 @@ onBeforeUnmount(() => finish());
                 :data-testid="`levels-handle-${key}`" :transform="`translate(${position(key)},0)`"
                 @pointerdown="start($event, key)" @keydown.stop="keydown($event, key)">
                 <line y1="22" y2="126" class="handle-guide" />
-                <rect x="-11" :y="isOutput(key) ? 0 : 126" width="22" height="24" fill="transparent" />
-                <path v-if="isOutput(key)" d="M-5 6H5V15L0 22L-5 15Z" class="handle-knob" />
+                <rect x="-11" :y="isOutput(key) ? 126 : 0" width="22" height="24" fill="transparent" />
+                <path v-if="!isOutput(key)" d="M-5 6H5V15L0 22L-5 15Z" class="handle-knob" />
                 <path v-else d="M0 126L5 133V140H-5V133Z" class="handle-knob" />
             </g>
         </svg>
-        <div class="levels-numbers input-numbers">
-            <label v-for="key in inputKeys" :key="key"><span>{{ label(key) }}</span>
+        <div class="levels-numbers output-numbers">
+            <label v-for="key in outputKeys" :key="key"><span>{{ label(key) }}</span>
                 <input type="number" :data-testid="`levels-number-${key}`" :aria-label="label(key)" :value="value[key]"
-                    :min="levelsBounds(value, key)[0]" :max="levelsBounds(value, key)[1]" :step="key === 'midtone' ? 0.01 : 1" :disabled="disabled"
+                    :min="levelsBounds(value, key)[0]" :max="levelsBounds(value, key)[1]" step="1" :disabled="disabled"
                     @change="numeric($event, key)" @keydown.stop @keydown.enter="($event.target as HTMLInputElement).blur()" />
             </label>
         </div>

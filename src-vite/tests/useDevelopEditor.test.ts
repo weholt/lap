@@ -86,6 +86,44 @@ async function openAssetA(editor: ReturnType<typeof useDevelopEditor>) {
 }
 
 describe('useDevelopEditor', () => {
+    it('renders the fitted frame at one reusable edge across opening and slider edits', async () => {
+        const viewport = document.createElement('div');
+        viewport.setAttribute('data-testid', 'develop-central-preview');
+        document.body.appendChild(viewport);
+        vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue({ width: 1800, height: 600 } as DOMRect);
+        const editor = useDevelopEditor();
+        try {
+            queueCommand('develop_open_edit_session', openedSession(1));
+            queueCommand('develop_render_preview', { status: 'cancelled' });
+            await editor.openAsset({ id: 1 });
+            await vi.waitFor(() => expect(invokeMock.mock.calls.filter(([command]) => command === 'develop_render_preview')).toHaveLength(1));
+            const first = invokeMock.mock.calls.find(([command]) => command === 'develop_render_preview')![1];
+            expect(first.maxEdge).toBe(Math.ceil(900 * Math.min(window.devicePixelRatio || 1, 1.5)));
+            queueCommand('develop_render_preview', { status: 'cancelled' });
+            editor.setParamLive('exposure', 0.5);
+            await vi.waitFor(() => expect(invokeMock.mock.calls.filter(([command]) => command === 'develop_render_preview')).toHaveLength(2));
+            const second = invokeMock.mock.calls.filter(([command]) => command === 'develop_render_preview')[1][1];
+            expect(second.maxEdge).toBe(first.maxEdge);
+        } finally {
+            viewport.remove();
+        }
+    });
+    it('lets a newer asset open while an older RAF preview is still rendering', async () => {
+        const editor = useDevelopEditor();
+        let releaseRender!: (value: unknown) => void;
+        queueCommand('develop_open_edit_session', openedSession(1));
+        queueCommand('develop_render_preview', new Promise(resolve => { releaseRender = resolve; }));
+        const first = editor.openAsset({id: 1});
+        await vi.waitFor(() => expect(editor.activeFileId.value).toBe(1));
+        queueCommand('develop_open_edit_session', openedSession(2));
+        const second = editor.openAsset({id: 2});
+        try {
+            await vi.waitFor(() => expect(editor.activeFileId.value).toBe(2), {timeout: 250});
+        } finally {
+            releaseRender({status: 'cancelled'});
+            await Promise.all([first, second]);
+        }
+    });
     it('broadcasts one completed drag and awaits target persistence before opening it', async () => {
         const editor = useDevelopEditor();
         await openAssetA(editor);
@@ -244,9 +282,10 @@ describe('useDevelopEditor', () => {
         queueCommand('develop_open_edit_session', new Promise(resolve => { release = resolve; }));
         queueCommand('develop_open_edit_session', openedSession(2));
         const first = editor.openAsset({id: 1});
-        const second = editor.openAsset({id: 2});
         await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledWith('develop_open_edit_session', {assetId: 1, variantId: 'default'}));
+        const second = editor.openAsset({id: 2});
         expect(invokeMock.mock.calls.filter(([name]) => name === 'develop_open_edit_session')).toHaveLength(1);
+        queueCommand('develop_close_edit_session', {});
         release(openedSession(1));
         await Promise.all([first, second]);
         expect(editor.activeFileId.value).toBe(2);

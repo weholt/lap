@@ -793,6 +793,10 @@ onMounted(async () => {
       const payload = (event as { payload?: Record<string, unknown> })?.payload || {};
       const committedFileId = Number(payload.fileId || 0);
       if (!committedFileId || committedFileId !== developedFileId.value) return;
+      // Content's Develop overlay already renders this exact editor session.
+      // A second viewer session and source-image reload on every commit made
+      // RAF slider drags compete with their own preview work.
+      if (props.externalPreview) return;
       // The displayed asset's recipe changed: reload the preview and
       // re-render the developed view from the newly committed recipe.
       developRefreshTick.value++;

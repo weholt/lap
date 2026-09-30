@@ -1,15 +1,23 @@
 {
   "schema": "lap-engine-lock/v1",
-  "issue": "lap-9bc",
-  "task": "Vignetting",
+  "issue": "lap-abe",
+  "task": "Black and White conversion and hue mixes",
   "plan": "PLAN-CONTROL-E47134A0CB19-001",
-  "created": "2026-09-27",
+  "created": "2026-09-30",
   "engine": {
     "repository": "C:/Users/Thomas/Desktop/RapidRAW-engine",
     "branch": "feature/lap-engine-extraction",
-    "revision": "bce4801a6f7a8536ba90a629b7999b0133383d6b",
-    "revisionSubject": "feat(rapidraw-3dd): add crop-aware exposure vignetting for Lap lap-9bc",
+    "revision": "e43646df6e75aabc771bac72458c51e5aef7734a",
+    "revisionSubject": "rapidraw-845 Correct generated monochrome recipe contract",
     "previousRevisions": [
+      {
+        "revision": "cd5b81fdd69d9ce236f9333940f4e590300d43d6",
+        "note": "rapidraw-845 Add durable black and white conversion and hue mixes"
+      },
+      {
+        "revision": "bce4801a6f7a8536ba90a629b7999b0133383d6b",
+        "note": "feat(rapidraw-3dd): add crop-aware exposure vignetting for Lap lap-9bc"
+      },
       {
         "revision": "271c8d3ff11be4c6bec085d15ca8ea8b377c0ea4",
         "note": "feat(rapidraw-ae7): add independent GPU Levels for Lap lap-fcd"
@@ -62,7 +70,7 @@
     "resources": [
       {
         "path": "crates/rapidraw-develop/src/gpu/shaders/shader.wgsl",
-        "sha256": "6fb98542f2c2cda06f5be26456f30115cf7e09d2e73c3d62126e406b0c5a4085"
+        "sha256": "3cd4a106309e60ec370e8e8e83bc3db32f77edcee04d744465cbf9caab9cb6a5"
       },
       {
         "path": "crates/rapidraw-develop/src/gpu/shaders/blur.wgsl",
@@ -74,11 +82,11 @@
       },
       {
         "path": "crates/rapidraw-edit-model/gen/recipe.ts",
-        "sha256": "fc39ac527ae4ef841760992d5a2a9e007f22fa1f7d7f6ec4ae41812a9f93e00b"
+        "sha256": "3ec9d6e1938490f3160d6f423c1b0ffc0df323529d113b66432031143eb41af4"
       },
       {
         "path": "crates/rapidraw-edit-model/gen/default-recipe.json",
-        "sha256": "a2ce0ce8cb181586d373d48df857f1d8b7bf052f0ab87f9030c9f6436a007641"
+        "sha256": "89156b93845d8aae264a2369012252b71a76da815c1906d63a176f313cf6be4c"
       }
     ],
     "hashBasis": "SHA256 over the committed content at the pinned revision (git show <rev>:<path>, LF line endings). Working-tree copies of this local checkout may differ by autocrlf line endings only; consumers check out the committed bytes.",
@@ -86,11 +94,11 @@
   },
   "consumption": {
     "method": "Git dependency pinned by an exact revision from the local isolated clone. Never a floating branch, never an uncommitted path, no publication and no shared remote.",
-    "cargoDependency": "rapidraw-develop = { git = \"file:///C:/Users/Thomas/Desktop/RapidRAW-engine\", rev = \"bce4801a6f7a8536ba90a629b7999b0133383d6b\" }",
+    "cargoDependency": "rapidraw-develop = { git = \"file:///C:/Users/Thomas/Desktop/RapidRAW-engine\", rev = \"e43646df6e75aabc771bac72458c51e5aef7734a\" }",
     "localReproduction": [
       "1. Keep the isolated engine clone at C:/Users/Thomas/Desktop/RapidRAW-engine on branch feature/lap-engine-extraction (no publication, no remote creation; C:/Users/Thomas/Desktop/RapidRAW stays reference-only).",
-      "2. To rebuild or extend the engine locally: git -C C:/Users/Thomas/Desktop/RapidRAW-engine checkout bce4801a6f7a8536ba90a629b7999b0133383d6b, then apply the toolchain PATH prepend and build with cargo as usual. Engine changes require a new pinned revision plus a new lock entry here before any host adopts them.",
-      "3. In the consumer crate (Lap src-tauri in a later slice), reference rapidraw-develop (and rapidraw-edit-model if needed directly) with the cargoDependency above; Cargo records the exact rev in the consumer Cargo.lock, making consumption reproducible without network services, credentials, or model downloads.",
+      "2. To rebuild or extend the engine locally: git -C C:/Users/Thomas/Desktop/RapidRAW-engine checkout e43646df6e75aabc771bac72458c51e5aef7734a, then apply the toolchain PATH prepend and build with cargo as usual. Engine changes require a new pinned revision plus a new lock entry here before any host adopts them.",
+      "3. Lap src-tauri references rapidraw-develop and rapidraw-edit-model at the cargoDependency revision above; Cargo records the exact rev in the consumer Cargo.lock, making consumption reproducible without network services, credentials, or model downloads.",
       "4. Windows MAX_PATH caution: rawler's git checkout contains deeply nested testdata paths. A fresh dependency cache must live under a short path (the verification below used C:/Users/Thomas/.cg1, 20 characters, deleted afterwards); deeper CARGO_HOME roots fail cargo fetch with 'path too long'."
     ]
   },
@@ -101,12 +109,11 @@
       "refreeze": "scripts/raw-development/capture-baselines.ps1 -Update -AllowSourceDrift re-froze tests/fixtures/raw-development/baselines/capture-manifest.json at engine revision e1035c38aa1150ac350faa3661f26144a922ea91; output checksums, dimensions, and failure exit codes unchanged; only engine.commit, the raw_processing.rs source hash, and adapter-mapped failure errorEvidence strings changed; renderBaselineCommit remains 5e30bcbb246395d391ba2e9662510641ffe68e6b."
     },
     "engineGates": {
-      "cargoTest": "crates workspace 82 passed; src-tauri suite 162 passed (0 failed) at the pinned revision",
-      "cargoFmt": "pass (both manifests)",
-      "cargoClippy": "0 errors, 0 new warnings (pre-existing build-script ONNX note only)",
-      "frontend": "npm test 86/86, typecheck pass, i18n:check pass; lint (867 errors / 52 warnings) and format:check (208 files) fail inherited at byte-identical baseline counts, not regressions"
+      "historicalBaseline": "The earlier e1035c38 pin passed the crates workspace (82 tests), src-tauri suite (162 tests), cargo fmt and clippy. Its frontend passed 86 tests, typecheck and i18n:check; lint and format failures were inherited baseline. These counts do not claim verification of the current engine revision.",
+      "currentRevision": "At e43646df, rapidraw-edit-model and rapidraw-develop suites passed, including 22 GPU render tests for monochrome conversion; the regenerated TypeScript Recipe contract was checked after correction. The Lap consumer passed cargo check, full cargo test, cargo clippy --all-targets (existing warnings), 296 frontend tests, typecheck and production build. Workspace-wide cargo fmt --check still reports extensive formatting drift in unchanged files."
     },
     "standaloneConsumer": {
+      "scope": "Historical standalone consumption check at e1035c38, retained as extraction evidence rather than a test of the current pin.",
       "consumer": "%TEMP%/opencode/task205-engine-consumer depending on rapidraw-develop = { git = \"file:///C:/Users/Thomas/Desktop/RapidRAW-engine\", rev = \"e1035c38aa1150ac350faa3661f26144a922ea91\" }",
       "cleanCache": "C:/Users/Thomas/.cg1 (fresh CARGO_HOME; populated by cargo fetch from crates.io and the rawler git dependency; deleted after the check)",
       "build": "cargo build --release -> exit 0 in 1m34s; no application window, no credentials, no model downloads, no GPU initialization",
@@ -115,8 +122,8 @@
         "corpus/dng-linear-orientation6.DNG -> 5464x8192 decoded, linear_raw=true, exit 0",
         "corpus/canon-eos-r6-craw-iso100-nocrop.CR3 -> 5472x3648 decoded, linear_raw=false, exit 0"
       ],
-      "hashComparison": "The cargo-resolved checkout at the pinned rev was compared against the committed content: workspace manifest, workspace lock, both crate manifests, rapidraw-develop lib.rs, all three WGSL shaders, and both generated contract files are byte-identical (10/10). Initial working-tree DIFFERs were autocrlf artifacts of the local engine checkout, not content drift."
+      "hashComparison": "The cargo-resolved checkout at the historical e1035c38 revision was compared against committed content: workspace manifest, workspace lock, both crate manifests, rapidraw-develop lib.rs, all three WGSL shaders, and both generated contract files were byte-identical (10/10). Initial working-tree DIFFERs were autocrlf artifacts of the local engine checkout, not content drift."
     }
   },
-  "lapIntegration": "Lap Cargo wiring that consumes this revision is EPIC-300 (end-to-end slice) scope; this lock is the revision Lap must consume. Until then nothing in Lap references the engine path or branch."
+  "lapIntegration": "Lap src-tauri Cargo dependencies consume this exact local engine revision. The generated TypeScript contract in src-vite/src/composables/useDevelopSession.types.ts must match the committed recipe.ts resource."
 }

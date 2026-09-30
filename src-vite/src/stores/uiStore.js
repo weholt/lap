@@ -125,6 +125,7 @@ export const useUIStore = defineStore('ui', {
     setDevelopDirty(dirty) {
       this.developEditor.dirty = !!dirty;
     },
+    /** @param {string} saveState @param {string | null} [lastError] */
     setDevelopSaveState(saveState, lastError = null) {
       this.developEditor.saveState = saveState;
       this.developEditor.lastError = lastError;

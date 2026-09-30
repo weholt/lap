@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { baseParse } from '@vue/compiler-dom';
 import { parse } from '@vue/compiler-sfc';
+import { developPreviewPresentation } from '../src/composables/developPreviewPresentation';
 
 function tree(file: string) {
   return baseParse(parse(readFileSync(new URL(file, import.meta.url), 'utf8')).descriptor.template!.content);
@@ -28,5 +29,17 @@ describe('Develop preview viewport ownership', () => {
     const path = findPath(tree('../src/components/MediaViewer.vue'), n => n.tag === 'slot' && attr(n, 'name', 'media-overlay'));
     expect(path).not.toBeNull();
     expect(path!.some(n => attr(n, 'ref', 'mediaAreaRef'))).toBe(true);
+  });
+  it('keeps the source covered while a newly selected asset is opening', () => {
+    expect(developPreviewPresentation(true, false, 12, 11)).toEqual({
+      showOverlay: true,
+      useCurrentFrame: false,
+    });
+    expect(developPreviewPresentation(true, false, 12, 12)).toEqual({
+      showOverlay: true,
+      useCurrentFrame: true,
+    });
+    expect(developPreviewPresentation(true, true, 12, 12).showOverlay).toBe(false);
+    expect(developPreviewPresentation(false, false, 12, 11).showOverlay).toBe(false);
   });
 });

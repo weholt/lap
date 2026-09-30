@@ -29,6 +29,9 @@ import AdjustmentActions from '@/components/develop/AdjustmentActions.vue';
 import VignettingPanel from '@/components/develop/VignettingPanel.vue';
 import LevelsPanel from '@/components/develop/LevelsPanel.vue';
 import ColorBalancePanel from '@/components/develop/ColorBalancePanel.vue';
+import BlackWhitePanel from '@/components/develop/BlackWhitePanel.vue';
+import LutPanel from '@/components/develop/LutPanel.vue';
+import PresetLibrary from '@/components/develop/PresetLibrary.vue';
 import DevelopMasksSection from '@/components/develop/masks/MasksSection.vue';
 import LensControls from '@/components/develop/LensControls.vue';
 import VariantsPanel from '@/components/develop/VariantsPanel.vue';
@@ -64,6 +67,13 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const develop = useDevelopEditor();
+// The host selection changes synchronously, but opening a RAW session does
+// not. Never expose controls for the previous asset during that gap.
+const currentAssetReady = computed(() =>
+    Number(props.file?.id || 0) > 0 &&
+    develop.activeFileId.value === Number(props.file?.id) &&
+    !!develop.session.value && !develop.opening.value,
+);
 watch(() => props.selectedAssetIds ?? (props.file?.id ? [Number(props.file.id)] : []),
     ids => develop.selection.setSelection(ids), { immediate: true });
 
@@ -280,14 +290,14 @@ onBeforeUnmount(() => {
                     data-testid="develop-import"
                     :title="$t('develop.importHint')"
                     :aria-label="$t('develop.import')"
-                    :disabled="!develop.session.value"
+                    :disabled="!currentAssetReady"
                     @click.stop="importDialogOpen = true"
                 >{{ $t('develop.import') }}</button>
                 <button
                     type="button"
                     class="btn btn-ghost btn-xs text-base-content/60 hover:text-base-content disabled:text-base-content/30"
                     data-testid="develop-undo"
-                    :disabled="!develop.canUndo.value"
+                    :disabled="!currentAssetReady || !develop.canUndo.value"
                     :title="$t('develop.historyHint')"
                     :aria-label="$t('develop.undo')"
                     @click.stop="undo"
@@ -296,7 +306,7 @@ onBeforeUnmount(() => {
                     type="button"
                     class="btn btn-ghost btn-xs text-base-content/60 hover:text-base-content disabled:text-base-content/30"
                     data-testid="develop-redo"
-                    :disabled="!develop.canRedo.value"
+                    :disabled="!currentAssetReady || !develop.canRedo.value"
                     :title="$t('develop.historyHint')"
                     :aria-label="$t('develop.redo')"
                     @click.stop="redo"
@@ -310,7 +320,8 @@ onBeforeUnmount(() => {
             </div>
         </div>
 
-        <AdjustmentActions v-if="file && !rollbackEngaged" />
+        <AdjustmentActions v-if="file && !rollbackEngaged && currentAssetReady" />
+        <PresetLibrary v-if="file && !rollbackEngaged && currentAssetReady" />
 
         <div v-if="file" class="mb-2 px-2 flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-1">
             <!-- Rollback engaged (lap-63f): the entry point is disabled; the
@@ -322,6 +333,9 @@ onBeforeUnmount(() => {
                 role="alert"
             >{{ $t(ROLLBACK_NOTICE_KEY) }}</div>
 
+            <div v-else-if="!currentAssetReady" class="px-2 py-2 text-xs text-base-content/60" role="status">
+                {{ develop.openError.value || $t('develop.save.pending') }}
+            </div>
             <template v-else>
             <div
                 v-if="develop.openError.value"
@@ -433,7 +447,9 @@ onBeforeUnmount(() => {
             </DevelopSection>
             <LevelsPanel v-if="section.id === 'basic'" :pixels="histogramPixels" />
             <ColorBalancePanel v-if="section.id === 'color'" />
+            <BlackWhitePanel v-if="section.id === 'color'" />
             <VignettingPanel v-if="section.id === 'effects'" />
+            <LutPanel v-if="section.id === 'effects'" />
             </template>
 
             <!-- Local masks (lap-78d): native brush/linear/radial tools;

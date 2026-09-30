@@ -120,7 +120,7 @@ describe('parseClipboardPayload', () => {
         const pasted = pasteSections(parsed, target);
         expect(pasted.exposure).toBe(1.2);
         expect(pasted.temperature).toBe(-20);
-        expect(pasted.clarity).toBe(99, 'unselected sections stay untouched');
+        expect(pasted.clarity).toBe(99);
         expect(pasted).toEqual(pasteSections(payload, target));
     });
 
