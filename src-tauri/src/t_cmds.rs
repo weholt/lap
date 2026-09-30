@@ -3950,24 +3950,28 @@ impl DevelopAppState {
                 .unwrap_or_else(|_| {
                     std::env::temp_dir().join("lap-developed-derivatives")
                 });
-            let store = match lap_lib::develop::cache::DevelopedDerivativeStore::open(
-                root,
+            let (store, cache_root) = match lap_lib::develop::cache::DevelopedDerivativeStore::open(
+                root.clone(),
                 std::sync::Arc::clone(&bus),
             ) {
-                Ok(store) => std::sync::Arc::new(store),
+                Ok(store) => (std::sync::Arc::new(store), root),
                 Err(error) => {
                     eprintln!(
                         "developed-derivative cache unavailable, falling back to a temporary directory: {error}"
                     );
-                    std::sync::Arc::new(
-                        lap_lib::develop::cache::DevelopedDerivativeStore::open(
-                            std::env::temp_dir().join(format!(
-                                "lap-developed-derivatives-{}",
-                                std::process::id()
-                            )),
-                            std::sync::Arc::clone(&bus),
-                        )
-                        .expect("temporary developed-derivative cache directory"),
+                    let fallback = std::env::temp_dir().join(format!(
+                        "lap-developed-derivatives-{}",
+                        std::process::id()
+                    ));
+                    (
+                        std::sync::Arc::new(
+                            lap_lib::develop::cache::DevelopedDerivativeStore::open(
+                                fallback.clone(),
+                                std::sync::Arc::clone(&bus),
+                            )
+                            .expect("temporary developed-derivative cache directory"),
+                        ),
+                        fallback,
                     )
                 }
             };
@@ -3981,6 +3985,11 @@ impl DevelopAppState {
                     DERIVATIVE_REFRESH_PERMITS,
                 )),
                 refresh_in_flight: Mutex::new(HashSet::new()),
+                full_root: cache_root.join("full-resolution"),
+                full_slot: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+                full_in_flight: Mutex::new(HashSet::new()),
+                full_active: Mutex::new(None),
+                last_interaction: Mutex::new(std::time::Instant::now()),
             })
         }))
     }
@@ -3994,6 +4003,8 @@ const DERIVATIVE_REFRESH_PERMITS: usize = 2;
 /// Longest edge of a thumbnail-tier developed derivative. Bounded decode +
 /// render; the served bytes scale down to the requested grid size.
 const DERIVATIVE_THUMBNAIL_EDGE: u32 = 1024;
+const FULL_DERIVATIVE_IDLE: std::time::Duration = std::time::Duration::from_secs(3);
+const FULL_DERIVATIVE_CACHE_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Lazily-initialized developed-derivative parts shared by the commit hook,
 /// the thumbnail preference lookup and the background refresh jobs.
@@ -4003,9 +4014,345 @@ pub struct DevelopDerivativeParts {
     gate: std::sync::Arc<lap_lib::develop::cache::RenderGate>,
     refresh_slots: std::sync::Arc<tokio::sync::Semaphore>,
     refresh_in_flight: Mutex<HashSet<i64>>,
+    full_root: PathBuf,
+    full_slot: std::sync::Arc<tokio::sync::Semaphore>,
+    full_in_flight: Mutex<HashSet<i64>>,
+    full_active: Mutex<Option<ActiveFullDerivative>>,
+    last_interaction: Mutex<std::time::Instant>,
+}
+
+struct ActiveFullDerivative {
+    file_id: i64,
+    cancel_source: rapidraw_develop::CancelSource,
+    slot: std::sync::Arc<lap_lib::develop::export::ExportCancelSlot>,
 }
 
 type DevelopStamp = lap_lib::develop::cache::DerivativeStamp;
+
+fn full_derivative_path(root: &Path, file_id: i64, stamp: &DevelopStamp) -> PathBuf {
+    let key = rapidraw_edit_model::sha256_hex(
+        format!(
+            "{}:{}:{}:{}",
+            file_id, stamp.revision, stamp.content_hash, stamp.source_fingerprint
+        )
+        .as_bytes(),
+    );
+    root.join(format!("{file_id}-{key}.jpg"))
+}
+
+/// Move an atomically exported JPEG into the rebuildable cache only if its
+/// source and committed recipe are still current. An old result cannot replace
+/// the last good file after a rapid slider change.
+fn publish_full_derivative(
+    root: &Path,
+    bus: &lap_lib::develop::cache::DevelopCommitBus,
+    file_id: i64,
+    stamp: &DevelopStamp,
+    staged: &Path,
+) -> Result<bool, String> {
+    if file_id <= 0 || bus.stamp(&file_id.to_string()).as_ref() != Some(stamp) {
+        let _ = fs::remove_file(staged);
+        return Ok(false);
+    }
+    fs::create_dir_all(root).map_err(|e| format!("full derivative cache directory: {e}"))?;
+    let target = full_derivative_path(root, file_id, stamp);
+    if target.exists() {
+        let _ = fs::remove_file(staged);
+        return Ok(true);
+    }
+    fs::rename(staged, &target)
+        .map_err(|e| format!("publishing full derivative {}: {e}", target.display()))?;
+    // The target name contains the stamp. If another commit races this move,
+    // lookup by the current stamp still cannot mistake the result for current.
+    let prefix = format!("{file_id}-");
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path != target
+                && path.extension().is_some_and(|ext| ext == "jpg")
+                && path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with(&prefix))
+            {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
+    prune_full_derivative_cache(root, &target);
+    Ok(true)
+}
+
+fn prune_full_derivative_cache(root: &Path, keep: &Path) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    let mut files = Vec::new();
+    let mut total = 0_u64;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_stem().map(|name| name.to_string_lossy()) else {
+            continue;
+        };
+        let Some((id, digest)) = name.split_once('-') else {
+            continue;
+        };
+        if path.extension().is_none_or(|ext| ext != "jpg")
+            || id.parse::<i64>().is_err()
+            || digest.len() != 64
+            || !digest.bytes().all(|b| b.is_ascii_hexdigit())
+        {
+            continue;
+        }
+        if let Ok(meta) = entry.metadata() {
+            total = total.saturating_add(meta.len());
+            files.push((path, meta.len(), meta.modified().ok()));
+        }
+    }
+    if total <= FULL_DERIVATIVE_CACHE_BYTES {
+        return;
+    }
+    files.sort_by_key(|(_, _, modified)| *modified);
+    for (path, len, _) in files {
+        if total <= FULL_DERIVATIVE_CACHE_BYTES {
+            break;
+        }
+        if path != keep && fs::remove_file(&path).is_ok() {
+            total = total.saturating_sub(len);
+        }
+    }
+}
+
+fn interrupt_full_derivative(service: &DevelopService, parts: &DevelopDerivativeParts) {
+    *parts
+        .last_interaction
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = std::time::Instant::now();
+    let active = parts
+        .full_active
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(active) = active.as_ref() {
+        active.cancel_source.cancel();
+        if let Some(job_id) = active.slot.engine_job_id() {
+            service.cancel_engine_export(job_id);
+        }
+    }
+}
+
+async fn wait_for_full_derivative_idle(parts: &DevelopDerivativeParts) {
+    loop {
+        let elapsed = parts
+            .last_interaction
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .elapsed();
+        if elapsed >= FULL_DERIVATIVE_IDLE {
+            return;
+        }
+        tokio::time::sleep(FULL_DERIVATIVE_IDLE - elapsed).await;
+    }
+}
+
+/// Coalesce commits per asset, wait until the editor has been idle, and run
+/// only one full-resolution export globally. Interactive preview calls cancel
+/// an active export; this worker retries once editing settles again.
+fn schedule_full_resolution_refresh(
+    service: std::sync::Arc<DevelopService>,
+    parts: std::sync::Arc<DevelopDerivativeParts>,
+    file_id: i64,
+) {
+    interrupt_full_derivative(&service, &parts);
+    {
+        let mut in_flight = parts
+            .full_in_flight
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !in_flight.insert(file_id) {
+            return;
+        }
+    }
+    tauri::async_runtime::spawn(async move {
+        let asset_id = file_id.to_string();
+        loop {
+            let Some(stamp) = parts.bus.stamp(&asset_id) else {
+                break;
+            };
+            wait_for_full_derivative_idle(&parts).await;
+            let Ok(permit) = std::sync::Arc::clone(&parts.full_slot)
+                .acquire_owned()
+                .await
+            else {
+                break;
+            };
+            if parts.bus.stamp(&asset_id).as_ref() != Some(&stamp) {
+                drop(permit);
+                continue;
+            }
+            let (cancel_source, cancel) = rapidraw_develop::CancelToken::pair();
+            let export_slot =
+                std::sync::Arc::new(lap_lib::develop::export::ExportCancelSlot::new());
+            let started = {
+                let interaction = parts
+                    .last_interaction
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if interaction.elapsed() < FULL_DERIVATIVE_IDLE {
+                    false
+                } else {
+                    *parts
+                        .full_active
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                        Some(ActiveFullDerivative {
+                            file_id,
+                            cancel_source: cancel_source.clone(),
+                            slot: std::sync::Arc::clone(&export_slot),
+                        });
+                    true
+                }
+            };
+            if !started {
+                drop(permit);
+                continue;
+            }
+            let worker_parts = std::sync::Arc::clone(&parts);
+            let worker_service = std::sync::Arc::clone(&service);
+            let worker_stamp = stamp.clone();
+            let worker_cancel = cancel.clone();
+            let result = tauri::async_runtime::spawn_blocking(move || {
+                render_full_resolution_derivative(
+                    &worker_service,
+                    &worker_parts,
+                    file_id,
+                    &worker_stamp,
+                    &worker_cancel,
+                    &export_slot,
+                )
+            })
+            .await;
+            {
+                let mut active = parts
+                    .full_active
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if active.as_ref().is_some_and(|job| job.file_id == file_id) {
+                    *active = None;
+                }
+            }
+            drop(permit);
+            match result {
+                Ok(Ok(true)) => {}
+                Ok(Ok(false)) if cancel.is_cancelled() => continue,
+                Ok(Ok(false)) => {}
+                Ok(Err(error)) => {
+                    eprintln!("full resolution derivative failed for file {file_id}: {error}");
+                }
+                Err(error) => {
+                    eprintln!(
+                        "full resolution derivative worker failed for file {file_id}: {error}"
+                    );
+                }
+            }
+            let mut in_flight = parts
+                .full_in_flight
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if parts.bus.stamp(&asset_id).as_ref() == Some(&stamp) {
+                in_flight.remove(&file_id);
+                break;
+            }
+        }
+        parts
+            .full_in_flight
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&file_id);
+    });
+}
+
+fn render_full_resolution_derivative(
+    service: &DevelopService,
+    parts: &DevelopDerivativeParts,
+    file_id: i64,
+    stamp: &DevelopStamp,
+    cancel: &rapidraw_develop::CancelToken,
+    slot: &lap_lib::develop::export::ExportCancelSlot,
+) -> Result<bool, String> {
+    if cancel.is_cancelled() || parts.bus.stamp(&file_id.to_string()).as_ref() != Some(stamp) {
+        return Ok(false);
+    }
+    let cached = full_derivative_path(&parts.full_root, file_id, stamp);
+    if cached.exists() {
+        return Ok(true);
+    }
+    let source_path = develop_asset_source_path(file_id)?;
+    let source_bytes = fs::read(&source_path)
+        .map_err(|e| format!("failed to read source {}: {e}", source_path.display()))?;
+    let fingerprint = rapidraw_edit_model::sha256_hex(&source_bytes);
+    lap_lib::develop::asset_operations::adopt_catalog_identity_with_fingerprint(
+        &source_path,
+        &file_id.to_string(),
+        &fingerprint,
+    )
+    .map_err(|e| e.to_string())?;
+    let sidecar = DevelopRecipeRepository::lap_default()
+        .load_opt(&source_path)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no committed recipe sidecar for {}", source_path.display()))?;
+    if sidecar.revision != stamp.revision
+        || sidecar.source_fingerprint != stamp.source_fingerprint
+        || sidecar.content_hash().map_err(|e| e.to_string())? != stamp.content_hash
+    {
+        return Ok(false);
+    }
+    if cancel.is_cancelled() {
+        return Ok(false);
+    }
+    fs::create_dir_all(&parts.full_root)
+        .map_err(|e| format!("full derivative cache directory: {e}"))?;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let staged = parts
+        .full_root
+        .join(format!(".{file_id}-{}-{nonce}.tmp.jpg", std::process::id()));
+    let completion = lap_lib::develop::export::export_developed(
+        service,
+        lap_lib::develop::export::AssetExportInput {
+            asset_id: file_id.to_string(),
+            variant_id: sidecar.variant_id,
+            source_path,
+            source_bytes,
+            requested_revision: stamp.revision,
+        },
+        lap_lib::develop::export::ExportSettings {
+            destination: staged.clone(),
+            format: lap_lib::develop::export::ExportFormat::Jpeg,
+            jpeg_quality: 90,
+            max_edge: None,
+        },
+        cancel,
+        slot,
+    );
+    match completion {
+        Ok(lap_lib::develop::export::ExportCompletion::Completed { .. }) => {
+            if cancel.is_cancelled() {
+                let _ = fs::remove_file(staged);
+                return Ok(false);
+            }
+            publish_full_derivative(&parts.full_root, &parts.bus, file_id, stamp, &staged)
+        }
+        Ok(lap_lib::develop::export::ExportCompletion::Cancelled) => {
+            let _ = fs::remove_file(staged);
+            Ok(false)
+        }
+        Err(error) => {
+            let _ = fs::remove_file(staged);
+            Err(error.to_string())
+        }
+    }
+}
 
 /// Serves the current developed derivative thumbnail for an asset when one
 /// exists for its currently acknowledged commit (lap-a58: the catalog prefers
@@ -4088,11 +4435,12 @@ fn acknowledge_commit_side_effects(
     // source and show a different image from the live Develop preview.
     schedule_developed_thumbnail_refresh(
         app_handle.clone(),
-        service,
+        std::sync::Arc::clone(&service),
         std::sync::Arc::clone(&parts),
         file_id,
         album_id,
     );
+    schedule_full_resolution_refresh(service, parts, file_id);
 }
 
 /// Schedules the bounded developed-thumbnail refresh: at most one job per
@@ -4119,7 +4467,10 @@ fn schedule_developed_thumbnail_refresh(
         // A queue of lightweight futures, with only two blocking RAW decodes.
         // The old try_acquire-only path silently dropped all but two images
         // when Edit Selected committed many assets together.
-        let Ok(_slot) = std::sync::Arc::clone(&parts.refresh_slots).acquire_owned().await else {
+        let Ok(_slot) = std::sync::Arc::clone(&parts.refresh_slots)
+            .acquire_owned()
+            .await
+        else {
             return;
         };
         let worker_parts = std::sync::Arc::clone(&parts);
@@ -4451,6 +4802,7 @@ pub async fn develop_render_preview(
     max_edge: Option<u32>,
 ) -> Result<lap_lib::develop::sessions::PreviewWait, String> {
     let service = state.service();
+    interrupt_full_derivative(&service, &state.derivatives());
     let envelope = develop_parse_envelope(envelope)?;
     let quality = develop_quality(quality.as_deref().unwrap_or("settled"))?;
     let max_edge = max_edge.unwrap_or(1536);
@@ -4657,7 +5009,9 @@ pub async fn develop_list_luts(
                 .then(a.id.cmp(&b.id))
         });
         Ok(entries)
-    }).await.map_err(|error| error.to_string())?
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -4684,7 +5038,9 @@ pub async fn develop_import_lut(
         let bytes = serde_json::to_vec(&entry).map_err(|error| error.to_string())?;
         std::fs::write(file, bytes).map_err(|error| error.to_string())?;
         Ok(entry)
-    }).await.map_err(|error| error.to_string())?
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -4698,7 +5054,9 @@ pub async fn develop_remove_lut(
         let file = lut_catalog_file(store.root(), &id)?;
         let _guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         std::fs::remove_file(file).map_err(|error| error.to_string())
-    }).await.map_err(|error| error.to_string())?
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 /// Imports lensfun XML files as versioned lens-profile resources. `version`
@@ -5550,4 +5908,56 @@ pub async fn develop_batch_export(
     })
     .await
     .map_err(|e| format!("develop batch export task failed: {e}"))?
+}
+
+#[cfg(test)]
+mod background_full_derivative_tests {
+    use super::*;
+
+    #[test]
+    fn only_the_current_revision_can_replace_a_saved_full_resolution_derivative() {
+        let root = std::env::temp_dir().join(format!(
+            "lap-full-derivative-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let bus = lap_lib::develop::cache::DevelopCommitBus::new();
+        let first = DevelopStamp {
+            revision: 1,
+            content_hash: "first".into(),
+            source_fingerprint: "source".into(),
+        };
+        let second = DevelopStamp {
+            revision: 2,
+            content_hash: "second".into(),
+            source_fingerprint: "source".into(),
+        };
+        bus.acknowledge("42", first.clone());
+        let first_stage = root.join("first.tmp");
+        fs::write(&first_stage, b"old pixels").unwrap();
+        assert!(publish_full_derivative(&root, &bus, 42, &first, &first_stage).unwrap());
+        let first_path = full_derivative_path(&root, 42, &first);
+        assert_eq!(fs::read(&first_path).unwrap(), b"old pixels");
+
+        bus.acknowledge("42", second.clone());
+        let stale_stage = root.join("stale.tmp");
+        fs::write(&stale_stage, b"stale pixels").unwrap();
+        assert!(!publish_full_derivative(&root, &bus, 42, &first, &stale_stage).unwrap());
+        assert!(!stale_stage.exists());
+        assert_eq!(fs::read(&first_path).unwrap(), b"old pixels");
+
+        let second_stage = root.join("second.tmp");
+        fs::write(&second_stage, b"new pixels").unwrap();
+        assert!(publish_full_derivative(&root, &bus, 42, &second, &second_stage).unwrap());
+        assert_eq!(
+            fs::read(full_derivative_path(&root, 42, &second)).unwrap(),
+            b"new pixels"
+        );
+        assert!(!first_path.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
 }
