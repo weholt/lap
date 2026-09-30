@@ -81,9 +81,10 @@ RapidRAW checkout below, not same-named Lap files.
 
 Work in these two dedicated local checkouts only:
 
-- Lap: `C:/Users/Thomas/Desktop/lap`, branch `codex/rapidraw-development-panel`.
-  The previous `pebbles-harness/raw-development` branch is retained as history, not
-  the working branch for new panel changes.
+- Lap: `C:/Users/Thomas/Desktop/lap`, branch `feature/raw-development`.
+  The previous `codex/rapidraw-development-panel` branch was renamed to this
+  branch. `pebbles-harness/raw-development` remains historical, not the working
+  branch for new panel changes.
 - Engine: `C:/Users/Thomas/Desktop/RapidRAW-engine`, branch
   `feature/lap-engine-extraction`.
 
